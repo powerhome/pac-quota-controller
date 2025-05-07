@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "pac-quota-controller.fullname" . }}
-  namespace: pac-system
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "pac-quota-controller.labels" . | nindent 4 }}
 spec:
