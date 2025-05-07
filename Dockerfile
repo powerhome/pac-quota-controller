@@ -19,7 +19,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/bin/pac-quota-controller ./cmd/pac-quota-controller
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.21.3
 
 WORKDIR /app
 
