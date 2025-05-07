@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "pac-quota-controller.fullname" . }}
-  namespace: pac-system
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "pac-quota-controller.labels" . | nindent 4 }}
 spec:
