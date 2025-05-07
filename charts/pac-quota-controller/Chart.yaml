@@ -3,4 +3,6 @@ name: pac-quota-controller
 description: PAC Resource Sharing Validation Webhook
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
+maintainers:
+  - name: Watchtower
+    email: watchtower@powerhrg.com
