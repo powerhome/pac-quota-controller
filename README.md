@@ -14,7 +14,7 @@ The architecture of the PAC Resource Sharing Validation Webhook is designed to i
 graph TD
     A[Client Request] -->|API Server| B[Kubernetes API Server]
     B -->|Admission Request| C[Validating Admission Webhook]
-    C -->|Validation Logic| D[PAC-RSVW Service]
+    C -->|Validation Logic| D[pac-quota-controller Service]
     D -->|Repository Layer| E[Kubernetes API]
     D -->|Response| B
     B -->|Response| A
@@ -100,8 +100,8 @@ graph LR
 1. **Clone the Repository**:
 
    ```bash
-   git clone https://github.com/powerhome/pac-rsvw.git
-   cd pac-rsvw
+   git clone https://github.com/powerhome/pac-quota-controller.git
+   cd pac-quota-controller
    ```
 
 2. **Set Up Environment Variables**:
@@ -128,13 +128,13 @@ graph LR
    Use the provided Helm chart to deploy the webhook:
 
    ```bash
-   helm install pac-rsvw ./charts/pac-rsvw -n pac-system
+   helm install pac-quota-controller ./charts/pac-quota-controller -n pac-system
    ```
 
    To enable debug logging during deployment:
 
    ```bash
-   helm install pac-rsvw ./charts/pac-rsvw -n pac-system --set env.PAC_RSVW_LOG_LEVEL=debug
+   helm install pac-quota-controller ./charts/pac-quota-controller -n pac-system --set env.PAC_RSVW_LOG_LEVEL=debug
    ```
 
 6. **Configure ClusterResourceQuota**:
