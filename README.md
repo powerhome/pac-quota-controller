@@ -14,7 +14,7 @@ The architecture of the PAC Resource Sharing Validation Webhook is designed to i
 graph TD
     A[Client Request] -->|API Server| B[Kubernetes API Server]
     B -->|Admission Request| C[Validating Admission Webhook]
-    C -->|Validation Logic| D[pac-quota-controller Service]
+    C -->|Validation Logic| D[Controller Service]
     D -->|Repository Layer| E[Kubernetes API]
     D -->|Response| B
     B -->|Response| A
