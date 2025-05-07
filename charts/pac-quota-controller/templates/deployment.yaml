@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pac-quota-controller.fullname" . }}
+  namespace: pac-system
+  labels:
+    {{- include "pac-quota-controller.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pac-quota-controller.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pac-quota-controller.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "pac-quota-controller.serviceAccountName" . }}
+      containers:
+        - name: webhook
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: webhook
+              containerPort: 443
+              protocol: TCP
+          env:
+            - name: PAC_QUOTA_CONTROLLER_PORT
+              value: {{ .Values.env.PAC_QUOTA_CONTROLLER_PORT | quote }}
+            - name: PAC_QUOTA_CONTROLLER_TLS_CERT_FILE
+              value: "/etc/webhook/certs/tls.crt"
+            - name: PAC_QUOTA_CONTROLLER_TLS_KEY_FILE
+              value: "/etc/webhook/certs/tls.key"
+            - name: PAC_QUOTA_CONTROLLER_LOG_LEVEL
+              value: {{ .Values.env.PAC_QUOTA_CONTROLLER_LOG_LEVEL | quote }}
+            - name: PAC_QUOTA_CONTROLLER_ENV
+              value: {{ .Values.env.PAC_QUOTA_CONTROLLER_ENV | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: cert
+              mountPath: /etc/webhook/certs
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: webhook
+              scheme: {{ .Values.readinessProbe.scheme | default "HTTP" }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds | default 10 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: webhook
+              scheme: {{ .Values.livenessProbe.scheme | default "HTTP" }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds | default 15 }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds | default 20 }}
+      volumes:
+        - name: cert
+          secret:
+            secretName: {{ include "pac-quota-controller.fullname" . }}-tls
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

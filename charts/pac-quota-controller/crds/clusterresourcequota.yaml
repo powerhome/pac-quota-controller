@@ -1,0 +1,73 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: clusterresourcequotas.pac.powerhouse.com
+spec:
+  group: pac.powerhouse.com
+  names:
+    kind: ClusterResourceQuota
+    listKind: ClusterResourceQuotaList
+    plural: clusterresourcequotas
+    singular: clusterresourcequota
+    shortNames:
+    - crq
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    served: true
+    storage: true
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:
+            type: object
+            required:
+            - namespaces
+            - hard
+            properties:
+              namespaces:
+                type: array
+                items:
+                  type: string
+                  description: "List of namespaces to aggregate resources from"
+              hard:
+                type: object
+                description: "Resource limits to enforce"
+                properties:
+                  cpu:
+                    type: string
+                    description: "CPU limit (e.g., '1000m' or '1')"
+                  memory:
+                    type: string
+                    description: "Memory limit (e.g., '1Gi')"
+          status:
+            type: object
+            properties:
+              total:
+                type: object
+                description: "Total resource usage across all namespaces"
+                properties:
+                  cpu:
+                    type: string
+                  memory:
+                    type: string
+              namespaces:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    namespace:
+                      type: string
+                    status:
+                      type: object
+                      properties:
+                        used:
+                          type: object
+                          properties:
+                            cpu:
+                              type: string
+                            memory:
+                              type: string
+    subresources:
+      status: {}

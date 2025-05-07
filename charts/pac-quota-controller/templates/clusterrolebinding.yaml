@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "pac-quota-controller.fullname" . }}
+  labels:
+    {{- include "pac-quota-controller.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "pac-quota-controller.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "pac-quota-controller.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

@@ -1,0 +1,2 @@
+# Autoenv configuration for PAC Resource Sharing Validation Webhook
+export AUTOENV_PREFIX=PAC_QUOTA_CONTROLLER_

@@ -1,0 +1,95 @@
+replicaCount: 1
+
+image:
+  repository: powerhouse/pac-quota-controller
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 443
+
+resources: {}
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Cert-manager configuration
+certManager:
+  enabled: true
+  issuerName: "pac-quota-controller-selfsigned"
+  issuerKind: "Issuer"
+  duration: "8760h" # 1 year
+  renewBefore: "720h" # 30 days
+
+# Webhook configuration
+webhook:
+  caBundle: ""
+  failurePolicy: Fail
+  timeoutSeconds: 10
+  excludedNamespaces:
+    - kube-system
+    - cert-manager
+    - pac-system
+  rules:
+    - apiGroups:
+        - ""
+      apiVersions:
+        - v1
+      operations:
+        - CREATE
+        - UPDATE
+      resources:
+        - pods
+      scope: '*'
+    - apiGroups:
+        - pac.powerhouse.com
+      apiVersions:
+        - v1alpha1
+      operations:
+        - CREATE
+        - UPDATE
+      resources:
+        - clusterresourcequotas
+      scope: '*'
+
+# Health probe configuration
+livenessProbe:
+  scheme: HTTPS
+  initialDelaySeconds: 15
+  periodSeconds: 20
+
+readinessProbe:
+  scheme: HTTPS
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+env:
+  PAC_QUOTA_CONTROLLER_PORT: "443"
+  PAC_QUOTA_CONTROLLER_LOG_LEVEL: "info"  # Set to "debug" for detailed logging
+  PAC_QUOTA_CONTROLLER_ENV: "production"

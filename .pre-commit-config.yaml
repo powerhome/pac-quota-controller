@@ -1,0 +1,66 @@
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.5.0
+  hooks:
+    - id: trailing-whitespace
+    - id: end-of-file-fixer
+    - id: check-yaml
+      exclude: ^charts/.*\.yaml$
+    - id: check-added-large-files
+    - id: detect-aws-credentials
+    - id: detect-private-key
+    - id: check-merge-conflict
+    - id: check-case-conflict
+    - id: check-executables-have-shebangs
+    - id: check-shebang-scripts-are-executable
+    - id: check-symlinks
+    - id: check-json
+    - id: check-xml
+    - id: check-toml
+    - id: mixed-line-ending
+    - id: name-tests-test
+    - id: requirements-txt-fixer
+
+# Use a custom entry point to conditionally run golangci-lint only if Go files exist
+- repo: https://github.com/golangci/golangci-lint
+  rev: v1.57.0
+  hooks:
+    - id: golangci-lint
+      name: golangci-lint
+      entry: sh -c 'if find . -path ./vendor -prune -o -name "*.go" -print | grep -q .; then golangci-lint run --fix; else echo "No Go files found. Skipping golangci-lint."; exit 0; fi'
+      language: system
+      types: [go]
+      pass_filenames: false
+
+- repo: local
+  hooks:
+    - id: go-fmt
+      name: go fmt
+      description: Format Go code
+      entry: gofmt -s -w
+      language: system
+      types: [go]
+      pass_filenames: true
+
+    - id: go-vet
+      name: go vet
+      description: Run go vet
+      # Only run if Go files exist in the project
+      entry: sh -c 'if find . -path ./vendor -prune -o -name "*.go" -print | grep -q .; then go vet ./...; else echo "No Go files found. Skipping go vet."; exit 0; fi'
+      language: system
+      pass_filenames: false
+
+    - id: go-imports
+      name: go imports
+      description: Run goimports
+      entry: goimports -w
+      language: system
+      types: [go]
+      pass_filenames: true
+
+    - id: go-mod-tidy
+      name: go mod tidy
+      description: Run go mod tidy
+      entry: go mod tidy
+      language: system
+      pass_filenames: false

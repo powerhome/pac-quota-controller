@@ -1,0 +1,12 @@
+apiVersion: pac.powerhouse.com/v1alpha1
+kind: ClusterResourceQuota
+metadata:
+  name: test-quota
+spec:
+  namespaces:
+    - test1
+    - test2
+    - test3
+  hard:
+    cpu: "1"
+    memory: "700Mi"

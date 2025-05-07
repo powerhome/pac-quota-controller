@@ -1,0 +1,11 @@
+apiVersion: pac.powerhouse.com/v1alpha1
+kind: ClusterResourceQuota
+metadata:
+  name: test-quota-conflict
+spec:
+  namespaces:
+    - test1  # This should cause a conflict since it's already used in test-quota
+    - test-namespace
+  hard:
+    cpu: "2000m"
+    memory: "4Gi"

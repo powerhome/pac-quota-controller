@@ -1,0 +1,20 @@
+{{- if .Values.certManager.enabled -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "pac-quota-controller.fullname" . }}-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "pac-quota-controller.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "pac-quota-controller.fullname" . }}-tls
+  dnsNames:
+    - {{ include "pac-quota-controller.fullname" . }}
+    - {{ include "pac-quota-controller.fullname" . }}.{{ .Release.Namespace }}
+    - {{ include "pac-quota-controller.fullname" . }}.{{ .Release.Namespace }}.svc
+  issuerRef:
+    name: {{ .Values.certManager.issuerName }}
+    kind: {{ .Values.certManager.issuerKind }}
+  duration: {{ .Values.certManager.duration | quote }}
+  renewBefore: {{ .Values.certManager.renewBefore | quote }}
+{{- end -}}
