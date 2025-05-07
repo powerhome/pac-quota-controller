@@ -106,11 +106,11 @@ graph LR
 
 2. **Set Up Environment Variables**:
    Ensure the following environment variables are set:
-   - `PAC_RSVW_PORT`: Service port (default: 443)
-   - `PAC_RSVW_LOG_LEVEL`: Logging level (default: info, use "debug" for detailed logging)
-   - `PAC_RSVW_ENV`: Environment (dev/staging/prod)
-   - `PAC_RSVW_TLS_CERT_FILE`: Path to TLS certificate file
-   - `PAC_RSVW_TLS_KEY_FILE`: Path to TLS key file
+   - `PAC_QUOTA_CONTROLLER_PORT`: Service port (default: 443)
+   - `PAC_QUOTA_CONTROLLER_LOG_LEVEL`: Logging level (default: info, use "debug" for detailed logging)
+   - `PAC_QUOTA_CONTROLLER_ENV`: Environment (dev/staging/prod)
+   - `PAC_QUOTA_CONTROLLER_TLS_CERT_FILE`: Path to TLS certificate file
+   - `PAC_QUOTA_CONTROLLER_TLS_KEY_FILE`: Path to TLS key file
 
 3. **Build the Project**:
 
@@ -134,7 +134,7 @@ graph LR
    To enable debug logging during deployment:
 
    ```bash
-   helm install pac-quota-controller ./charts/pac-quota-controller -n pac-system --set env.PAC_RSVW_LOG_LEVEL=debug
+   helm install pac-quota-controller ./charts/pac-quota-controller -n pac-system --set env.PAC_QUOTA_CONTROLLER_LOG_LEVEL=debug
    ```
 
 6. **Configure ClusterResourceQuota**:
@@ -175,7 +175,7 @@ graph TD
 
 ## Troubleshooting
 
-- **Enable Debug Logging**: Set `PAC_RSVW_LOG_LEVEL=debug` to get detailed logs
+- **Enable Debug Logging**: Set `PAC_QUOTA_CONTROLLER_LOG_LEVEL=debug` to get detailed logs
 - **Check RBAC Permissions**: The webhook needs permissions to list pods and ClusterResourceQuotas
 - **Validate CRD Installation**: Ensure the ClusterResourceQuota CRD is properly installed
 
