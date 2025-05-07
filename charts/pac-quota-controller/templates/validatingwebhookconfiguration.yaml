@@ -9,7 +9,7 @@ metadata:
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "pac-quota-controller.fullname" . }}-tls
   {{- end }}
 webhooks:
-  - name: {{ include "pac-quota-controller.fullname" . }}.powerhouse.io
+  - name: {{ include "pac-quota-controller.fullname" . }}.powerhome.io
     admissionReviewVersions: ["v1"]
     {{- with .Values.webhook.excludedNamespaces }}
     namespaceSelector:

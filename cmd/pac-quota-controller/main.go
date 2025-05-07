@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/powerhouse/pac-quota-controller/internal/config"
-	"github.com/powerhouse/pac-quota-controller/internal/handlers"
-	"github.com/powerhouse/pac-quota-controller/pkg/logging"
+	"github.com/powerhome/pac-quota-controller/internal/config"
+	"github.com/powerhome/pac-quota-controller/internal/handlers"
+	"github.com/powerhome/pac-quota-controller/pkg/logging"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
@@ -24,7 +24,7 @@ var (
 	rootCmd = &cobra.Command{
 		Use:   "pac-quota-controller",
 		Short: "PAC Resource Sharing Validation Webhook",
-		Long: `A webhook service for validating resource sharing requests in the Powerhouse ecosystem.
+		Long: `A webhook service for validating resource sharing requests in the powerhome ecosystem.
 This service provides validation endpoints for resource sharing operations.`,
 		Version: version,
 		Run: func(cmd *cobra.Command, args []string) {

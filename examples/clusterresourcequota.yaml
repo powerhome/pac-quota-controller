@@ -1,4 +1,4 @@
-apiVersion: pac.powerhouse.com/v1alpha1
+apiVersion: pac.powerhome.com/v1alpha1
 kind: ClusterResourceQuota
 metadata:
   name: test-quota

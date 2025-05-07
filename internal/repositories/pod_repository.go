@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/powerhouse/pac-quota-controller/pkg/kube"
+	"github.com/powerhome/pac-quota-controller/pkg/kube"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"

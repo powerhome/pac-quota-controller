@@ -11,6 +11,6 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: ["pac.powerhouse.com"]
+  - apiGroups: ["pac.powerhome.com"]
     resources: ["clusterresourcequotas"]
     verbs: ["get", "list", "watch"]

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/powerhouse/pac-quota-controller/internal/models"
+	"github.com/powerhome/pac-quota-controller/internal/models"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -40,7 +40,7 @@ func (v *NamespaceValidator) ValidateNamespaceUniqueness(ctx context.Context, na
 	// Get all ClusterResourceQuotas
 	raw, err := v.client.RESTClient().
 		Get().
-		AbsPath("/apis/pac.powerhouse.com/v1alpha1/clusterresourcequotas").
+		AbsPath("/apis/pac.powerhome.com/v1alpha1/clusterresourcequotas").
 		DoRaw(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get ClusterResourceQuotas: %v", err)

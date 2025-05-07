@@ -1,6 +1,6 @@
-# PAC Resource Sharing Validation Webhook (pac-rsvw)
+# PAC Resource Sharing Validation Webhook (pac-quota-controller)
 
-This repository contains the PAC Resource Sharing Validation Webhook, an internal project for Powerhouse. It provides a webhook service for validating resource sharing requests in Kubernetes clusters. The project is built in Go and follows modern best practices and tools.
+This repository contains the PAC Resource Sharing Validation Webhook. It provides a webhook service for validating resource sharing requests in Kubernetes clusters. The project is built in Go and follows modern best practices and tools.
 
 ## Overview
 
@@ -100,7 +100,7 @@ graph LR
 1. **Clone the Repository**:
 
    ```bash
-   git clone https://github.com/powerhouse/pac-rsvw.git
+   git clone https://github.com/powerhome/pac-rsvw.git
    cd pac-rsvw
    ```
 
@@ -140,7 +140,7 @@ graph LR
 6. **Configure ClusterResourceQuota**:
 
    ```yaml
-   apiVersion: pac.powerhouse.com/v1alpha1
+   apiVersion: pac.powerhome.com/v1alpha1
    kind: ClusterResourceQuota
    metadata:
      name: test-quota

@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/powerhouse/pac-quota-controller/pkg/kube"
+	"github.com/powerhome/pac-quota-controller/pkg/kube"
 )
 
 // NamespaceRepository provides methods for interacting with Kubernetes namespaces

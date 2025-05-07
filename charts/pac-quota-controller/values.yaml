@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: powerhouse/pac-quota-controller
+  repository: powerhome/pac-quota-controller
   tag: ""
   pullPolicy: IfNotPresent
 
@@ -68,7 +68,7 @@ webhook:
         - pods
       scope: '*'
     - apiGroups:
-        - pac.powerhouse.com
+        - pac.powerhome.com
       apiVersions:
         - v1alpha1
       operations:

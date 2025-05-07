@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/powerhouse/pac-quota-controller/internal/repositories"
-	"github.com/powerhouse/pac-quota-controller/pkg/logging"
+	"github.com/powerhome/pac-quota-controller/internal/repositories"
+	"github.com/powerhome/pac-quota-controller/pkg/logging"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/resource"
 )

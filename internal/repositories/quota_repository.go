@@ -5,9 +5,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/powerhouse/pac-quota-controller/internal/models"
-	"github.com/powerhouse/pac-quota-controller/pkg/kube"
-	"github.com/powerhouse/pac-quota-controller/pkg/logging"
+	"github.com/powerhome/pac-quota-controller/internal/models"
+	"github.com/powerhome/pac-quota-controller/pkg/kube"
+	"github.com/powerhome/pac-quota-controller/pkg/logging"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -20,7 +20,7 @@ var (
 
 	// Define the GVR (Group, Version, Resource) for ClusterResourceQuota
 	quotaGVR = schema.GroupVersionResource{
-		Group:    "pac.powerhouse.com",
+		Group:    "pac.powerhome.com",
 		Version:  "v1alpha1",
 		Resource: "clusterresourcequotas",
 	}

@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME=pac-quota-controller
-DOCKER_IMAGE=powerhouse/$(BINARY_NAME)
+DOCKER_IMAGE=powerhome/$(BINARY_NAME)
 VERSION=$(shell git describe --tags --always --dirty)
 GO=go
 DOCKER=docker
@@ -115,7 +115,7 @@ kind-deploy: kind-load install-cert-manager
 	@kubectl create namespace $(NAMESPACE) || true
 	@helm upgrade --install $(BINARY_NAME) charts/$(BINARY_NAME) \
 		--namespace $(NAMESPACE) \
-		--set image.repository=powerhouse/$(BINARY_NAME) \
+		--set image.repository=powerhome/$(BINARY_NAME) \
 		--set image.tag=$(shell git rev-parse --short HEAD)-dirty \
 		--set image.pullPolicy=IfNotPresent
 	@echo "Deployment complete. Webhook is using cert-manager for TLS certificates."

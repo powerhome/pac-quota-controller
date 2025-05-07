@@ -15,7 +15,7 @@ The ClusterResourceQuota CRD provides a way to:
 
 ### Group and Version
 
-- Group: `pac.powerhouse.com`
+- Group: `pac.powerhome.com`
 - Version: `v1alpha1`
 - Kind: `ClusterResourceQuota`
 - Short Name: `crq`
@@ -23,7 +23,7 @@ The ClusterResourceQuota CRD provides a way to:
 ### Schema
 
 ```yaml
-apiVersion: pac.powerhouse.com/v1alpha1
+apiVersion: pac.powerhome.com/v1alpha1
 kind: ClusterResourceQuota
 metadata:
   name: <quota-name>
@@ -71,7 +71,7 @@ The ClusterResourceQuota validation enforces several important rules:
 ### Basic Quota
 
 ```yaml
-apiVersion: pac.powerhouse.com/v1alpha1
+apiVersion: pac.powerhome.com/v1alpha1
 kind: ClusterResourceQuota
 metadata:
   name: team-a-quota
@@ -87,7 +87,7 @@ spec:
 ### Production Quota
 
 ```yaml
-apiVersion: pac.powerhouse.com/v1alpha1
+apiVersion: pac.powerhome.com/v1alpha1
 kind: ClusterResourceQuota
 metadata:
   name: production-quota

@@ -5,9 +5,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/powerhouse/pac-quota-controller/internal/models"
-	"github.com/powerhouse/pac-quota-controller/internal/repositories"
-	"github.com/powerhouse/pac-quota-controller/internal/validators"
+	"github.com/powerhome/pac-quota-controller/internal/models"
+	"github.com/powerhome/pac-quota-controller/internal/repositories"
+	"github.com/powerhome/pac-quota-controller/internal/validators"
 )
 
 // QuotaService provides business operations for ClusterResourceQuota resources

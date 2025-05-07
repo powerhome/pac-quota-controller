@@ -2,7 +2,7 @@
 
 ## Repository Overview
 
-This repository contains the PAC Resource Sharing Validation Webhook, an internal project for Powerhouse. It provides a webhook service for validating resource sharing requests. The project is built in Go and follows modern best practices and tools.
+This repository contains the PAC Resource Sharing Validation Webhook, an internal project for powerhome. It provides a webhook service for validating resource sharing requests. The project is built in Go and follows modern best practices and tools.
 
 ## Technical Stack
 

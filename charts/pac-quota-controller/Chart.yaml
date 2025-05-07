@@ -4,6 +4,3 @@ description: PAC Resource Sharing Validation Webhook
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-maintainers:
-  - name: Powerhouse Team
-    email: team@powerhouse.io

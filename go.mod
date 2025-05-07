@@ -1,4 +1,4 @@
-module github.com/powerhouse/pac-quota-controller
+module github.com/powerhome/pac-quota-controller
 
 go 1.24.2
 
