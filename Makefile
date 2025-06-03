@@ -270,7 +270,7 @@ docker-login: ## Log in to DockerHub (requires DOCKERHUB_USERNAME and DOCKERHUB_
 .PHONY: generate-helm
 generate-helm: ## Generate Helm chart using Kubebuilder plugin
 	@echo "Generating Helm chart using Kubebuilder plugin..."
-	$(LOCALBIN)/kubebuilder edit --plugins=helm.kubebuilder.io/v1-alpha
+	kubebuilder edit --plugins=helm.kubebuilder.io/v1-alpha
 	@echo "Copying generated chart from dist/chart to charts directory..."
 	@mkdir -p charts
 	@rm -rf charts/pac-quota-controller || true
