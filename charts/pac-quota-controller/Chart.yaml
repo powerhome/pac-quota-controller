@@ -17,6 +17,4 @@ keywords:
 annotations:
   artifacthub.io/images: |
     - name: pac-quota-controller
-      image: ghcr.io/powerhome/pac-quota-controller:latest
-    - name: pac-quota-controller
       image: powerhome/pac-quota-controller:latest

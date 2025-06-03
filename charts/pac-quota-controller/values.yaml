@@ -3,8 +3,6 @@ controllerManager:
   replicas: 1
   container:
     image:
-      # You can use either GitHub Container Registry or DockerHub
-      # repository: ghcr.io/powerhome/pac-quota-controller  # GitHub Container Registry
       repository: powerhome/pac-quota-controller  # DockerHub
       tag: "{{ .Chart.AppVersion }}"
     args:

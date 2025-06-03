@@ -6,15 +6,59 @@ A Helm chart for PAC Quota Controller - Managing cluster resource quotas across 
 
 **Homepage:** <https://github.com/powerhome/pac-quota-controller>
 
-## Maintainers
+## TL;DR
 
-| Name | Email | Url |
-| ---- | ------ | --- |
-| PowerHome |  | <https://github.com/powerhome> |
+```console
+helm repo add powerhome https://powerhome.github.io/pac-quota-controller
+helm install pac-quota-controller powerhome/pac-quota-controller -n pac-quota-controller-system --create-namespace
+```
 
-## Source Code
+## Introduction
 
-* <https://github.com/powerhome/pac-quota-controller>
+This chart bootstraps a [PAC Quota Controller](https://github.com/powerhome/pac-quota-controller) deployment on a [Kubernetes](https://kubernetes.io) cluster using the [Helm](https://helm.sh) package manager.
+
+The PAC Quota Controller extends Kubernetes with a ClusterResourceQuota custom resource that allows defining resource quotas that span multiple namespaces.
+
+### Container Images
+
+This chart can use container images from either DockerHub or GitHub Container Registry:
+
+```console
+# DockerHub (default in this chart)
+powerhome/pac-quota-controller:0.1.0
+```
+
+You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
+
+## Prerequisites
+
+- Kubernetes 1.19+
+- Helm 3.2.0+
+
+## Installing the Chart
+
+To install the chart with the release name `pac-quota-controller`:
+
+```console
+helm repo add powerhome https://powerhome.github.io/pac-quota-controller
+helm install pac-quota-controller powerhome/pac-quota-controller -n pac-quota-controller-system --create-namespace
+```
+
+The command deploys PAC Quota Controller on the Kubernetes cluster in the default configuration. The [Parameters](#parameters) section lists the parameters that can be configured during installation.
+
+> **Tip**: List all releases using `helm list -A`
+
+## Uninstalling the Chart
+
+To uninstall/delete the `pac-quota-controller` deployment:
+
+```console
+helm delete pac-quota-controller -n pac-quota-controller-system
+```
+
+The command removes all the Kubernetes components associated with the chart and deletes the release.
+
+## Parameters
 
 ## Values
 
@@ -24,7 +68,7 @@ A Helm chart for PAC Quota Controller - Managing cluster resource quotas across 
 | controllerManager.container.args[0] | string | `"--leader-elect"` |  |
 | controllerManager.container.args[1] | string | `"--metrics-bind-address=:8443"` |  |
 | controllerManager.container.args[2] | string | `"--health-probe-bind-address=:8081"` |  |
-| controllerManager.container.image.repository | string | `"powerhome/pac-quota-controller"` | Container image repository. Can be set to either `powerhome/pac-quota-controller` (DockerHub) or `ghcr.io/powerhome/pac-quota-controller` (GitHub Container Registry) |
+| controllerManager.container.image.repository | string | `"powerhome/pac-quota-controller"` |  |
 | controllerManager.container.image.tag | string | `"{{ .Chart.AppVersion }}"` |  |
 | controllerManager.container.livenessProbe.httpGet.path | string | `"/healthz"` |  |
 | controllerManager.container.livenessProbe.httpGet.port | int | `8081` |  |
@@ -51,3 +95,24 @@ A Helm chart for PAC Quota Controller - Managing cluster resource quotas across 
 | networkPolicy.enable | bool | `false` |  |
 | prometheus.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
+
+## Usage
+
+Once installed, you can create a ClusterResourceQuota to limit resources across namespaces:
+
+```yaml
+apiVersion: quota.powerapp.cloud/v1alpha1
+kind: ClusterResourceQuota
+metadata:
+  name: team-quota
+spec:
+  namespaceSelector:
+    matchLabels:
+      team: frontend
+  hard:
+    pods: "50"
+    requests.cpu: "10"
+    requests.memory: 20Gi
+    limits.cpu: "20"
+    limits.memory: 40Gi
+```

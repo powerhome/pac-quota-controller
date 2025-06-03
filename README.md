@@ -92,9 +92,6 @@ make helm-test
 The Docker images for this project are available from both GitHub Container Registry and DockerHub:
 
 ```bash
-# Pull from GitHub Container Registry
-docker pull ghcr.io/powerhome/pac-quota-controller:latest
-
 # Pull from DockerHub
 docker pull powerhome/pac-quota-controller:latest
 ```

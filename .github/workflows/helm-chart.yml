@@ -99,28 +99,6 @@ jobs:
       - name: Install chart
         if: github.event_name != 'pull_request'
         run: make helm-test
-        
-      - name: Verify Docker image availability
-        if: github.event_name == 'push' && contains(github.ref, 'refs/tags/v')
-        run: |
-          VERSION=$(echo ${{ github.ref }} | sed 's/refs\/tags\/v//')
-          
-          # Try pulling the Docker images
-          echo "Checking DockerHub image availability..."
-          if docker pull powerhome/pac-quota-controller:${VERSION} &>/dev/null; then
-            echo "✅ DockerHub image found: powerhome/pac-quota-controller:${VERSION}"
-          else
-            echo "⚠️ DockerHub image not found yet: powerhome/pac-quota-controller:${VERSION}"
-          fi
-          
-          echo "Checking GitHub Container Registry image availability..."
-          if docker pull ghcr.io/powerhome/pac-quota-controller:${VERSION} &>/dev/null; then
-            echo "✅ GitHub Container Registry image found: ghcr.io/powerhome/pac-quota-controller:${VERSION}"
-          else
-            echo "⚠️ GitHub Container Registry image not found yet: ghcr.io/powerhome/pac-quota-controller:${VERSION}"
-          fi
-          
-          # This is a non-blocking check
 
   release:
     name: Release Chart
