@@ -124,7 +124,8 @@ spec:
 			}, time.Minute, time.Second).Should(Equal("NotTerminating"), "Failed to verify scopes")
 
 			Eventually(func() (string, error) {
-				cmd := exec.Command("kubectl", "get", "clusterresourcequota", quotaName, "-o", "jsonpath={.spec.scopeSelector.matchExpressions[0].scopeName}")
+				cmd := exec.Command("kubectl", "get", "clusterresourcequota", quotaName,
+					"-o", "jsonpath={.spec.scopeSelector.matchExpressions[0].scopeName}")
 				return utils.Run(cmd)
 			}, time.Minute, time.Second).Should(Equal("PriorityClass"), "Failed to verify scopeSelector")
 		})

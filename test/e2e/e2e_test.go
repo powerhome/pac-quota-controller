@@ -22,7 +22,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -348,22 +347,5 @@ type tokenRequest struct {
 	} `json:"status"`
 }
 
-// checkResourceFinalizers checks for any finalizers on the specified resource kind, which might prevent cleanup.
-// This is useful for debugging when resources aren't being properly deleted during cleanup.
-// Example usage: checkResourceFinalizers("clusterresourcequota", "test-cluster-quota")
-func checkResourceFinalizers(kind, name string) []string {
-	By(fmt.Sprintf("Checking finalizers on %s/%s", kind, name))
-	cmd := exec.Command("kubectl", "get", kind, name, "-o", "jsonpath={.metadata.finalizers}")
-	output, err := utils.Run(cmd)
-	if err != nil {
-		return nil
-	}
-
-	var finalizers []string
-	if len(output) > 0 {
-		finalizers = strings.Split(strings.TrimSpace(output), " ")
-		GinkgoWriter.Printf("Found finalizers on %s/%s: %v\n", kind, name, finalizers)
-	}
-
-	return finalizers
-}
+// Note: The checkResourceFinalizers function was removed to resolve linting errors
+// If you need this function in the future, you can add it back and use it explicitly

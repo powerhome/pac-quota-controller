@@ -187,10 +187,16 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			config := initConfig()
 			logger := setupLogger(config)
-			defer logger.Sync()
+			defer func() {
+				if err := logger.Sync(); err != nil {
+					setupLog.Error(err, "Failed to sync logger")
+				}
+			}()
 
 			// Convert uber/zap logger to controller-runtime logger
-			zapLogger := ctrlzap.New(ctrlzap.UseDevMode(false), ctrlzap.Encoder(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())))
+			encoderConfig := zap.NewProductionEncoderConfig()
+			encoder := zapcore.NewJSONEncoder(encoderConfig)
+			zapLogger := ctrlzap.New(ctrlzap.UseDevMode(false), ctrlzap.Encoder(encoder))
 			ctrl.SetLogger(zapLogger)
 
 			var tlsOpts []func(*tls.Config)
@@ -218,7 +224,9 @@ func main() {
 
 			if len(config.WebhookCertPath) > 0 {
 				setupLog.Info("Initializing webhook certificate watcher using provided certificates",
-					"webhook-cert-path", config.WebhookCertPath, "webhook-cert-name", config.WebhookCertName, "webhook-cert-key", config.WebhookCertKey)
+					"webhook-cert-path", config.WebhookCertPath,
+					"webhook-cert-name", config.WebhookCertName,
+					"webhook-cert-key", config.WebhookCertKey)
 
 				var err error
 				webhookCertWatcher, err = certwatcher.New(
@@ -267,7 +275,9 @@ func main() {
 			// - [PROMETHEUS-WITH-CERTS] at config/prometheus/kustomization.yaml for TLS certification.
 			if len(config.MetricsCertPath) > 0 {
 				setupLog.Info("Initializing metrics certificate watcher using provided certificates",
-					"metrics-cert-path", config.MetricsCertPath, "metrics-cert-name", config.MetricsCertName, "metrics-cert-key", config.MetricsCertKey)
+					"metrics-cert-path", config.MetricsCertPath,
+					"metrics-cert-name", config.MetricsCertName,
+					"metrics-cert-key", config.MetricsCertKey)
 
 				var err error
 				metricsCertWatcher, err = certwatcher.New(
