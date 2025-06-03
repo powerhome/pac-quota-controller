@@ -38,17 +38,18 @@ jobs:
 
       - name: Set up Kubebuilder
         run: |
-          arch=$(go env GOARCH)
-          os=$(go env GOOS)
-          kubebuilder_version="3.12.0"
+          # Install Kubebuilder v4.6.0
+          KB_VERSION="4.6.0"
           
-          # Download Kubebuilder
-          curl -L -o kubebuilder.tar.gz "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${kubebuilder_version}/kubebuilder_${kubebuilder_version}_${os}_${arch}.tar.gz"
+          # Download Kubebuilder release
+          curl -L -o kubebuilder "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KB_VERSION}/kubebuilder_${os}_${arch}"
           
-          # Extract Kubebuilder
-          tar -zxvf kubebuilder.tar.gz
-          mv kubebuilder_*/bin/kubebuilder /usr/local/bin/
-          rm -rf kubebuilder_* kubebuilder.tar.gz
+          # Make it executable and move to path
+          chmod +x kubebuilder
+          sudo mv kubebuilder /usr/local/bin/
+          
+          # Verify installation
+          kubebuilder version || echo "Kubebuilder installation failed"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -128,17 +129,20 @@ jobs:
 
       - name: Set up Kubebuilder
         run: |
-          arch=$(go env GOARCH)
+          # Install Kubebuilder v4.6.0
           os=$(go env GOOS)
-          kubebuilder_version="3.12.0"
+          arch=$(go env GOARCH)
+          KB_VERSION="4.6.0"
           
-          # Download Kubebuilder
-          curl -L -o kubebuilder.tar.gz "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${kubebuilder_version}/kubebuilder_${kubebuilder_version}_${os}_${arch}.tar.gz"
+          # Download Kubebuilder release
+          curl -L -o kubebuilder "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KB_VERSION}/kubebuilder_${os}_${arch}"
           
-          # Extract Kubebuilder
-          tar -zxvf kubebuilder.tar.gz
-          mv kubebuilder_*/bin/kubebuilder /usr/local/bin/
-          rm -rf kubebuilder_* kubebuilder.tar.gz
+          # Make it executable and move to path
+          chmod +x kubebuilder
+          sudo mv kubebuilder /usr/local/bin/
+          
+          # Verify installation
+          kubebuilder version || echo "Kubebuilder installation failed"
 
       - name: Set up chart-releaser
         run: |
