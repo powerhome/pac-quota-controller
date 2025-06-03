@@ -1,0 +1,123 @@
+project_name: pac-quota-controller
+
+before:
+  hooks:
+    # You may remove this if you don't use go modules.
+    - go mod tidy
+
+builds:
+  - id: controller
+    main: ./cmd
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w 
+      - -X main.version={{.Version}} 
+      - -X main.commit={{.Commit}} 
+      - -X main.date={{.Date}} 
+      - -X main.builtBy=goreleaser
+
+dockers:
+  - image_templates:
+      - "ghcr.io/powerhome/{{ .ProjectName }}:{{ .Version }}"
+      - "ghcr.io/powerhome/{{ .ProjectName }}:latest"
+      - "docker.io/powerhome/{{ .ProjectName }}:{{ .Version }}"
+      - "docker.io/powerhome/{{ .ProjectName }}:latest"
+    dockerfile: Dockerfile.goreleaser
+    build_flag_templates:
+      - --label=org.opencontainers.image.title={{ .ProjectName }}
+      - --label=org.opencontainers.image.description={{ .ProjectName }}
+      - --label=org.opencontainers.image.url=https://github.com/powerhome/{{ .ProjectName }}
+      - --label=org.opencontainers.image.source=https://github.com/powerhome/{{ .ProjectName }}
+      - --label=org.opencontainers.image.version={{ .Version }}
+      - --label=org.opencontainers.image.created={{ .Date }}
+      - --label=org.opencontainers.image.revision={{ .FullCommit }}
+      - --label=org.opencontainers.image.licenses=Apache-2.0
+    skip_push: auto
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - LICENSE
+      - README.md
+      - config/**/*
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+# Docker login configuration
+docker_signs:
+  - cmd: cosign
+    artifacts: manifests
+    output: true
+    args:
+      - sign
+      - --key=env://COSIGN_PRIVATE_KEY
+      - --yes
+      - "${artifact}"
+    env:
+      - COSIGN_PASSWORD={{ .Env.COSIGN_PASSWORD }}
+
+docker_manifests:
+  - name_template: docker.io/powerhome/{{ .ProjectName }}:{{ .Version }}
+    image_templates:
+      - docker.io/powerhome/{{ .ProjectName }}:{{ .Version }}
+  - name_template: docker.io/powerhome/{{ .ProjectName }}:latest
+    image_templates:
+      - docker.io/powerhome/{{ .ProjectName }}:latest
+  - name_template: ghcr.io/powerhome/{{ .ProjectName }}:{{ .Version }}
+    image_templates:
+      - ghcr.io/powerhome/{{ .ProjectName }}:{{ .Version }}
+  - name_template: ghcr.io/powerhome/{{ .ProjectName }}:latest
+    image_templates:
+      - ghcr.io/powerhome/{{ .ProjectName }}:latest
+
+# Additional configuration for automating release notes
+release:
+  github:
+    owner: powerhome
+    name: pac-quota-controller
+  prerelease: auto
+  draft: false
+  name_template: "v{{ .Version }}"
+  footer: |
+    ## Helm Chart
+
+    ```bash
+    helm repo add powerhome https://powerhome.github.io/pac-quota-controller
+    helm repo update
+    helm install pac-quota-controller powerhome/pac-quota-controller -n pac-quota-controller-system --create-namespace
+    ```
+    
+    ## Docker Images
+    
+    ```bash
+    # Pull from GitHub Container Registry
+    docker pull ghcr.io/powerhome/pac-quota-controller:{{ .Version }}
+    
+    # Pull from DockerHub
+    docker pull powerhome/pac-quota-controller:{{ .Version }}
+    ```

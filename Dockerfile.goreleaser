@@ -1,0 +1,9 @@
+FROM gcr.io/distroless/static:nonroot
+
+# Copy the pre-built binary from the controller build
+COPY pac-quota-controller /manager
+
+# Use nonroot user for security
+USER 65532:65532
+
+ENTRYPOINT ["/manager"]

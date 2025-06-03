@@ -1,0 +1,259 @@
+{{- if .Values.crd.enable }}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+    controller-gen.kubebuilder.io/version: v0.18.0
+  name: clusterresourcequotas.quota.powerapp.cloud
+spec:
+  group: quota.powerapp.cloud
+  names:
+    kind: ClusterResourceQuota
+    listKind: ClusterResourceQuotaList
+    plural: clusterresourcequotas
+    shortNames:
+    - crq
+    singular: clusterresourcequota
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .status.namespaces[*].namespace
+      name: Namespaces
+      priority: 1
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ClusterResourceQuota is the Schema for the clusterresourcequotas API.
+          It extends the standard Kubernetes ResourceQuota by allowing it to be applied across multiple
+          namespaces that match a label selector.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ClusterResourceQuotaSpec defines the desired state of ClusterResourceQuota.
+            properties:
+              hard:
+                additionalProperties:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                  x-kubernetes-int-or-string: true
+                description: |-
+                  Hard is the set of desired hard limits for each named resource.
+                  For example:
+                  'pods': '10'
+                  'requests.cpu': '1'
+                  'requests.memory': 1Gi
+                type: object
+              namespaceSelector:
+                description: |-
+                  NamespaceSelector selects the namespaces to which this quota applies.
+                  This is specific to ClusterResourceQuota and allows quota limits to span across
+                  multiple namespaces that match the selector.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                type: object
+                x-kubernetes-map-type: atomic
+              scopeSelector:
+                description: |-
+                  ScopeSelector is also a collection of filters like scopes that must match each object tracked by a quota
+                  but expressed using ScopeSelectorOperator in combination with possible values.
+                  For example, to select objects where any container has a resource request that exceeds 100m CPU,
+                  you would use: scopeSelector.matchExpressions: [{operator: In, scopeName: PriorityClass, values: ['high']}]
+                properties:
+                  matchExpressions:
+                    description: A list of scope selector requirements by scope of
+                      the resources.
+                    items:
+                      description: |-
+                        A scoped-resource selector requirement is a selector that contains values, a scope name, and an operator
+                        that relates the scope name and values.
+                      properties:
+                        operator:
+                          description: |-
+                            Represents a scope's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists, DoesNotExist.
+                          type: string
+                        scopeName:
+                          description: The name of the scope that the selector applies
+                            to.
+                          type: string
+                        values:
+                          description: |-
+                            An array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty.
+                            This array is replaced during a strategic merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - operator
+                      - scopeName
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                type: object
+                x-kubernetes-map-type: atomic
+              scopes:
+                description: |-
+                  A collection of filters that must match each object tracked by a quota.
+                  If not specified, the quota matches all objects.
+                  Available scopes are:
+                  - Terminating: match pods where spec.activeDeadlineSeconds >= 0
+                  - NotTerminating: match pods where spec.activeDeadlineSeconds is nil
+                  - BestEffort: match pods that have best effort quality of service
+                  - NotBestEffort: match pods that do not have best effort quality of service
+                  - PriorityClass: match pods that have the specified priority class
+                  - CrossNamespacePodAffinity: match pods that have cross-namespace pod affinity terms
+                items:
+                  description: A ResourceQuotaScope defines a filter that must match
+                    each object tracked by a quota
+                  type: string
+                type: array
+            required:
+            - namespaceSelector
+            type: object
+          status:
+            description: ClusterResourceQuotaStatus defines the observed state of
+              ClusterResourceQuota.
+            properties:
+              namespaces:
+                description: Namespaces slices the usage by namespace
+                items:
+                  description: ResourceQuotaStatusByNamespace gives status for a particular
+                    namespace
+                  properties:
+                    namespace:
+                      description: Namespace the namespace this status applies to
+                      type: string
+                    status:
+                      description: Status indicates how many resources have been consumed
+                        by this namespace
+                      properties:
+                        hard:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: Hard is the set of enforced hard limits for
+                            each named resource.
+                          type: object
+                        used:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: Used is the current observed total usage of
+                            the resource in the namespace.
+                          type: object
+                      type: object
+                  required:
+                  - namespace
+                  - status
+                  type: object
+                type: array
+              total:
+                description: Total defines the actual enforced quota and its current
+                  usage across all namespaces
+                properties:
+                  hard:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: Hard is the set of enforced hard limits for each
+                      named resource.
+                    type: object
+                  used:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: Used is the current observed total usage of the resource
+                      in the namespace.
+                    type: object
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+{{- end -}}
