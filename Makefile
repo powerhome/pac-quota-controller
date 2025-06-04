@@ -276,7 +276,7 @@ generate-helm: ## Generate Helm chart using Kubebuilder plugin
 	@rm -rf charts/pac-quota-controller || true
 	@cp -r dist/chart charts/pac-quota-controller
 	@echo "Helm chart generated and copied to charts/pac-quota-controller"
-	@echo "Linitng generated Helm chart"
+	@echo "Linting generated Helm chart"
 	@make helm-lint
 	@echo "Updating Helm chart documentation"
 	@make helm-docs
