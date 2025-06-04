@@ -97,5 +97,3 @@ docker pull powerhome/pac-quota-controller:latest
 ```
 
 The CI/CD pipeline automatically builds and pushes Docker images to both registries when a new tag is pushed.
-
-See [DockerHub Integration Guide](./docs/dockerhub-integration.md) for details on setting up the required secrets.

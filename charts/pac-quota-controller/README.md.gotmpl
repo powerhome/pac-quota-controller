@@ -60,10 +60,6 @@ helm delete pac-quota-controller -n pac-quota-controller-system
 
 The command removes all the Kubernetes components associated with the chart and deletes the release.
 
-## Parameters
-
-{{ template "chart.valuesSection" . }}
-
 ## Usage
 
 Once installed, you can create a ClusterResourceQuota to limit resources across namespaces:
