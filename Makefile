@@ -273,8 +273,8 @@ generate-helm: ## Generate Helm chart using Kubebuilder plugin
 	kubebuilder edit --plugins=helm.kubebuilder.io/v1-alpha
 	@echo "Copying generated chart from dist/chart to charts directory..."
 	@mkdir -p charts
-	@rm -rf charts/pac-quota-controller || true
-	@cp -r dist/chart charts/pac-quota-controller
+	# Only copy the templates directory to respect default values and Chart.yaml
+	@cp -fr dist/chart/templates/* charts/pac-quota-controller/templates
 	@echo "Helm chart generated and copied to charts/pac-quota-controller"
 	@echo "Linting generated Helm chart"
 	@make helm-lint
@@ -293,7 +293,7 @@ helm-docs: ## Generate documentation for Helm chart
 	@helm-docs --chart-search-root=charts/
 
 .PHONY: helm-lint
-helm-lint: generate-helm ## Lint Helm chart
+helm-lint: ## Lint Helm chart
 	@echo "Linting Helm chart..."
 	@if ! command -v helm > /dev/null 2>&1; then \
 		echo "helm is not installed. Please install helm first."; \
