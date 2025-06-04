@@ -10,7 +10,7 @@ import (
 var setupLog = log.Log.WithName("setup.tls")
 
 // ConfigureTLS returns TLS options based on configuration
-func ConfigureTLS(config *config.Config) []func(*tls.Config) {
+func ConfigureTLS(cfg *config.Config) []func(*tls.Config) {
 	var tlsOpts []func(*tls.Config)
 
 	// If the enable-http2 flag is false (the default), http/2 should be disabled
@@ -24,7 +24,7 @@ func ConfigureTLS(config *config.Config) []func(*tls.Config) {
 		c.NextProtos = []string{"http/1.1"}
 	}
 
-	if !config.EnableHTTP2 {
+	if !cfg.EnableHTTP2 {
 		tlsOpts = append(tlsOpts, disableHTTP2)
 	}
 

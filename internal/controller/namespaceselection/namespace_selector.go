@@ -10,10 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
-
-var log = logf.Log.WithName("namespace_selector")
 
 // NamespaceSelector is an interface for selecting namespaces based on criteria
 type NamespaceSelector interface {
@@ -31,14 +28,14 @@ type LabelBasedNamespaceSelector struct {
 }
 
 // NewLabelBasedNamespaceSelector creates a new namespace selector based on label selector
-func NewLabelBasedNamespaceSelector(client client.Client, labelSelector *metav1.LabelSelector) (*LabelBasedNamespaceSelector, error) {
+func NewLabelBasedNamespaceSelector(k8sClient client.Client, labelSelector *metav1.LabelSelector) (*LabelBasedNamespaceSelector, error) {
 	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert label selector to selector: %w", err)
 	}
 
 	return &LabelBasedNamespaceSelector{
-		client:         client,
+		client:         k8sClient,
 		labelSelector:  labelSelector,
 		cachedSelector: selector,
 	}, nil

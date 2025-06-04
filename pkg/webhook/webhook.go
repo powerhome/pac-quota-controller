@@ -14,21 +14,21 @@ import (
 var setupLog = log.Log.WithName("setup.webhook")
 
 // SetupWebhookServer configures the webhook server
-func SetupWebhookServer(config *config.Config, tlsOpts []func(*tls.Config)) (webhook.Server, *certwatcher.CertWatcher) {
+func SetupWebhookServer(cfg *config.Config, tlsOpts []func(*tls.Config)) (webhook.Server, *certwatcher.CertWatcher) {
 	// Start with base TLS options
 	webhookTLSOpts := tlsOpts
 	var webhookCertWatcher *certwatcher.CertWatcher
 
-	if len(config.WebhookCertPath) > 0 {
+	if len(cfg.WebhookCertPath) > 0 {
 		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
-			"webhook-cert-path", config.WebhookCertPath,
-			"webhook-cert-name", config.WebhookCertName,
-			"webhook-cert-key", config.WebhookCertKey)
+			"webhook-cert-path", cfg.WebhookCertPath,
+			"webhook-cert-name", cfg.WebhookCertName,
+			"webhook-cert-key", cfg.WebhookCertKey)
 
 		var err error
 		webhookCertWatcher, err = certwatcher.New(
-			filepath.Join(config.WebhookCertPath, config.WebhookCertName),
-			filepath.Join(config.WebhookCertPath, config.WebhookCertKey),
+			filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertName),
+			filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertKey),
 		)
 		if err != nil {
 			setupLog.Error(err, "Failed to initialize webhook certificate watcher")

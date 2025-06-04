@@ -32,11 +32,11 @@ type LabelBasedNamespaceSelector struct {
 
 // NewLabelBasedNamespaceSelector creates a new namespace selector based on labels
 func NewLabelBasedNamespaceSelector(
-	client client.Client,
+	k8sClient client.Client,
 	labelSelector *metav1.LabelSelector,
 ) *LabelBasedNamespaceSelector {
 	return &LabelBasedNamespaceSelector{
-		client:        client,
+		client:        k8sClient,
 		labelSelector: labelSelector,
 	}
 }
@@ -119,7 +119,7 @@ func (s *LabelBasedNamespaceSelector) getNamespacesByLabelSelector(ctx context.C
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
 
-	var result []string
+	result := make([]string, 0, len(namespaceList.Items))
 	for _, ns := range namespaceList.Items {
 		if ns.Status.Phase == corev1.NamespaceTerminating {
 			log.Info("Skipping namespace in terminating state", "namespace", ns.Name)

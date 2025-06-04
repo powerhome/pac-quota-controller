@@ -15,18 +15,21 @@ import (
 var setupLog = log.Log.WithName("setup.metrics")
 
 // SetupMetricsServer configures the metrics server options
-func SetupMetricsServer(config *config.Config, tlsOpts []func(*tls.Config)) (metricsserver.Options, *certwatcher.CertWatcher) {
+func SetupMetricsServer(
+	cfg *config.Config,
+	tlsOpts []func(*tls.Config),
+) (metricsserver.Options, *certwatcher.CertWatcher) {
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
 	// More info:
 	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/metrics/server
 	// - https://book.kubebuilder.io/reference/metrics.html
 	metricsServerOptions := metricsserver.Options{
-		BindAddress:   config.MetricsAddr,
-		SecureServing: config.SecureMetrics,
+		BindAddress:   cfg.MetricsAddr,
+		SecureServing: cfg.SecureMetrics,
 		TLSOpts:       tlsOpts,
 	}
 
-	if config.SecureMetrics {
+	if cfg.SecureMetrics {
 		// FilterProvider is used to protect the metrics endpoint with authn/authz.
 		// These configurations ensure that only authorized users and service accounts
 		// can access the metrics endpoint. The RBAC are configured in 'config/rbac/kustomization.yaml'. More info:
@@ -38,16 +41,16 @@ func SetupMetricsServer(config *config.Config, tlsOpts []func(*tls.Config)) (met
 	// generate self-signed certificates for the metrics server.
 	var metricsCertWatcher *certwatcher.CertWatcher
 
-	if len(config.MetricsCertPath) > 0 {
+	if len(cfg.MetricsCertPath) > 0 {
 		setupLog.Info("Initializing metrics certificate watcher using provided certificates",
-			"metrics-cert-path", config.MetricsCertPath,
-			"metrics-cert-name", config.MetricsCertName,
-			"metrics-cert-key", config.MetricsCertKey)
+			"metrics-cert-path", cfg.MetricsCertPath,
+			"metrics-cert-name", cfg.MetricsCertName,
+			"metrics-cert-key", cfg.MetricsCertKey)
 
 		var err error
 		metricsCertWatcher, err = certwatcher.New(
-			filepath.Join(config.MetricsCertPath, config.MetricsCertName),
-			filepath.Join(config.MetricsCertPath, config.MetricsCertKey),
+			filepath.Join(cfg.MetricsCertPath, cfg.MetricsCertName),
+			filepath.Join(cfg.MetricsCertPath, cfg.MetricsCertKey),
 		)
 		if err != nil {
 			setupLog.Error(err, "failed to initialize metrics certificate watcher")

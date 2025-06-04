@@ -63,7 +63,10 @@ func Run(cmd *exec.Cmd) (string, error) {
 
 	err := cmd.Run()
 	if err != nil {
-		return stderr.String(), fmt.Errorf("failed to run command %v: %w\nStdout:\n%s\nStderr:\n%s", cmd.Args, err, stdout.String(), stderr.String())
+		return stderr.String(), fmt.Errorf(
+			"failed to run command %v: %w\nStdout:\n%s\nStderr:\n%s",
+			cmd.Args, err, stdout.String(), stderr.String(),
+		)
 	}
 
 	return stdout.String(), nil

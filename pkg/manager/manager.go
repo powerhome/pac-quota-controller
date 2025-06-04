@@ -30,26 +30,23 @@ func InitScheme() *k8sruntime.Scheme {
 }
 
 // SetupManager creates and configures a controller manager
-func SetupManager(cfg *config.Config, scheme *k8sruntime.Scheme, metricsOpts server.Options, webhookServer webhook.Server) (ctrl.Manager, error) {
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme:                 scheme,
-		Metrics:                metricsOpts,
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: cfg.ProbeAddr,
-		LeaderElection:         cfg.EnableLeaderElection,
-		LeaderElectionID:       "81307769.powerapp.cloud",
-		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
-		// when the Manager ends. This requires the binary to immediately end when the
-		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
-		// speeds up voluntary leader transitions as the new leader don't have to wait
-		// LeaseDuration time first.
-		//
-		// In the default scaffold provided, the program ends immediately after
-		// the manager stops, so would be fine to enable this option. However,
-		// if you are doing or is intended to do any operation such as perform cleanups
-		// after the manager stops then its usage might be unsafe.
-		// LeaderElectionReleaseOnCancel: true,
-	})
+func SetupManager(
+	cfg *config.Config,
+	scheme *k8sruntime.Scheme,
+	metricsOpts server.Options,
+	webhookServer webhook.Server,
+) (ctrl.Manager, error) {
+	mgr, err := ctrl.NewManager(
+		ctrl.GetConfigOrDie(),
+		ctrl.Options{
+			Scheme:                 scheme,
+			Metrics:                metricsOpts,
+			WebhookServer:          webhookServer,
+			HealthProbeBindAddress: cfg.ProbeAddr,
+			LeaderElection:         cfg.EnableLeaderElection,
+			LeaderElectionID:       "81307769.powerapp.cloud",
+		},
+	)
 
 	if err != nil {
 		return nil, err

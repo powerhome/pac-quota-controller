@@ -114,7 +114,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 
 // getSelectedNamespaces returns a list of namespaces that match the selection criteria
 func (r *ClusterResourceQuotaReconciler) getSelectedNamespaces(ctx context.Context, crq *quotav1alpha1.ClusterResourceQuota) ([]string, error) {
-	nsSelector, err := r.createNamespaceSelector(ctx, crq)
+	nsSelector, err := r.createNamespaceSelector(crq)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +123,7 @@ func (r *ClusterResourceQuotaReconciler) getSelectedNamespaces(ctx context.Conte
 }
 
 // createNamespaceSelector creates a namespace selector from the ClusterResourceQuota's spec
-func (r *ClusterResourceQuotaReconciler) createNamespaceSelector(ctx context.Context, crq *quotav1alpha1.ClusterResourceQuota) (*namespaceselection.LabelBasedNamespaceSelector, error) {
+func (r *ClusterResourceQuotaReconciler) createNamespaceSelector(crq *quotav1alpha1.ClusterResourceQuota) (*namespaceselection.LabelBasedNamespaceSelector, error) {
 	selector, err := namespaceselection.NewLabelBasedNamespaceSelector(r.Client, crq.Spec.NamespaceSelector)
 	if err != nil {
 		return nil, err
@@ -212,7 +212,7 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Cont
 
 	// List all ClusterResourceQuotas
 	quotaList := &quotav1alpha1.ClusterResourceQuotaList{}
-	if err := r.Client.List(ctx, quotaList); err != nil {
+	if err := r.List(ctx, quotaList); err != nil {
 		logger.Error(err, "Failed to list ClusterResourceQuotas")
 		return nil
 	}

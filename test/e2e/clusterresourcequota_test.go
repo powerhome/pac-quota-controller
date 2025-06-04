@@ -106,7 +106,9 @@ var _ = Describe("ClusterResourceQuota", Ordered, func() {
 			// Check that the specific resource limits were applied
 			By("Checking resource limits")
 			Eventually(func() string {
-				cmd = exec.Command("kubectl", "get", "resourcequota", "managed-quota", "-n", testNamespace, "-o", "jsonpath={.spec.hard.pods}")
+				cmd = exec.Command(
+					"kubectl", "get", "resourcequota", "managed-quota", "-n", testNamespace, "-o", "jsonpath={.spec.hard.pods}",
+				)
 				output, err := utils.Run(cmd)
 				if err != nil {
 					return ""

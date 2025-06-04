@@ -28,19 +28,45 @@ func TestInitConfig(t *testing.T) {
 	assert.Equal(t, "json", cfg.LogFormat)
 
 	// Test with environment variables
-	os.Setenv("METRICS_BIND_ADDRESS", ":8443")
-	os.Setenv("HEALTH_PROBE_BIND_ADDRESS", ":9090")
-	os.Setenv("LEADER_ELECT", "true")
-	os.Setenv("METRICS_SECURE", "false")
-	os.Setenv("WEBHOOK_CERT_PATH", "/certs/webhook")
-	os.Setenv("WEBHOOK_CERT_NAME", "cert.pem")
-	os.Setenv("WEBHOOK_CERT_KEY", "key.pem")
-	os.Setenv("METRICS_CERT_PATH", "/certs/metrics")
-	os.Setenv("METRICS_CERT_NAME", "metrics.crt")
-	os.Setenv("METRICS_CERT_KEY", "metrics.key")
-	os.Setenv("ENABLE_HTTP2", "true")
-	os.Setenv("LOG_LEVEL", "debug")
-	os.Setenv("LOG_FORMAT", "console")
+	if err := os.Setenv("METRICS_BIND_ADDRESS", ":8443"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("HEALTH_PROBE_BIND_ADDRESS", ":9090"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("LEADER_ELECT", "true"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("METRICS_SECURE", "false"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("WEBHOOK_CERT_PATH", "/certs/webhook"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("WEBHOOK_CERT_NAME", "cert.pem"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("WEBHOOK_CERT_KEY", "key.pem"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("METRICS_CERT_PATH", "/certs/metrics"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("METRICS_CERT_NAME", "metrics.crt"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("METRICS_CERT_KEY", "metrics.key"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("ENABLE_HTTP2", "true"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("LOG_LEVEL", "debug"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
+	if err := os.Setenv("LOG_FORMAT", "console"); err != nil {
+		t.Fatalf("failed to set env: %v", err)
+	}
 
 	// Reset viper to pick up the new environment variables
 	viper.Reset()
@@ -62,19 +88,45 @@ func TestInitConfig(t *testing.T) {
 	assert.Equal(t, "console", cfg.LogFormat)
 
 	// Clean up
-	os.Unsetenv("METRICS_BIND_ADDRESS")
-	os.Unsetenv("HEALTH_PROBE_BIND_ADDRESS")
-	os.Unsetenv("LEADER_ELECT")
-	os.Unsetenv("METRICS_SECURE")
-	os.Unsetenv("WEBHOOK_CERT_PATH")
-	os.Unsetenv("WEBHOOK_CERT_NAME")
-	os.Unsetenv("WEBHOOK_CERT_KEY")
-	os.Unsetenv("METRICS_CERT_PATH")
-	os.Unsetenv("METRICS_CERT_NAME")
-	os.Unsetenv("METRICS_CERT_KEY")
-	os.Unsetenv("ENABLE_HTTP2")
-	os.Unsetenv("LOG_LEVEL")
-	os.Unsetenv("LOG_FORMAT")
+	if err := os.Unsetenv("METRICS_BIND_ADDRESS"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("HEALTH_PROBE_BIND_ADDRESS"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("LEADER_ELECT"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("METRICS_SECURE"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("WEBHOOK_CERT_PATH"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("WEBHOOK_CERT_NAME"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("WEBHOOK_CERT_KEY"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("METRICS_CERT_PATH"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("METRICS_CERT_NAME"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("METRICS_CERT_KEY"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("ENABLE_HTTP2"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("LOG_LEVEL"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
+	if err := os.Unsetenv("LOG_FORMAT"); err != nil {
+		t.Fatalf("failed to unset env: %v", err)
+	}
 }
 
 func TestSetupFlags(t *testing.T) {

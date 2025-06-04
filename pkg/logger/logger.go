@@ -12,10 +12,10 @@ import (
 )
 
 // SetupLogger configures the zap logger based on provided configuration
-func SetupLogger(config *config.Config) *zap.Logger {
+func SetupLogger(cfg *config.Config) *zap.Logger {
 	// Set the log level
 	var level zapcore.Level
-	switch strings.ToLower(config.LogLevel) {
+	switch strings.ToLower(cfg.LogLevel) {
 	case "debug":
 		level = zapcore.DebugLevel
 	case "info":
@@ -35,7 +35,7 @@ func SetupLogger(config *config.Config) *zap.Logger {
 
 	// Configure the encoder based on the format
 	var encoder zapcore.Encoder
-	if config.LogFormat == "console" {
+	if cfg.LogFormat == "console" {
 		encoder = zapcore.NewConsoleEncoder(encoderConfig)
 	} else {
 		encoder = zapcore.NewJSONEncoder(encoderConfig)
