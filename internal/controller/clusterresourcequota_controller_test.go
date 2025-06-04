@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -105,6 +106,107 @@ var _ = Describe("ClusterResourceQuota Controller", func() {
 			Expect(fetchedResource.Name).To(Equal(resourceName))
 			// Note: Other fields would be checked in a full implementation
 		})
+
+		It("should correctly identify and track selected namespaces", func() {
+			By("Creating test namespaces with labels")
+
+			// Create test namespaces with different labels
+			testNamespace1 := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-ns-1",
+					Labels: map[string]string{
+						"quota": "limited",
+						"team":  "frontend",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, testNamespace1)).To(Succeed())
+
+			testNamespace2 := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-ns-2",
+					Labels: map[string]string{
+						"quota": "limited",
+						"team":  "backend",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, testNamespace2)).To(Succeed())
+
+			testNamespace3 := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-ns-3",
+					Labels: map[string]string{
+						"quota": "unlimited",
+						"team":  "data",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, testNamespace3)).To(Succeed())
+
+			defer func() {
+				By("Cleaning up test namespaces")
+				Expect(k8sClient.Delete(ctx, testNamespace1)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, testNamespace2)).To(Succeed())
+				Expect(k8sClient.Delete(ctx, testNamespace3)).To(Succeed())
+			}()
+
+			By("Creating a ClusterResourceQuota with label-based namespace selection")
+			testQuota := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-namespace-selector",
+				},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						"pods": resource.MustParse("10"),
+					},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"quota": "limited",
+						},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, testQuota)).To(Succeed())
+
+			defer func() {
+				By("Cleaning up test quota")
+				Expect(k8sClient.Delete(ctx, testQuota)).To(Succeed())
+			}()
+
+			By("Reconciling the ClusterResourceQuota")
+			controllerReconciler := &ClusterResourceQuotaReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-namespace-selector"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking if the namespaces are recorded in the annotation")
+			updatedQuota := &quotav1alpha1.ClusterResourceQuota{}
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: "test-namespace-selector"}, updatedQuota)
+				if err != nil {
+					return false
+				}
+
+				namespaces := []string{}
+				if updatedQuota.Annotations != nil {
+					nsString, exists := updatedQuota.Annotations["quota.powerapp.cloud/namespaces"]
+					if exists {
+						namespaces = strings.Split(nsString, ",")
+					}
+				}
+
+				// Should contain both test-ns-1 and test-ns-2, but not test-ns-3
+				return len(namespaces) == 2 &&
+					(contains(namespaces, "test-ns-1") && contains(namespaces, "test-ns-2"))
+			}, "30s", "1s").Should(BeTrue())
+		})
 		It("should handle ScopeSelector field", func() {
 			By("Creating a ClusterResourceQuota with ScopeSelector")
 			resourceWithSelector := &quotav1alpha1.ClusterResourceQuota{
@@ -150,3 +252,13 @@ var _ = Describe("ClusterResourceQuota Controller", func() {
 		})
 	})
 })
+
+// contains checks if a string is in a slice
+func contains(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}

@@ -19,6 +19,7 @@ package e2e
 import (
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -39,13 +40,12 @@ var _ = Describe("ClusterResourceQuota", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
 		By("Creating test namespace with required labels")
-		cmd = exec.Command("kubectl", "create", "ns", testNamespace)
+		projectDir, err := utils.GetProjectDir()
+		Expect(err).NotTo(HaveOccurred(), "Failed to get project directory")
+
+		cmd = exec.Command("kubectl", "apply", "-f", filepath.Join(projectDir, "test/fixtures/test-namespace.yaml"))
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
-
-		cmd = exec.Command("kubectl", "label", "ns", testNamespace, "quota=limited")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to label test namespace")
 	})
 
 	AfterAll(func() {
@@ -81,53 +81,42 @@ var _ = Describe("ClusterResourceQuota", Ordered, func() {
 	Context("Basic functionality", func() {
 		It("should create a ClusterResourceQuota", func() {
 			By("Creating the ClusterResourceQuota custom resource")
-			crqManifest := `
-apiVersion: quota.powerapp.cloud/v1alpha1
-kind: ClusterResourceQuota
-metadata:
-  name: test-cluster-quota
-spec:
-  hard:
-    pods: "10"
-    requests.cpu: "1"
-    requests.memory: 1Gi
-    limits.cpu: "2"
-    limits.memory: 2Gi
-  namespaceSelector:
-    matchLabels:
-      quota: limited
-  scopes:
-  - NotTerminating
-  scopeSelector:
-    matchExpressions:
-    - operator: In
-      scopeName: PriorityClass
-      values:
-      - high
-`
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(crqManifest)
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to apply ClusterResourceQuota")
+			projectDir, err := utils.GetProjectDir()
+			Expect(err).NotTo(HaveOccurred(), "Failed to get project directory")
 
-			By("Verifying the ClusterResourceQuota was created successfully")
-			Eventually(func() error {
-				cmd := exec.Command("kubectl", "get", "clusterresourcequota", quotaName, "-o", "jsonpath={.metadata.name}")
-				_, err := utils.Run(cmd)
-				return err
-			}, time.Minute, time.Second).Should(Succeed(), "Failed to get ClusterResourceQuota")
+			cmd := exec.Command("kubectl", "apply", "-f", filepath.Join(projectDir, "test/fixtures/test-cluster-quota.yaml"))
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create ClusterResourceQuota")
 
-			By("Checking the resource has the expected scopes and scopeSelector")
-			Eventually(func() (string, error) {
-				cmd := exec.Command("kubectl", "get", "clusterresourcequota", quotaName, "-o", "jsonpath={.spec.scopes[0]}")
-				return utils.Run(cmd)
-			}, time.Minute, time.Second).Should(Equal("NotTerminating"), "Failed to verify scopes")
+			By("Starting the controller")
+			cmd = exec.Command("make", "run")
+			_, err = utils.StartCmd(cmd)
+			Expect(err).NotTo(HaveOccurred())
 
-			Eventually(func() (string, error) {
-				cmd := exec.Command("kubectl", "get", "clusterresourcequota", quotaName,
-					"-o", "jsonpath={.spec.scopeSelector.matchExpressions[0].scopeName}")
-				return utils.Run(cmd)
-			}, time.Minute, time.Second).Should(Equal("PriorityClass"), "Failed to verify scopeSelector")
+			// Allow time for the controller to reconcile
+			time.Sleep(2 * time.Second)
+
+			By("Verifying that ResourceQuota was created in the test namespace")
+			Eventually(func() bool {
+				cmd = exec.Command("kubectl", "get", "resourcequota", "managed-quota", "-n", testNamespace)
+				output, err := utils.Run(cmd)
+				return err == nil && strings.Contains(output, "managed-quota")
+			}, "5s", "1s").Should(BeTrue())
+
+			// Check that the specific resource limits were applied
+			By("Checking resource limits")
+			Eventually(func() string {
+				cmd = exec.Command("kubectl", "get", "resourcequota", "managed-quota", "-n", testNamespace, "-o", "jsonpath={.spec.hard.pods}")
+				output, err := utils.Run(cmd)
+				if err != nil {
+					return ""
+				}
+				return output
+			}, "5s", "1s").Should(Equal("5"))
+
+			// Stop the controller
+			By("Stopping the controller")
+			utils.StopCommand()
 		})
 	})
 })

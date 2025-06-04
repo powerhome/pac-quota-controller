@@ -63,7 +63,8 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
-        image: controller:latest
+        image: powerhome/pac-quota-controller:latest
+        pullPolicy: IfNotPresent
         name: manager
         ports: []
         securityContext:
