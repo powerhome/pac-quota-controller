@@ -1,0 +1,61 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    branches: [ main, master ]
+  push:
+    branches: [ main, master ]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KIND_CLUSTER: pac-quota-controller-test-e2e
+      IMG: pac-quota-controller:e2e
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Set up Kind
+        uses: helm/kind-action@v1.9.0
+        with:
+          cluster_name: ${{ env.KIND_CLUSTER }}
+
+      - name: Install kustomize
+        run: |
+          curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash
+          sudo mv kustomize /usr/local/bin/
+
+      - name: Install kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Build controller image
+        run: |
+          docker build -t $IMG .
+          kind load docker-image $IMG --name $KIND_CLUSTER
+
+      - name: Deploy controller to Kind (Kustomize)
+        run: |
+          cd config/manager && kustomize edit set image powerhome/pac-quota-controller=$IMG
+          kustomize build config/default | kubectl apply -f -
+          kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager
+
+      - name: Run e2e tests
+        run: |
+          go test -v -ginkgo.v ./test/e2e/
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          kubectl get pods -A
+          kubectl describe pods -n pac-quota-controller-system
+          kubectl logs -l control-plane=controller-manager -n pac-quota-controller-system || true

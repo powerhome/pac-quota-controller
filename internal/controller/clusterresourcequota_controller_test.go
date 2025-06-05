@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,18 +28,46 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"slices"
+
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
 var _ = Describe("ClusterResourceQuota Controller", func() {
+	var testQuota *quotav1alpha1.ClusterResourceQuota
+	ctx := context.Background()
+
+	BeforeAll(func() {
+		By("Creating a shared ClusterResourceQuota for all tests")
+		testQuota = &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-namespace-selector",
+			},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				Hard: quotav1alpha1.ResourceList{
+					"pods": resource.MustParse("10"),
+				},
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"quota": "limited",
+					},
+				},
+			},
+		}
+		_ = k8sClient.Delete(ctx, testQuota) // ensure clean slate
+		Expect(k8sClient.Create(ctx, testQuota)).To(Succeed())
+	})
+
+	AfterAll(func() {
+		By("Cleaning up shared ClusterResourceQuota after all tests")
+		_ = k8sClient.Delete(ctx, testQuota)
+	})
+
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
-		ctx := context.Background()
-
 		typeNamespacedName := types.NamespacedName{
 			Name: resourceName,
-			// ClusterResourceQuota is cluster-scoped, so no namespace
 		}
 		clusterresourcequota := &quotav1alpha1.ClusterResourceQuota{}
 
@@ -51,7 +78,6 @@ var _ = Describe("ClusterResourceQuota Controller", func() {
 				resource := &quotav1alpha1.ClusterResourceQuota{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: resourceName,
-						// Note: ClusterResourceQuota is cluster-scoped, so no namespace
 					},
 					Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 						Hard: quotav1alpha1.ResourceList{
@@ -151,29 +177,7 @@ var _ = Describe("ClusterResourceQuota Controller", func() {
 				Expect(k8sClient.Delete(ctx, testNamespace3)).To(Succeed())
 			}()
 
-			By("Creating a ClusterResourceQuota with label-based namespace selection")
-			testQuota := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-namespace-selector",
-				},
-				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					Hard: quotav1alpha1.ResourceList{
-						"pods": resource.MustParse("10"),
-					},
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"quota": "limited",
-						},
-					},
-				},
-			}
-
 			Expect(k8sClient.Create(ctx, testQuota)).To(Succeed())
-
-			defer func() {
-				By("Cleaning up test quota")
-				Expect(k8sClient.Delete(ctx, testQuota)).To(Succeed())
-			}()
 
 			By("Reconciling the ClusterResourceQuota")
 			controllerReconciler := &ClusterResourceQuotaReconciler{
@@ -186,7 +190,7 @@ var _ = Describe("ClusterResourceQuota Controller", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Checking if the namespaces are recorded in the annotation")
+			By("Checking if the namespaces are recorded in the status")
 			updatedQuota := &quotav1alpha1.ClusterResourceQuota{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx, types.NamespacedName{Name: "test-namespace-selector"}, updatedQuota)
@@ -194,19 +198,51 @@ var _ = Describe("ClusterResourceQuota Controller", func() {
 					return false
 				}
 
-				namespaces := []string{}
-				if updatedQuota.Annotations != nil {
-					nsString, exists := updatedQuota.Annotations["quota.powerapp.cloud/namespaces"]
-					if exists {
-						namespaces = strings.Split(nsString, ",")
-					}
-				}
+				namespaces := getNamespaceNamesFromStatus(updatedQuota.Status.Namespaces)
 
 				// Should contain both test-ns-1 and test-ns-2, but not test-ns-3
 				return len(namespaces) == 2 &&
-					(contains(namespaces, "test-ns-1") && contains(namespaces, "test-ns-2"))
+					(slices.Contains(namespaces, "test-ns-1") && slices.Contains(namespaces, "test-ns-2"))
 			}, "30s", "1s").Should(BeTrue())
 		})
+		It("should not select namespaces that do not match the selector", func() {
+			By("Creating a namespace with non-matching labels")
+			nonMatchingNS := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-ns-nomatch",
+					Labels: map[string]string{
+						"quota": "unlimited",
+						"team":  "infra",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, nonMatchingNS)).To(Succeed())
+			defer func() { _ = k8sClient.Delete(ctx, nonMatchingNS) }()
+
+			By("Reconciling the ClusterResourceQuota")
+			controllerReconciler := &ClusterResourceQuotaReconciler{
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
+			}
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "test-namespace-selector"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking that the non-matching namespace is not recorded in the status")
+			updatedQuota := &quotav1alpha1.ClusterResourceQuota{}
+			Consistently(func() bool {
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: "test-namespace-selector"}, updatedQuota)
+				if err != nil {
+					return false
+				}
+				namespaces := getNamespaceNamesFromStatus(updatedQuota.Status.Namespaces)
+				// Debug: print the namespaces for troubleshooting
+				GinkgoWriter.Printf("Current namespaces in status: %v\n", namespaces)
+				return !slices.Contains(namespaces, "test-ns-nomatch")
+			}, "5s", "1s").Should(BeTrue())
+		})
+
 		It("should handle ScopeSelector field", func() {
 			By("Creating a ClusterResourceQuota with ScopeSelector")
 			resourceWithSelector := &quotav1alpha1.ClusterResourceQuota{
@@ -253,12 +289,11 @@ var _ = Describe("ClusterResourceQuota Controller", func() {
 	})
 })
 
-// contains checks if a string is in a slice
-func contains(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
+// getNamespaceNamesFromStatus extracts namespace names from []ResourceQuotaStatusByNamespace
+func getNamespaceNamesFromStatus(statuses []quotav1alpha1.ResourceQuotaStatusByNamespace) []string {
+	names := make([]string, 0, len(statuses))
+	for _, nsStatus := range statuses {
+		names = append(names, nsStatus.Namespace)
 	}
-	return false
+	return names
 }
