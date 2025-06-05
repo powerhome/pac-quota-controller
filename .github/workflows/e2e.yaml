@@ -56,6 +56,4 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: |
-          kubectl get pods -A
-          kubectl describe pods -n pac-quota-controller-system
           kubectl logs -l control-plane=controller-manager -n pac-quota-controller-system || true
