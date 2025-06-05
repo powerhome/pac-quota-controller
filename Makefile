@@ -147,7 +147,7 @@ kind-deploy: kind-up kind-build ## Deploy controller to local Kind cluster
 			--set image.pullPolicy=Never
 	@echo "Waiting for controller to be ready..."
 	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager || true
-	@echo "Controller deployed successfully!"
+	@echo "Controller deploy finished."
 
 .PHONY: kind-sample
 kind-sample: ## Deploy a sample ClusterResourceQuota to test the controller
