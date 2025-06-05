@@ -1,0 +1,45 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  - namespaces
+  - persistentvolumeclaims
+  - pods
+  - secrets
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - quota.powerapp.cloud
+  resources:
+  - clusterresourcequotas
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - quota.powerapp.cloud
+  resources:
+  - clusterresourcequotas/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - quota.powerapp.cloud
+  resources:
+  - clusterresourcequotas/status
+  verbs:
+  - get
+  - patch
+  - update
