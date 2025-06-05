@@ -44,7 +44,7 @@ jobs:
 
       - name: Lint Helm Chart
         run: |
-          helm lint ./charts
+          helm lint ./charts/pac-quota-controller
 
 # TODO: Uncomment if cert-manager is enabled
 #      - name: Install cert-manager via Helm
