@@ -44,7 +44,6 @@ type ClusterResourceQuotaReconciler struct {
 // +kubebuilder:rbac:groups=quota.powerapp.cloud,resources=clusterresourcequotas/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=quota.powerapp.cloud,resources=clusterresourcequotas/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=resourcequotas,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
