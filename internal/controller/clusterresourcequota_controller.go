@@ -169,7 +169,7 @@ func determineNamespaceChanges(previous, current []string) (added, removed []str
 			removed = append(removed, ns)
 		}
 	}
-	// Sort the results for consistency accross reconciliations
+	// Sort the results for consistency across reconciliations
 	sort.Strings(added)
 	sort.Strings(removed)
 
