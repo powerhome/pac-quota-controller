@@ -38,19 +38,9 @@ jobs:
           chmod +x kubectl
           sudo mv kubectl /usr/local/bin/
 
-      - name: Build controller image
-        run: |
-          docker build -t powerhome/pac-quota-controller:latest .
-          kind load docker-image powerhome/pac-quota-controller:latest --name $KIND_CLUSTER
-
-      - name: Deploy controller to Kind (Kustomize)
-        run: |
-          make kind-deploy
-          kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager
-
       - name: Run e2e tests
         run: |
-          go test -v -ginkgo.v ./test/e2e/
+          make test-e2e
 
       - name: Dump logs on failure
         if: failure()
