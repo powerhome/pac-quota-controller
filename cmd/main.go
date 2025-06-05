@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -175,6 +176,29 @@ func setupLogger(config *Config) *zap.Logger {
 
 	// Create the logger
 	return zap.New(core)
+}
+
+// Build information. Populated at build-time by GoReleaser.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+	builtBy = "unknown"
+)
+
+func newVersionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("Version:\t%s\n", version)
+			fmt.Printf("Git Commit:\t%s\n", commit)
+			fmt.Printf("Build Date:\t%s\n", date)
+			fmt.Printf("Built By:\t%s\n", builtBy)
+			fmt.Printf("Go Version:\t%s\n", runtime.Version())
+			fmt.Printf("Platform:\t%s/%s\n", runtime.GOOS, runtime.GOARCH)
+		},
+	}
 }
 
 // nolint:gocyclo
