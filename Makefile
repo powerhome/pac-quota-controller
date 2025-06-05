@@ -59,7 +59,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet setup-envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $(shell go list ./... | grep -v /e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 # TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
 # The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
@@ -323,8 +323,8 @@ generate-helm: ## Generate Helm chart using Kubebuilder plugin
 	kubebuilder edit --plugins=helm.kubebuilder.io/v1-alpha
 	@echo "Copying generated chart from dist/chart to charts directory..."
 	@mkdir -p charts
-	@rm -rf charts/pac-quota-controller || true
-	@cp -r dist/chart charts/pac-quota-controller
+	# Only copy the templates directory to respect default values and Chart.yaml
+	@cp -fr dist/chart/templates/* charts/pac-quota-controller/templates
 	@echo "Helm chart generated and copied to charts/pac-quota-controller"
 	@echo "Linting generated Helm chart"
 	@make helm-lint

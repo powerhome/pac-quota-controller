@@ -72,6 +72,7 @@ func main() {
 
 			// Create controller manager
 			mgr, err := manager.SetupManager(cfg, scheme, metricsOpts, webhookServer)
+
 			if err != nil {
 				setupLog.Error(err, "unable to start manager")
 				os.Exit(1)

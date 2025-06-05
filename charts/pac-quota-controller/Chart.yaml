@@ -1,7 +1,20 @@
 apiVersion: v2
 name: pac-quota-controller
-description: A Helm chart to distribute the project pac-quota-controller
+description: A Helm chart for PAC Quota Controller - Managing cluster resource quotas across namespaces
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-icon: "https://example.com/icon.png"
+maintainers:
+  - name: PowerHome
+    url: https://github.com/powerhome
+home: https://github.com/powerhome/pac-quota-controller
+sources:
+  - https://github.com/powerhome/pac-quota-controller
+keywords:
+  - kubernetes
+  - quota
+  - resource-management
+annotations:
+  artifacthub.io/images: |
+    - name: pac-quota-controller
+      image: powerhome/pac-quota-controller:latest
