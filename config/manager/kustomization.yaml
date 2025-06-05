@@ -2,7 +2,9 @@ resources:
 - manager.yaml
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+patchesStrategicMerge:
+- kind-imagepullpolicy-patch.yaml
 images:
 - name: controller
-  newName: example.com/pac-quota-controller
-  newTag: v0.0.1
+  newName: powerhome/pac-quota-controller
+  newTag: latest

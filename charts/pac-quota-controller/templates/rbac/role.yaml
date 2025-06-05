@@ -21,18 +21,6 @@ rules:
   - list
   - watch
 - apiGroups:
-  - ""
-  resources:
-  - resourcequotas
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
   - quota.powerapp.cloud
   resources:
   - clusterresourcequotas
