@@ -4,7 +4,7 @@ controllerManager:
   container:
     image:
       repository: powerhome/pac-quota-controller
-      tag: "{{ .Chart.AppVersion }}"
+      tag: latest
       pullPolicy: IfNotPresent
     args:
       - "--leader-elect"
