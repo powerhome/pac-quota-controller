@@ -67,7 +67,10 @@ var _ = Describe("ClusterResourceQuota", Ordered, func() {
 
 			By("Verifying that the status field is updated with matching namespaces")
 			Eventually(func() string {
-				cmd = exec.Command("kubectl", "get", "clusterresourcequota", quotaName, "-o", "jsonpath={.status.namespaces[*].namespace}")
+				cmd = exec.Command(
+					"kubectl", "get", "clusterresourcequota", quotaName,
+					"-o", "jsonpath={.status.namespaces[*].namespace}",
+				)
 				out, _ := utils.Run(cmd)
 				return out
 			}, "10s", "1s").Should(ContainSubstring(testNamespace))

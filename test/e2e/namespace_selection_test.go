@@ -27,8 +27,11 @@ import (
 	"github.com/powerhome/pac-quota-controller/test/utils"
 )
 
-func crqStatusNamespaces(crqName string) []string {
-	cmd := exec.Command("kubectl", "get", "clusterresourcequota", crqName, "-o", "jsonpath={.status.namespaces[*].namespace}")
+func crqStatusNamespaces(_ string) []string { // crqName is always the same, so mark as unused
+	cmd := exec.Command(
+		"kubectl", "get", "clusterresourcequota", "test-namespaceselection-quota",
+		"-o", "jsonpath={.status.namespaces[*].namespace}",
+	)
 	out, _ := utils.Run(cmd)
 	if strings.TrimSpace(out) == "" {
 		return nil
