@@ -44,7 +44,7 @@ jobs:
 
       - name: Lint Helm Chart
         run: |
-          helm lint ./chart
+          helm lint ./charts
 
 # TODO: Uncomment if cert-manager is enabled
 #      - name: Install cert-manager via Helm
@@ -78,7 +78,7 @@ jobs:
 
       - name: Install Helm chart for project
         run: |
-          helm install my-release ./chart --create-namespace --namespace pac-quota-controller-system
+          helm install my-release ./charts/pac-quota-controller --create-namespace --namespace pac-quota-controller-system
 
       - name: Check Helm release status
         run: |
