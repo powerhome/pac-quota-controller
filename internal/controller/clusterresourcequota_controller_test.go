@@ -33,7 +33,7 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
-var _ = Describe("ClusterResourceQuota Controller", func() {
+var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 	var testQuota *quotav1alpha1.ClusterResourceQuota
 	ctx := context.Background()
 
@@ -176,8 +176,6 @@ var _ = Describe("ClusterResourceQuota Controller", func() {
 				Expect(k8sClient.Delete(ctx, testNamespace2)).To(Succeed())
 				Expect(k8sClient.Delete(ctx, testNamespace3)).To(Succeed())
 			}()
-
-			Expect(k8sClient.Create(ctx, testQuota)).To(Succeed())
 
 			By("Reconciling the ClusterResourceQuota")
 			controllerReconciler := &ClusterResourceQuotaReconciler{

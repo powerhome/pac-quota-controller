@@ -65,7 +65,12 @@ func main() {
 			tlsOptions := tls.ConfigureTLS(cfg)
 
 			// Set up metrics server
-			metricsOpts, metricsCertWatcher := metrics.SetupMetricsServer(cfg, tlsOptions)
+			metricsOpts, metricsCertWatcher, err := metrics.SetupMetricsServer(cfg, tlsOptions)
+			if err != nil {
+				setupLog.Error(err, "unable to set up metrics server")
+				os.Exit(1)
+			}
+			setupLog.Info("Metrics server configured", "address", metricsOpts.BindAddress)
 
 			// Set up webhook server
 			webhookServer, webhookCertWatcher := webhook.SetupWebhookServer(cfg, tlsOptions)

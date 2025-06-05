@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -168,6 +169,9 @@ func determineNamespaceChanges(previous, current []string) (added, removed []str
 			removed = append(removed, ns)
 		}
 	}
+	// Sort the results for consistency accross reconciliations
+	sort.Strings(added)
+	sort.Strings(removed)
 
 	return added, removed
 }

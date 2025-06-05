@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"crypto/tls"
-	"os"
 	"path/filepath"
 
 	"github.com/powerhome/pac-quota-controller/pkg/config"
@@ -18,7 +17,7 @@ var setupLog = log.Log.WithName("setup.metrics")
 func SetupMetricsServer(
 	cfg *config.Config,
 	tlsOpts []func(*tls.Config),
-) (metricsserver.Options, *certwatcher.CertWatcher) {
+) (metricsserver.Options, *certwatcher.CertWatcher, error) {
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
 	// More info:
 	// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/metrics/server
@@ -54,7 +53,7 @@ func SetupMetricsServer(
 		)
 		if err != nil {
 			setupLog.Error(err, "failed to initialize metrics certificate watcher")
-			os.Exit(1)
+			return metricsserver.Options{}, nil, err
 		}
 
 		metricsServerOptions.TLSOpts = append(metricsServerOptions.TLSOpts, func(config *tls.Config) {
@@ -62,5 +61,5 @@ func SetupMetricsServer(
 		})
 	}
 
-	return metricsServerOptions, metricsCertWatcher
+	return metricsServerOptions, metricsCertWatcher, nil
 }
