@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -86,7 +85,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	log.Info("Found namespaces matching selection criteria", "count", len(selectedNamespaces), "namespaces", selectedNamespaces)
 
 	// Get previous namespaces from annotation (if it exists)
-	previousNamespaces := getNamespacesFromAnnotation(crq.Annotations)
+	previousNamespaces := r.getNamespacesFromStatus(crq)
 
 	// Determine what changed (which namespaces were added or removed)
 	addedNamespaces, removedNamespaces := determineNamespaceChanges(previousNamespaces, selectedNamespaces)
@@ -100,7 +99,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	// Store current namespaces in annotation for future comparisons
-	if err := r.updateNamespaceAnnotation(ctx, crq, selectedNamespaces); err != nil {
+	if err := r.updateNamespaceStatus(ctx, crq, selectedNamespaces); err != nil {
 		log.Error(err, "Failed to update namespace annotation")
 		return ctrl.Result{}, err
 	}
@@ -122,6 +121,18 @@ func (r *ClusterResourceQuotaReconciler) getSelectedNamespaces(ctx context.Conte
 	return nsSelector.GetSelectedNamespaces(ctx)
 }
 
+// getNamespacesFromStatus extracts the list of namespaces from the ClusterResourceQuota's status
+func (r *ClusterResourceQuotaReconciler) getNamespacesFromStatus(crq *quotav1alpha1.ClusterResourceQuota) []string {
+	if crq.Status.Namespaces == nil {
+		return nil
+	}
+	namespaces := make([]string, len(crq.Status.Namespaces))
+	for i, nsStatus := range crq.Status.Namespaces {
+		namespaces[i] = nsStatus.Namespace
+	}
+	return namespaces
+}
+
 // createNamespaceSelector creates a namespace selector from the ClusterResourceQuota's spec
 func (r *ClusterResourceQuotaReconciler) createNamespaceSelector(crq *quotav1alpha1.ClusterResourceQuota) (*namespaceselection.LabelBasedNamespaceSelector, error) {
 	selector, err := namespaceselection.NewLabelBasedNamespaceSelector(r.Client, crq.Spec.NamespaceSelector)
@@ -130,26 +141,6 @@ func (r *ClusterResourceQuotaReconciler) createNamespaceSelector(crq *quotav1alp
 	}
 
 	return selector, nil
-}
-
-// getNamespacesFromAnnotation extracts namespace list from ClusterResourceQuota annotation
-func getNamespacesFromAnnotation(annotations map[string]string) []string {
-	if annotations == nil {
-		return nil
-	}
-
-	nsString, exists := annotations["quota.powerapp.cloud/namespaces"]
-	if !exists || nsString == "" {
-		return nil
-	}
-
-	// Split the comma-separated list
-	namespaces := strings.Split(nsString, ",")
-	for i, ns := range namespaces {
-		namespaces[i] = strings.TrimSpace(ns)
-	}
-
-	return namespaces
 }
 
 // determineNamespaceChanges finds which namespaces have been added or removed
@@ -183,20 +174,20 @@ func determineNamespaceChanges(previous, current []string) (added, removed []str
 }
 
 // updateNamespaceAnnotation stores the list of namespaces in an annotation on the ClusterResourceQuota
-func (r *ClusterResourceQuotaReconciler) updateNamespaceAnnotation(ctx context.Context, crq *quotav1alpha1.ClusterResourceQuota, namespaces []string) error {
+func (r *ClusterResourceQuotaReconciler) updateNamespaceStatus(ctx context.Context, crq *quotav1alpha1.ClusterResourceQuota, namespaces []string) error {
 	// Create a copy to avoid updating the object in the cache
 	crqCopy := crq.DeepCopy()
 
 	// Initialize annotations if needed
-	if crqCopy.Annotations == nil {
-		crqCopy.Annotations = make(map[string]string)
+	crqCopy.Status.Namespaces = make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))
+	for i, ns := range namespaces {
+		crqCopy.Status.Namespaces[i] = quotav1alpha1.ResourceQuotaStatusByNamespace{
+			Namespace: ns,
+			// Resource Usage will be populated later
+		}
 	}
 
-	// Store namespaces as comma-separated list
-	crqCopy.Annotations["quota.powerapp.cloud/namespaces"] = strings.Join(namespaces, ",")
-
-	// Update the object
-	return r.Update(ctx, crqCopy)
+	return r.Status().Update(ctx, crqCopy)
 }
 
 // findQuotasForNamespace maps Namespace objects to ClusterResourceQuota requests
