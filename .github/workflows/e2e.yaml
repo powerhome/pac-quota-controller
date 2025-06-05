@@ -40,13 +40,12 @@ jobs:
 
       - name: Build controller image
         run: |
-          docker build -t $IMG .
-          kind load docker-image $IMG --name $KIND_CLUSTER
+          docker build -t powerhome/pac-quota-controller:latest .
+          kind load docker-image powerhome/pac-quota-controller:latest --name $KIND_CLUSTER
 
       - name: Deploy controller to Kind (Kustomize)
         run: |
-          cd config/manager && kustomize edit set image powerhome/pac-quota-controller=$IMG
-          kustomize build config/default | kubectl apply -f -
+          make kind-deploy
           kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager
 
       - name: Run e2e tests
