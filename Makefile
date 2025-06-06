@@ -145,6 +145,9 @@ kind-deploy: kind-up kind-build ## Deploy controller to local Kind cluster
 			--set image.repository=$(IMG) \
 			--set image.tag=latest \
 			--set image.pullPolicy=Never
+	@echo "Patching imagePullPolicy to Never..."
+	@$(KUBECTL) -n pac-quota-controller-system patch deployment pac-quota-controller-controller-manager \
+			--type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/imagePullPolicy", "value":"Never"}]'
 	@echo "Waiting for controller to be ready..."
 	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager || true
 	@echo "Controller deploy finished."
@@ -320,7 +323,7 @@ docker-login: ## Log in to DockerHub (requires DOCKERHUB_USERNAME and DOCKERHUB_
 .PHONY: generate-helm
 generate-helm: ## Generate Helm chart using Kubebuilder plugin
 	@echo "Generating Helm chart using Kubebuilder plugin..."
-	kubebuilder edit --plugins=helm.kubebuilder.io/v1-alpha
+	/Users/felipe.peiter/go/bin/kubebuilder edit --plugins=helm.kubebuilder.io/v1-alpha
 	@echo "Copying generated chart from dist/chart to charts directory..."
 	@mkdir -p charts
 	# Only copy the templates directory to respect default values and Chart.yaml
