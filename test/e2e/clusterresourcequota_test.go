@@ -17,9 +17,8 @@ limitations under the License.
 package e2e
 
 import (
-	"fmt"
 	"os/exec"
-	"strings"
+	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -29,41 +28,11 @@ import (
 )
 
 var _ = Describe("ClusterResourceQuota", Ordered, func() {
-	const testNamespace = "test-quota-namespace"
-	const quotaName = "test-cluster-quota"
-
-	BeforeAll(func() {
-		By("Installing CRDs")
-		cmd := exec.Command("make", "install")
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
-
-		By("Creating test namespace with required labels")
-		cmd = exec.Command("kubectl", "create", "ns", testNamespace)
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create test namespace")
-
-		cmd = exec.Command("kubectl", "label", "ns", testNamespace, "quota=limited")
-		_, err = utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to label test namespace")
-	})
+	const testNamespace = "test-clusterresourcequota-ns"
+	const quotaName = "test-clusterresourcequota-quota"
 
 	AfterAll(func() {
-		By("Cleaning up test namespace and resources")
-
-		// Check for finalizers on the ClusterResourceQuota before deletion
-		cmd := exec.Command("kubectl", "get", "clusterresourcequota", quotaName, "-o", "jsonpath={.metadata.finalizers}")
-		finalizers, _ := utils.Run(cmd)
-		if finalizers != "" {
-			By(fmt.Sprintf("Found finalizers on ClusterResourceQuota: %s", finalizers))
-			// You might need to forcefully remove finalizers if they're preventing deletion
-			patchCmd := exec.Command("kubectl", "patch", "clusterresourcequota", quotaName, "--type=json",
-				"-p", "[{\"op\": \"remove\", \"path\": \"/metadata/finalizers\"}]")
-			_, _ = utils.Run(patchCmd)
-		}
-
-		// Delete the ClusterResourceQuota
-		cmd = exec.Command("kubectl", "delete", "clusterresourcequota", quotaName, "--ignore-not-found")
+		cmd := exec.Command("kubectl", "delete", "clusterresourcequota", quotaName, "--ignore-not-found")
 		_, _ = utils.Run(cmd)
 
 		// Clean up the test namespace
@@ -72,62 +41,39 @@ var _ = Describe("ClusterResourceQuota", Ordered, func() {
 
 		// Add a timeout to ensure proper cleanup
 		time.Sleep(2 * time.Second)
-
-		By("Uninstalling CRDs")
-		cmd = exec.Command("make", "uninstall")
-		_, _ = utils.Run(cmd)
 	})
 
 	Context("Basic functionality", func() {
-		It("should create a ClusterResourceQuota", func() {
-			By("Creating the ClusterResourceQuota custom resource")
-			crqManifest := `
-apiVersion: quota.powerapp.cloud/v1alpha1
-kind: ClusterResourceQuota
-metadata:
-  name: test-cluster-quota
-spec:
-  hard:
-    pods: "10"
-    requests.cpu: "1"
-    requests.memory: 1Gi
-    limits.cpu: "2"
-    limits.memory: 2Gi
-  namespaceSelector:
-    matchLabels:
-      quota: limited
-  scopes:
-  - NotTerminating
-  scopeSelector:
-    matchExpressions:
-    - operator: In
-      scopeName: PriorityClass
-      values:
-      - high
-`
-			cmd := exec.Command("kubectl", "apply", "-f", "-")
-			cmd.Stdin = strings.NewReader(crqManifest)
-			_, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to apply ClusterResourceQuota")
+		It("should create a ClusterResourceQuota and update its status with matching namespaces", func() {
+			By("Creating the test manifests")
+			projectDir, err := utils.GetProjectDir()
+			Expect(err).NotTo(HaveOccurred(), "Failed to get project directory")
 
-			By("Verifying the ClusterResourceQuota was created successfully")
-			Eventually(func() error {
-				cmd := exec.Command("kubectl", "get", "clusterresourcequota", quotaName, "-o", "jsonpath={.metadata.name}")
-				_, err := utils.Run(cmd)
-				return err
-			}, time.Minute, time.Second).Should(Succeed(), "Failed to get ClusterResourceQuota")
+			cmd := exec.Command(
+				"kubectl", "apply", "-f",
+				filepath.Join(
+					projectDir,
+					"test/fixtures/clusterresourcequota/",
+				),
+			)
+			_, err = utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create test manifests")
 
-			By("Checking the resource has the expected scopes and scopeSelector")
-			Eventually(func() (string, error) {
-				cmd := exec.Command("kubectl", "get", "clusterresourcequota", quotaName, "-o", "jsonpath={.spec.scopes[0]}")
-				return utils.Run(cmd)
-			}, time.Minute, time.Second).Should(Equal("NotTerminating"), "Failed to verify scopes")
+			By("Verifying that the ClusterResourceQuota exists")
+			cmd = exec.Command("kubectl", "get", "clusterresourcequota", quotaName)
+			output, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output).To(ContainSubstring(quotaName))
 
-			Eventually(func() (string, error) {
-				cmd := exec.Command("kubectl", "get", "clusterresourcequota", quotaName,
-					"-o", "jsonpath={.spec.scopeSelector.matchExpressions[0].scopeName}")
-				return utils.Run(cmd)
-			}, time.Minute, time.Second).Should(Equal("PriorityClass"), "Failed to verify scopeSelector")
+			By("Verifying that the status field is updated with matching namespaces")
+			Eventually(func() string {
+				cmd = exec.Command(
+					"kubectl", "get", "clusterresourcequota", quotaName,
+					"-o", "jsonpath={.status.namespaces[*].namespace}",
+				)
+				out, _ := utils.Run(cmd)
+				return out
+			}, "10s", "1s").Should(ContainSubstring(testNamespace))
 		})
 	})
 })

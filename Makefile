@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= powerhome/pac-quota-controller:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -101,13 +101,6 @@ setup-test-e2e: cleanup-test-e2e ## Set up a Kind cluster for e2e tests
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
 
-.PHONY: test-e2e-existing
-test-e2e-existing: cleanup-resources manifests generate fmt vet ## Run the e2e tests on an existing cluster after cleaning up resources.
-	@echo "Waiting for resources to be fully deleted before starting tests (5s)..."
-	@sleep 5
-	@echo "Running e2e tests on existing cluster..."
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
-
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
@@ -119,6 +112,66 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 .PHONY: lint-config
 lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
+
+##@ Kind Deployment
+
+# Define the Kind cluster name
+KIND_DEV_CLUSTER ?= pac-quota-controller-dev
+
+.PHONY: kind-up
+kind-up: ## Create a local Kind cluster for development
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind manually."; \
+		exit 1; \
+	}
+	@$(KIND) get clusters | grep -q $(KIND_DEV_CLUSTER) || { \
+		echo "Creating Kind cluster: $(KIND_DEV_CLUSTER)"; \
+		$(KIND) create cluster --name $(KIND_DEV_CLUSTER); \
+	}
+	@$(KUBECTL) config use-context kind-$(KIND_DEV_CLUSTER)
+	@echo "Kind cluster $(KIND_DEV_CLUSTER) is ready"
+
+.PHONY: kind-build
+kind-build: docker-build ## Build and load the controller image into Kind cluster
+	@echo "Loading image ${IMG} into Kind cluster..."
+	@$(KIND) load docker-image ${IMG} --name $(KIND_DEV_CLUSTER)
+	@echo "Image loaded successfully!"
+
+.PHONY: kind-deploy
+kind-deploy: kind-up kind-build ## Deploy controller to local Kind cluster
+	@echo "Deploying controller to local Kind cluster with Helm..."
+	helm upgrade --install pac-quota-controller ./charts/pac-quota-controller \
+			--namespace pac-quota-controller-system --create-namespace \
+			--set image.repository=$(IMG) \
+			--set image.tag=latest \
+			--set image.pullPolicy=Never
+	@echo "Patching imagePullPolicy to Never..."
+	@$(KUBECTL) -n pac-quota-controller-system patch deployment pac-quota-controller-controller-manager \
+			--type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/imagePullPolicy", "value":"Never"}]'
+	@echo "Waiting for controller to be ready..."
+	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager || true
+	@echo "Controller deploy finished."
+
+.PHONY: kind-sample
+kind-sample: ## Deploy a sample ClusterResourceQuota to test the controller
+	@echo "Deploying sample ClusterResourceQuota..."
+	@$(KUSTOMIZE) build config/samples | $(KUBECTL) apply -f -
+	@echo "Sample deployed. To see the status, run: kubectl get clusterresourcequota -o yaml"
+
+.PHONY: kind-logs
+kind-logs: ## Get logs from the controller
+	@$(KUBECTL) -n pac-quota-controller-system logs -l control-plane=controller-manager -f
+
+.PHONY: kind-restart
+kind-restart: ## Restart the controller deployment
+	@$(KUBECTL) -n pac-quota-controller-system rollout restart deployment pac-quota-controller-controller-manager
+	@echo "Controller restarting..."
+	@$(KUBECTL) -n pac-quota-controller-system rollout status deployment pac-quota-controller-controller-manager
+
+.PHONY: kind-down
+kind-down: ## Delete the local Kind cluster
+	@$(KIND) delete cluster --name $(KIND_DEV_CLUSTER)
+	@echo "Kind cluster $(KIND_DEV_CLUSTER) deleted"
 
 ##@ Build
 
@@ -270,7 +323,7 @@ docker-login: ## Log in to DockerHub (requires DOCKERHUB_USERNAME and DOCKERHUB_
 .PHONY: generate-helm
 generate-helm: ## Generate Helm chart using Kubebuilder plugin
 	@echo "Generating Helm chart using Kubebuilder plugin..."
-	kubebuilder edit --plugins=helm.kubebuilder.io/v1-alpha
+	/Users/felipe.peiter/go/bin/kubebuilder edit --plugins=helm.kubebuilder.io/v1-alpha
 	@echo "Copying generated chart from dist/chart to charts directory..."
 	@mkdir -p charts
 	# Only copy the templates directory to respect default values and Chart.yaml

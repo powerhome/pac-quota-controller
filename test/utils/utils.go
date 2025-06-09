@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
 )
@@ -34,6 +35,12 @@ const (
 
 	certmanagerVersion = "v1.16.3"
 	certmanagerURLTmpl = "https://github.com/cert-manager/cert-manager/releases/download/%s/cert-manager.yaml"
+)
+
+// Holds reference to running command for stopping later
+var (
+	runningCmd     *exec.Cmd
+	runningCmdLock sync.Mutex
 )
 
 func warnError(err error) {
@@ -49,15 +56,69 @@ func Run(cmd *exec.Cmd) (string, error) {
 		_, _ = fmt.Fprintf(GinkgoWriter, "chdir dir: %q\n", err)
 	}
 
-	cmd.Env = append(os.Environ(), "GO111MODULE=on")
-	command := strings.Join(cmd.Args, " ")
-	_, _ = fmt.Fprintf(GinkgoWriter, "running: %q\n", command)
-	output, err := cmd.CombinedOutput()
+	// Create a buffer to store stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
 	if err != nil {
-		return string(output), fmt.Errorf("%q failed with error %q: %w", command, string(output), err)
+		return stderr.String(), fmt.Errorf(
+			"failed to run command %v: %w\nStdout:\n%s\nStderr:\n%s",
+			cmd.Args, err, stdout.String(), stderr.String(),
+		)
 	}
 
-	return string(output), nil
+	return stdout.String(), nil
+}
+
+// StartCmd starts a command in background mode and stores its reference for later cleanup
+func StartCmd(cmd *exec.Cmd) (string, error) {
+	dir, _ := GetProjectDir()
+	cmd.Dir = dir
+
+	if err := os.Chdir(cmd.Dir); err != nil {
+		_, _ = fmt.Fprintf(GinkgoWriter, "chdir dir: %q\n", err)
+	}
+
+	// Create buffers for stdout and stderr
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	// Start the command without waiting for it to complete
+	err := cmd.Start()
+	if err != nil {
+		return "", fmt.Errorf("failed to start command %v: %w", cmd.Args, err)
+	}
+
+	// Store reference to command for later cleanup
+	runningCmdLock.Lock()
+	runningCmd = cmd
+	runningCmdLock.Unlock()
+
+	// Log that the command was started
+	_, _ = fmt.Fprintf(GinkgoWriter, "Started command: %v\n", cmd.Args)
+
+	return "Command started in background", nil
+}
+
+// StopCommand kills any running command that was started with StartCmd
+func StopCommand() {
+	runningCmdLock.Lock()
+	defer runningCmdLock.Unlock()
+
+	if runningCmd != nil && runningCmd.Process != nil {
+		// Attempt to kill the process
+		if err := runningCmd.Process.Kill(); err != nil {
+			_, _ = fmt.Fprintf(GinkgoWriter, "warning: failed to kill process: %v\n", err)
+		} else {
+			_, _ = fmt.Fprintf(GinkgoWriter, "Successfully stopped command\n")
+		}
+
+		// Clear the reference
+		runningCmd = nil
+	}
 }
 
 // InstallPrometheusOperator installs the prometheus Operator to be used to export the enabled metrics.

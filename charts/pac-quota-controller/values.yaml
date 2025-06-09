@@ -3,8 +3,9 @@ controllerManager:
   replicas: 1
   container:
     image:
-      repository: powerhome/pac-quota-controller  # DockerHub
-      tag: "{{ .Chart.AppVersion }}"
+      repository: powerhome/pac-quota-controller
+      tag: latest
+      pullPolicy: IfNotPresent
     args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"

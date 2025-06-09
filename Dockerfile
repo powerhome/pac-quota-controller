@@ -15,6 +15,7 @@ RUN go mod download
 COPY cmd/ cmd/
 COPY api/ api/
 COPY internal/ internal/
+COPY pkg/ pkg/
 
 # Build
 # GOARCH does not have a default value, so we explicitly set it based on the host where the command
