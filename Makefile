@@ -308,13 +308,6 @@ release: install-goreleaser ## Run a production release with goreleaser (require
 	[ -n "$$GITHUB_TOKEN" ] || { echo "GITHUB_TOKEN is required for releasing. Please set it and try again."; exit 1; }
 	goreleaser release --clean
 
-.PHONY: docker-login
-# docker-login: ## Log in to DockerHub (requires DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)
-# 	@echo "Logging in to DockerHub..."
-# 	@[ -n "$$DOCKERHUB_USERNAME" ] || { echo "DOCKERHUB_USERNAME is required. Please set it and try again."; exit 1; }
-# 	@[ -n "$$DOCKERHUB_TOKEN" ] || { echo "DOCKERHUB_TOKEN is required. Please set it and try again."; exit 1; }
-# 	@echo "$$DOCKERHUB_TOKEN" | docker login -u "$$DOCKERHUB_USERNAME" --password-stdin
-
 .PHONY: ghcr-login
 ghcr-login: ## Log in to GitHub Container Registry (requires GITHUB_TOKEN)
 	@echo "Logging in to GitHub Container Registry..."

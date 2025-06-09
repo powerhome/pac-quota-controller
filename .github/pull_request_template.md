@@ -21,6 +21,7 @@ Before submitting your PR, please:
 - [ ] I have tagged the release as `vX.Y.Z` for app releases or `chart-vX.Y.Z` for chart-only releases
 
 > **Note:** Chart and app versioning are manual. See CONTRIBUTING.md for details on how to release.
+> **Note:** For Helm chart installation, use GHCR as an OCI registry. See README for instructions.
 
 ## Additional Notes (optional)
 

@@ -21,12 +21,10 @@ The ClusterResourceQuota controller mimics the Kubernetes ResourceQuota mechanis
 
 You can install the ClusterResourceQuota operator using the following methods:
 
-#### Using Helm (GitHub Pages)
+#### Using Helm
 
 ```bash
-helm repo add powerhome https://powerhome.github.io/pac-quota-controller
-helm repo update
-helm install pac-quota-controller powerhome/pac-quota-controller -n pac-quota-controller-system --create-namespace
+helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
 #### Using kubectl

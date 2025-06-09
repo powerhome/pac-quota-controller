@@ -46,15 +46,16 @@ To release a new version:
   2. Optionally bump the chart `version` if you want to release a new chart version.
   3. Commit and merge your changes to `main`.
   4. Tag the release with `vX.Y.Z` (e.g., `v1.2.3`).
-  5. Push the tag to GitHub. This will trigger the pipeline to build and publish the container image and the chart.
+  5. Push the tag to GitHub. This will trigger the pipeline to build and publish the container image and the chart to GHCR as an OCI artifact.
 
 - For a chart-only release (no new container image):
   1. Bump the chart `version` in `charts/pac-quota-controller/Chart.yaml`.
   2. Commit and merge your changes to `main`.
   3. Tag the release with `chart-vX.Y.Z` (e.g., `chart-v1.2.4`).
-  4. Push the tag to GitHub. This will trigger the pipeline to publish the chart only.
+  4. Push the tag to GitHub. This will trigger the pipeline to publish the chart to GHCR as an OCI artifact.
 
 > **Note:** Always update `appVersion` in `Chart.yaml` to match the container image version for app releases. For chart-only releases, leave `appVersion` unchanged.
+> **Note:** For Helm chart installation, use GHCR as an OCI registry. See README for instructions.
 
 ---
 
