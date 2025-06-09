@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= powerhome/pac-quota-controller:latest
+IMG ?= ghcr.io/powerhome/pac-quota-controller:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -145,9 +145,6 @@ kind-deploy: kind-up kind-build ## Deploy controller to local Kind cluster
 			--set image.repository=$(IMG) \
 			--set image.tag=latest \
 			--set image.pullPolicy=Never
-	@echo "Patching imagePullPolicy to Never..."
-	@$(KUBECTL) -n pac-quota-controller-system patch deployment pac-quota-controller-controller-manager \
-			--type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/imagePullPolicy", "value":"Never"}]'
 	@echo "Waiting for controller to be ready..."
 	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager || true
 	@echo "Controller deploy finished."
@@ -312,29 +309,20 @@ release: install-goreleaser ## Run a production release with goreleaser (require
 	goreleaser release --clean
 
 .PHONY: docker-login
-docker-login: ## Log in to DockerHub (requires DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)
-	@echo "Logging in to DockerHub..."
-	@[ -n "$$DOCKERHUB_USERNAME" ] || { echo "DOCKERHUB_USERNAME is required. Please set it and try again."; exit 1; }
-	@[ -n "$$DOCKERHUB_TOKEN" ] || { echo "DOCKERHUB_TOKEN is required. Please set it and try again."; exit 1; }
-	@echo "$$DOCKERHUB_TOKEN" | docker login -u "$$DOCKERHUB_USERNAME" --password-stdin
+# docker-login: ## Log in to DockerHub (requires DOCKERHUB_USERNAME and DOCKERHUB_TOKEN)
+# 	@echo "Logging in to DockerHub..."
+# 	@[ -n "$$DOCKERHUB_USERNAME" ] || { echo "DOCKERHUB_USERNAME is required. Please set it and try again."; exit 1; }
+# 	@[ -n "$$DOCKERHUB_TOKEN" ] || { echo "DOCKERHUB_TOKEN is required. Please set it and try again."; exit 1; }
+# 	@echo "$$DOCKERHUB_TOKEN" | docker login -u "$$DOCKERHUB_USERNAME" --password-stdin
+
+.PHONY: ghcr-login
+ghcr-login: ## Log in to GitHub Container Registry (requires GITHUB_TOKEN)
+	@echo "Logging in to GitHub Container Registry..."
+	@[ -n "$$GITHUB_TOKEN" ] || { echo "GITHUB_TOKEN is required. Please set it and try again."; exit 1; }
+	echo "$$GITHUB_TOKEN" | docker login ghcr.io -u "$$USER" --password-stdin
 
 ##@ Helm Chart
 
-.PHONY: generate-helm
-generate-helm: ## Generate Helm chart using Kubebuilder plugin
-	@echo "Generating Helm chart using Kubebuilder plugin..."
-	/Users/felipe.peiter/go/bin/kubebuilder edit --plugins=helm.kubebuilder.io/v1-alpha
-	@echo "Copying generated chart from dist/chart to charts directory..."
-	@mkdir -p charts
-	# Only copy the templates directory to respect default values and Chart.yaml
-	@cp -fr dist/chart/templates/* charts/pac-quota-controller/templates
-	@echo "Helm chart generated and copied to charts/pac-quota-controller"
-	@echo "Linting generated Helm chart"
-	@make helm-lint
-	@echo "Updating Helm chart documentation"
-	@make helm-docs
-	@echo "Helm chart generation completed."
-	@echo "To test the Helm chart, run 'make helm-test'."
 
 .PHONY: helm-docs
 helm-docs: ## Generate documentation for Helm chart
@@ -355,7 +343,7 @@ helm-lint: ## Lint Helm chart
 	helm lint charts/pac-quota-controller
 
 .PHONY: helm-package
-helm-package: generate-helm helm-docs helm-lint ## Package Helm chart
+helm-package: helm-docs helm-lint ## Package Helm chart
 	@echo "Packaging Helm chart..."
 	@mkdir -p .cr-release-packages
 	helm package charts/pac-quota-controller -d .cr-release-packages

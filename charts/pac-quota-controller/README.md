@@ -21,14 +21,22 @@ The PAC Quota Controller extends Kubernetes with a ClusterResourceQuota custom r
 
 ### Container Images
 
-This chart can use container images from either DockerHub or GitHub Container Registry:
+This chart uses container images from GitHub Container Registry:
 
 ```console
-# DockerHub (default in this chart)
-powerhome/pac-quota-controller:0.1.0
+# GitHub Container Registry (default)
+ghcr.io/powerhome/pac-quota-controller:0.1.0
 ```
 
-You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
+### Installing the Chart from GitHub Pages
+
+```bash
+helm repo add powerhome https://powerhome.github.io/pac-quota-controller
+helm repo update
+helm install pac-quota-controller powerhome/pac-quota-controller -n pac-quota-controller-system --create-namespace
+```
+
+You can configure which registry to use by modifying the `controllerManager.container.image.repository` value in your `values.yaml`.
 
 ## Prerequisites
 
