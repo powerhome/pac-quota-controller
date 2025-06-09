@@ -1,5 +1,0 @@
-owner: powerhome
-git-repo: pac-quota-controller
-charts-repo: https://powerhome.github.io/pac-quota-controller
-index-path: index.yaml
-pages-branch: gh-pages

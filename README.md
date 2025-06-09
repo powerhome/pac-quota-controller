@@ -4,7 +4,7 @@ A Kubernetes operator for implementing cluster-wide resource quotas across multi
 
 ## Overview
 
-The ClusterResourceQuota controller extends the Kubernetes ResourceQuota mechanism to work across multiple namespaces. This allows administrators to define resource constraints that apply to groups of namespaces based on label selectors.
+The ClusterResourceQuota controller mimics the Kubernetes ResourceQuota mechanism to work across multiple namespaces. This allows administrators to define resource constraints that apply to groups of namespaces based on label selectors.
 
 ## Features
 
@@ -15,24 +15,19 @@ The ClusterResourceQuota controller extends the Kubernetes ResourceQuota mechani
 - Support for storage resources (PVCs)
 - Automatic aggregation of resource usage across namespaces
 
-## Installation
+## Usage
+
+### Installation
 
 You can install the ClusterResourceQuota operator using the following methods:
 
-### Using Helm
+#### Using Helm
 
 ```bash
-# Add the Helm repository
-helm repo add powerhome https://powerhome.github.io/pac-quota-controller
-helm repo update
-
-# Install the chart
-helm install pac-quota-controller powerhome/pac-quota-controller -n pac-quota-controller-system --create-namespace
+helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
-For more information about the chart, see the [Helm chart documentation](./charts/pac-quota-controller/README.md).
-
-### Using kubectl
+#### Using kubectl
 
 ```bash
 kubectl apply -f https://github.com/powerhome/pac-quota-controller/releases/latest/download/install.yaml
@@ -59,41 +54,16 @@ spec:
     limits.memory: 40Gi
 ```
 
-## Development
+## How it works
 
-### CI/CD Workflow
-
-This project uses GitHub Actions for continuous integration and deployment:
-
-1. **Linting**: Runs on every push and pull request to check code quality
-2. **Helm Chart Testing**: Validates chart structure and configuration
-3. **Release**: Automatically creates binaries, Docker images, and updates the Helm chart when a new tag is pushed
-
-### Helm Chart Generation
-
-The Helm chart is automatically generated using the Kubebuilder Helm plugin:
-
-```bash
-# Manually generate the Helm chart
-make generate-helm
-
-# Generate Helm chart documentation
-make helm-docs
-
-# Lint the Helm chart
-make helm-lint
-
-# Test the Helm chart installation in a Kind cluster
-make helm-test
+```mermaid
+graph TD
+  A[ClusterResourceQuota CRD] -- selects --> B[Namespaces (label selector)]
+  B -- aggregates --> C[ResourceQuota usage]
+  C -- reports --> D[ClusterResourceQuota Status]
 ```
 
-### Docker Images
-
-The Docker images for this project are available from both GitHub Container Registry and DockerHub:
-
-```bash
-# Pull from DockerHub
-docker pull powerhome/pac-quota-controller:latest
-```
-
-The CI/CD pipeline automatically builds and pushes Docker images to both registries when a new tag is pushed.
+- The controller watches `ClusterResourceQuota` resources.
+- It selects namespaces using the `namespaceSelector` field.
+- It aggregates resource usage across those namespaces.
+- The status of the `ClusterResourceQuota` is updated with the total usage and enforcement.

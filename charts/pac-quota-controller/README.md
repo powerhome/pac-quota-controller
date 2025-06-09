@@ -9,8 +9,7 @@ A Helm chart for PAC Quota Controller - Managing cluster resource quotas across 
 ## TL;DR
 
 ```console
-helm repo add powerhome https://powerhome.github.io/pac-quota-controller
-helm install pac-quota-controller powerhome/pac-quota-controller -n pac-quota-controller-system --create-namespace
+helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
 ## Introduction
@@ -21,11 +20,10 @@ The PAC Quota Controller extends Kubernetes with a ClusterResourceQuota custom r
 
 ### Container Images
 
-This chart can use container images from either DockerHub or GitHub Container Registry:
+This chart can use container images from GitHub Container Registry:
 
 ```console
-# DockerHub (default in this chart)
-powerhome/pac-quota-controller:0.1.0
+ghcr.io/powerhome/pac-quota-controller:0.1.0
 ```
 
 You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
@@ -40,8 +38,7 @@ You can configure which registry to use by modifying the `controllerManager.cont
 To install the chart with the release name `pac-quota-controller`:
 
 ```console
-helm repo add powerhome https://powerhome.github.io/pac-quota-controller
-helm install pac-quota-controller powerhome/pac-quota-controller -n pac-quota-controller-system --create-namespace
+helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
 The command deploys PAC Quota Controller on the Kubernetes cluster in the default configuration.

@@ -25,8 +25,8 @@ builds:
 
 dockers:
   - image_templates:
-      - "docker.io/powerhome/{{ .ProjectName }}:{{ .Version }}"
-      - "docker.io/powerhome/{{ .ProjectName }}:latest"
+      - "ghcr.io/powerhome/{{ .ProjectName }}:{{ .Version }}"
+      - "ghcr.io/powerhome/{{ .ProjectName }}:latest"
     dockerfile: Dockerfile.goreleaser
     build_flag_templates:
       - --label=org.opencontainers.image.title={{ .ProjectName }}
@@ -67,25 +67,15 @@ changelog:
       - Merge branch
 
 # Docker login configuration
-docker_signs:
-  - cmd: cosign
-    artifacts: manifests
-    output: true
-    args:
-      - sign
-      - --key=env://COSIGN_PRIVATE_KEY
-      - --yes
-      - "${artifact}"
-    env:
-      - COSIGN_PASSWORD={{ .Env.COSIGN_PASSWORD }}
+docker_signs: []
 
 docker_manifests:
-  - name_template: docker.io/powerhome/{{ .ProjectName }}:{{ .Version }}
+  - name_template: ghcr.io/powerhome/{{ .ProjectName }}:{{ .Version }}
     image_templates:
-      - docker.io/powerhome/{{ .ProjectName }}:{{ .Version }}
-  - name_template: docker.io/powerhome/{{ .ProjectName }}:latest
+      - ghcr.io/powerhome/{{ .ProjectName }}:{{ .Version }}
+  - name_template: ghcr.io/powerhome/{{ .ProjectName }}:latest
     image_templates:
-      - docker.io/powerhome/{{ .ProjectName }}:latest
+      - ghcr.io/powerhome/{{ .ProjectName }}:latest
 
 # Additional configuration for automating release notes
 release:
@@ -96,7 +86,7 @@ release:
   draft: false
   name_template: "v{{ .Version }}"
   footer: |
-    ## Helm Chart
+    ## Helm Chart (GitHub Pages)
 
     ```bash
     helm repo add powerhome https://powerhome.github.io/pac-quota-controller
@@ -107,6 +97,6 @@ release:
     ## Docker Images
     
     ```bash
-    # Pull from DockerHub
-    docker pull powerhome/pac-quota-controller:{{ .Version }}
+    # Pull from GHCR
+    docker pull ghcr.io/powerhome/pac-quota-controller:{{ .Version }}
     ```

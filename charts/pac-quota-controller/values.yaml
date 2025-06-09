@@ -3,7 +3,7 @@ controllerManager:
   replicas: 1
   container:
     image:
-      repository: powerhome/pac-quota-controller
+      repository: ghcr.io/powerhome/pac-quota-controller
       tag: latest
       pullPolicy: IfNotPresent
     args:
