@@ -26,15 +26,7 @@ This chart can use container images from GitHub Container Registry:
 ghcr.io/powerhome/pac-quota-controller:0.1.0
 ```
 
-### Installing the Chart from GitHub Pages
-
-```bash
-helm repo add powerhome https://powerhome.github.io/pac-quota-controller
-helm repo update
-helm install pac-quota-controller powerhome/pac-quota-controller -n pac-quota-controller-system --create-namespace
-```
-
-You can configure which registry to use by modifying the `controllerManager.container.image.repository` value in your `values.yaml`.
+You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
 
 ## Prerequisites
 
