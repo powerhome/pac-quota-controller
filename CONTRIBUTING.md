@@ -4,7 +4,6 @@ Thank you for your interest in contributing! Please follow these guidelines to h
 
 ## Prerequisites
 
-- Install [pre-commit](https://pre-commit.com/) and run `pre-commit install` after cloning the repo.
 - Ensure you have Go, Docker, Kind, Helm, and other required tools installed (see project README).
 
 ## Pull Request Checklist
