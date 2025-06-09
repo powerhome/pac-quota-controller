@@ -6,25 +6,6 @@ Thank you for your interest in contributing! Please follow these guidelines to h
 
 - Ensure you have Go, Docker, Kind, Helm, and other required tools installed (see project README).
 
-## Pull Request Checklist
-
-Before submitting your PR, please:
-
-- Ensure your PR is focused and addresses a single concern (avoid unrelated changes)
-- Write a clear, descriptive title and summary for your PR
-- Reference related issues (if any) in the description
-- Keep commits clean and meaningful (squash/fixup as needed)
-- Add or update tests for new/changed behavior
-- Update documentation and Helm chart if you change APIs, CRDs, or configuration
-- Run the following commands and commit any changes:
-  - `make lint` (fix all lint issues)
-  - `make manifests` (commit CRD changes)
-  - `make generate` (commit generated code)
-  - `make test` and/or `make test-e2e` (ensure all tests pass)
-  - `make helm-docs` (update Helm chart docs if needed)
-  - `make helm-lint` (ensure Helm chart is valid)
-  - `make helm-test` (ensure Helm chart installs in Kind)
-
 ## Helm Chart Maintenance
 
 - The Helm chart is maintained manually. If you make changes to CRDs, APIs, or configuration options, update the chart in `charts/pac-quota-controller`.
