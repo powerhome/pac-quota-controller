@@ -15,7 +15,9 @@ The ClusterResourceQuota controller mimics the Kubernetes ResourceQuota mechanis
 - Support for storage resources (PVCs)
 - Automatic aggregation of resource usage across namespaces
 
-## Installation (Helm Only)
+## Usage
+
+### Installation
 
 > **Note:** The Helm chart is the single source of truth for all manifests (CRDs, RBAC, webhooks, cert-manager, etc.). The `config/` folder and Kubebuilder-generated manifests are not used for deployment or testing. Kubebuilder markers in the Go code are for documentation only.
 
