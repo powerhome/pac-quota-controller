@@ -53,23 +53,6 @@ To upgrade the chart:
 helm upgrade pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system
 ```
 
-## End-to-End (e2e) Testing
-
-All e2e tests use Helm for deployment. The `config/` folder is ignored and not used for testing or production. To run e2e tests:
-
-```sh
-# Install chart for testing
-helm install pac-quota-controller ./charts/pac-quota-controller -n pac-quota-controller-system --create-namespace
-# Run tests
-make test-e2e
-# Uninstall after tests
-helm uninstall pac-quota-controller -n pac-quota-controller-system
-```
-
-## Kubebuilder Markers
-
-Kubebuilder markers in the Go code are for documentation only and are not used for manifest generation or deployment. All configuration is managed in the Helm chart.
-
 ## Uninstalling the Chart
 
 To uninstall/delete the `pac-quota-controller` deployment:

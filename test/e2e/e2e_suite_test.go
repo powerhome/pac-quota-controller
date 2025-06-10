@@ -27,22 +27,10 @@ import (
 	"github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	k8sconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 var (
-	// projectImage is the name of the image which will be build and loaded
-	// with the code source changes to be tested.
-	projectImage = "ghcr.io/powerhome/pac-quota-controller:latest"
-
-	// helmReleaseName is the name of the Helm release for the controller-manager.
-	helmReleaseName = "pac-quota-controller"
-	// helmNamespace is the Kubernetes namespace where the controller-manager will be deployed.
-	helmNamespace = "pac-quota-controller-system"
-	// helmChartPath is the file path to the Helm chart for the controller-manager.
-	helmChartPath = "./charts/pac-quota-controller"
-
 	k8sClient client.Client
 	ctx       context.Context
 )
@@ -69,7 +57,7 @@ var _ = BeforeSuite(func() {
 	err = v1alpha1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred(), "Failed to add ClusterResourceQuota types to scheme")
 
-	k8sClient, err = k8sclient.New(cfg, k8sclient.Options{Scheme: scheme.Scheme})
+	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred(), "Failed to create k8s client")
 })
 

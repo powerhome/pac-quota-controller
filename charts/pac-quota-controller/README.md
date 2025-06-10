@@ -33,17 +33,23 @@ You can configure which registry to use by modifying the `controllerManager.cont
 - Kubernetes 1.19+
 - Helm 3.2.0+
 
-## Installing the Chart
+## Installation
+
+This chart is the single source of truth for deploying PAC Quota Controller. All manifests (CRDs, RBAC, webhooks, cert-manager, etc.) are managed here. Do not use Kustomize or Kubebuilder-generated manifests for deployment or testing.
 
 To install the chart with the release name `pac-quota-controller`:
 
-```console
+```sh
 helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
-The command deploys PAC Quota Controller on the Kubernetes cluster in the default configuration.
+## Upgrading
 
-> **Tip**: List all releases using `helm list -A`
+To upgrade the chart:
+
+```sh
+helm upgrade pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system
+```
 
 ## Uninstalling the Chart
 

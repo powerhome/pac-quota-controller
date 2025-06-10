@@ -106,13 +106,6 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	// In the Reconcile function, after reconciling CRQs, update the ownership cache
-	// (This is a simplified example; actual logic should be placed after CRQ status is updated)
-	if err := r.updateNamespaceOwnershipCache(ctx); err != nil {
-		log.Error(err, "Failed to update namespace ownership cache")
-		return ctrl.Result{}, err
-	}
-
 	// TODO: Further implementation to apply quotas to each namespace
 	// and aggregate usage will be implemented in follow-up PRs
 
@@ -200,48 +193,6 @@ func (r *ClusterResourceQuotaReconciler) updateNamespaceStatus(ctx context.Conte
 	}
 
 	return r.Status().Update(ctx, crqCopy)
-}
-
-// updateNamespaceOwnershipCache updates the ownership cache for namespaces based on the most recent CRQ
-func (r *ClusterResourceQuotaReconciler) updateNamespaceOwnershipCache(ctx context.Context) error {
-	// List all CRQs
-	crqList := &quotav1alpha1.ClusterResourceQuotaList{}
-	if err := r.Client.List(ctx, crqList); err != nil {
-		return err
-	}
-	// List all namespaces
-	nsList := &corev1.NamespaceList{}
-	if err := r.Client.List(ctx, nsList); err != nil {
-		return err
-	}
-	// For each namespace, find the owning CRQ (most recent by timestamp/generation)
-	ownership := make(map[string]string)
-	for _, ns := range nsList.Items {
-		var owner *quotav1alpha1.ClusterResourceQuota
-		var ownerTimestamp metav1.Time
-		var ownerGeneration int64
-		for _, crq := range crqList.Items {
-			if crq.Spec.NamespaceSelector == nil {
-				continue
-			}
-			selector, err := metav1.LabelSelectorAsSelector(crq.Spec.NamespaceSelector)
-			if err != nil {
-				continue
-			}
-			if selector.Matches(labels.Set(ns.Labels)) {
-				if owner == nil || crq.CreationTimestamp.Time.After(ownerTimestamp.Time) ||
-					(crq.CreationTimestamp.Time.Equal(ownerTimestamp.Time) && crq.Generation > ownerGeneration) {
-					owner = &crq
-					ownerTimestamp = crq.CreationTimestamp
-					ownerGeneration = crq.Generation
-				}
-			}
-		}
-		if owner != nil {
-			ownership[ns.Name] = owner.Name
-		}
-	}
-	return nil
 }
 
 // findQuotasForNamespace maps Namespace objects to ClusterResourceQuota requests
