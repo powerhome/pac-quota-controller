@@ -101,6 +101,18 @@ test-e2e: test-e2e-cleanup test-e2e-setup
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v; \
 	make test-e2e-cleanup
 
+.PHONY: test-e2e-cleanup
+# Clean up Kind cluster before/after e2e tests for a fully clean environment
+test-e2e-cleanup:
+	@echo "[test-e2e-cleanup] Deleting Kind cluster..."
+	$(KIND) delete cluster --name $(KIND_CLUSTER) || true
+
+.PHONY: test-e2e
+# Run e2e tests with setup/cleanup
+
+test-e2e: test-e2e-cleanup test-e2e-setup
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v; \
+	make test-e2e-cleanup
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run

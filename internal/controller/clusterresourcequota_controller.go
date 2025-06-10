@@ -107,6 +107,13 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
+	// In the Reconcile function, after reconciling CRQs, update the ownership cache
+	// (This is a simplified example; actual logic should be placed after CRQ status is updated)
+	if err := r.updateNamespaceOwnershipCache(ctx); err != nil {
+		log.Error(err, "Failed to update namespace ownership cache")
+		return ctrl.Result{}, err
+	}
+
 	// TODO: Further implementation to apply quotas to each namespace
 	// and aggregate usage will be implemented in follow-up PRs
 
