@@ -67,10 +67,6 @@ spec:
     limits.memory: 40Gi
 ```
 
-## Kubebuilder Markers
-
-Kubebuilder markers in the Go code are for documentation only and are not used for manifest generation or deployment. All configuration is managed in the Helm chart.
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
