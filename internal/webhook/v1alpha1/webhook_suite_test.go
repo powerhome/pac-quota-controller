@@ -95,9 +95,8 @@ var _ = BeforeSuite(func() {
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme.Scheme,
 		WebhookServer: webhook.NewServer(webhook.Options{
-			Host:    "localhost",
-			Port:    9443,
-			CertDir: "/tmp/k8s-webhook-server/serving-certs",
+			Host: "localhost",
+			Port: 9443,
 		}),
 		LeaderElection: false,
 		Metrics:        metricsserver.Options{BindAddress: "0"},

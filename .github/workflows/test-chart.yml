@@ -83,7 +83,7 @@ jobs:
 
       - name: Check Helm release status
         run: |
-          helm status my-release --namespace pac-quota-controller-system
+          helm status pac-quota-controller --namespace pac-quota-controller-system
 
 # TODO: Uncomment if prometheus.enabled is set to true to confirm that the ServiceMonitor gets created
 #      - name: Check Presence of ServiceMonitor
