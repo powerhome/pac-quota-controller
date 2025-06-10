@@ -96,9 +96,8 @@ var _ = BeforeSuite(func() {
 		Scheme:         scheme.Scheme,
 		LeaderElection: false,
 		WebhookServer: webhook.NewServer(webhook.Options{
-			Host:    "localhost",
-			Port:    9443,
-			CertDir: "/tmp/k8s-webhook-server/serving-certs",
+			Host: "localhost",
+			Port: 9443,
 		}),
 		Metrics: metricsserver.Options{BindAddress: "0"},
 	})
