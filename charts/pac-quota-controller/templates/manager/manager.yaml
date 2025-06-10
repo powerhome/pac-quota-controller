@@ -31,6 +31,13 @@ spec:
             {{- range .Values.controllerManager.container.args }}
             - {{ . }}
             {{- end }}
+            {{- if .Values.webhook.dryRunOnly }}
+            - --webhook-dry-run-only=true
+            {{- end }}
+          ports:
+          - containerPort: 9443
+            name: webhook-server
+            protocol: TCP
           command:
             - /manager
           image: {{ .Values.controllerManager.container.image.repository }}:{{ .Values.controllerManager.container.image.tag }}
@@ -58,6 +65,12 @@ spec:
               readOnly: true
             {{- end }}
           {{- end }}
+          {{- if .Values.certmanager.enable }}
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+          {{- end }}
       securityContext:
         {{- toYaml .Values.controllerManager.securityContext | nindent 8 }}
       serviceAccountName: {{ .Values.controllerManager.serviceAccountName }}
@@ -69,4 +82,10 @@ spec:
           secret:
             secretName: metrics-server-cert
         {{- end }}
+      {{- end }}
+      {{- if .Values.certmanager.enable }}
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: webhook-server-cert
       {{- end }}

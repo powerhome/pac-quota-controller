@@ -17,29 +17,34 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/powerhome/pac-quota-controller/test/utils"
+	"github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
+	k8sconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
 var (
-	// Optional Environment Variables:
-	// - CERT_MANAGER_INSTALL_SKIP=true: Skips CertManager installation during test setup.
-	// These variables are useful if CertManager is already installed, avoiding
-	// re-installation and conflicts.
-	skipCertManagerInstall = os.Getenv("CERT_MANAGER_INSTALL_SKIP") == "true"
-	// isCertManagerAlreadyInstalled will be set true when CertManager CRDs be found on the cluster
-	isCertManagerAlreadyInstalled = false
-
 	// projectImage is the name of the image which will be build and loaded
 	// with the code source changes to be tested.
 	projectImage = "ghcr.io/powerhome/pac-quota-controller:latest"
+
+	// helmReleaseName is the name of the Helm release for the controller-manager.
+	helmReleaseName = "pac-quota-controller"
+	// helmNamespace is the Kubernetes namespace where the controller-manager will be deployed.
+	helmNamespace = "pac-quota-controller-system"
+	// helmChartPath is the file path to the Helm chart for the controller-manager.
+	helmChartPath = "./charts/pac-quota-controller"
+
+	k8sClient client.Client
+	ctx       context.Context
 )
 
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
@@ -53,42 +58,20 @@ func TestE2E(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	By("building the manager(Operator) image")
-	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
-	_, err := utils.Run(cmd)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
+	By("initializing Kubernetes client")
+	var err error
+	ctx = context.Background()
+	cfg, err := k8sconfig.GetConfig()
+	Expect(err).NotTo(HaveOccurred(), "Failed to get kubeconfig")
 
-	By("loading the manager(Operator) image on Kind")
-	err = utils.LoadImageToKindClusterWithName(projectImage)
-	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager(Operator) image into Kind")
+	// Register ClusterResourceQuota CRD types with the global scheme.
+	// The global scheme already includes all built-in Kubernetes types.
+	err = v1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred(), "Failed to add ClusterResourceQuota types to scheme")
 
-	if !skipCertManagerInstall {
-		By("checking if cert manager is installed already")
-		isCertManagerAlreadyInstalled = utils.IsCertManagerCRDsInstalled()
-		if !isCertManagerAlreadyInstalled {
-			_, _ = fmt.Fprintf(GinkgoWriter, "Installing CertManager...\n")
-			Expect(utils.InstallCertManager()).To(Succeed(), "Failed to install CertManager")
-		} else {
-			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: CertManager is already installed. Skipping installation...\n")
-		}
-	}
-
-	By("deploying the controller-manager")
-	cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", projectImage))
-	_, err = utils.Run(cmd)
-	Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
+	k8sClient, err = k8sclient.New(cfg, k8sclient.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred(), "Failed to create k8s client")
 })
 
 var _ = AfterSuite(func() {
-	By("stopping the controller")
-	utils.StopCommand()
-
-	if !skipCertManagerInstall && !isCertManagerAlreadyInstalled {
-		_, _ = fmt.Fprintf(GinkgoWriter, "Uninstalling CertManager...\n")
-		utils.UninstallCertManager()
-	}
-
-	By("uninstalling CRDs")
-	cmd := exec.Command("make", "uninstall")
-	_, _ = utils.Run(cmd)
 })

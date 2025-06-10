@@ -7,6 +7,8 @@
 bin/*
 Dockerfile.cross
 dist/
+config/
+charts/pac-quota-controller/charts
 
 # Test binary, built with `go test -c`
 *.test

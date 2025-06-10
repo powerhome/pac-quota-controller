@@ -97,10 +97,37 @@ setup-test-e2e: cleanup-test-e2e ## Set up a Kind cluster for e2e tests
 	}
 	$(KIND) create cluster --name $(KIND_CLUSTER)
 
-.PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
+.PHONY: test-e2e-setup
+# Build image, load to Kind and install Helm chart
+# This target is idempotent and safe to run multiple times
+test-e2e-setup:
+	@echo "[test-e2e-setup] Building manager image..."
+	make docker-build IMG=$(IMG)
+	@echo "[test-e2e-setup] Ensuring Kind cluster exists..."
+	$(eval KIND_CLUSTER ?= pac-quota-controller-test-e2e)
+	@if ! kind get clusters | grep -q "^$(KIND_CLUSTER)$$"; then \
+		kind create cluster --name $(KIND_CLUSTER); \
+	fi
+	@echo "[test-e2e-setup] Loading image to Kind..."
+	kind load docker-image $(IMG) --name $(KIND_CLUSTER)
+	@echo "[test-e2e-setup] Deploying Helm chart..."
+	make helm-deploy IMG=$(IMG)
+	@echo "[test-e2e-setup] Waiting for controller deployment to be available..."
+	kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager
+	@echo "[test-e2e-setup] Helm chart deployed and controller is available."
 
+.PHONY: test-e2e-cleanup
+# Clean up Kind cluster before/after e2e tests for a fully clean environment
+test-e2e-cleanup:
+	@echo "[test-e2e-cleanup] Deleting Kind cluster..."
+	$(KIND) delete cluster --name $(KIND_CLUSTER) || true
+
+.PHONY: test-e2e
+# Run e2e tests with setup/cleanup
+
+test-e2e: test-e2e-cleanup test-e2e-setup
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v; \
+	make test-e2e-cleanup
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
@@ -140,11 +167,7 @@ kind-build: docker-build ## Build and load the controller image into Kind cluste
 .PHONY: kind-deploy
 kind-deploy: kind-up kind-build ## Deploy controller to local Kind cluster
 	@echo "Deploying controller to local Kind cluster with Helm..."
-	helm upgrade --install pac-quota-controller ./charts/pac-quota-controller \
-			--namespace pac-quota-controller-system --create-namespace \
-			--set image.repository=$(IMG) \
-			--set image.tag=latest \
-			--set image.pullPolicy=Never
+	make helm-deploy IMG=$(IMG)
 	@echo "Waiting for controller to be ready..."
 	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager || true
 	@echo "Controller deploy finished."
@@ -356,14 +379,24 @@ helm-test: helm-package ## Test Helm chart installation in a Kind cluster
 	@echo "Helm installation test completed."
 	@kind delete cluster --name helm-test
 
-.PHONY: helm-index
-helm-index: ## Generate Helm chart index
-	@echo "Generating Helm chart index..."
-	@if ! command -v cr > /dev/null 2>&1; then \
-		echo "chart-releaser is not installed. Installing..."; \
-		go install github.com/helm/chart-releaser/cmd/cr@latest; \
+.PHONY: helm-deploy
+helm-deploy:
+	@echo "Ensuring Helm repo for cert-manager exists..."
+	@if ! helm repo list | grep -q 'https://charts.jetstack.io'; then \
+		helm repo add jetstack https://charts.jetstack.io; \
 	fi
-	@cr index -c .cr-release-packages -o powerhome -r pac-quota-controller --push=false
+	@echo "Building Helm dependencies..."
+	helm dependency build ./charts/pac-quota-controller
+	@echo "Ensuring cert-manager CRDs are installed from upstream..."
+	CERT_MANAGER_VERSION=$$(ls ./charts/pac-quota-controller/charts/cert-manager-*.tgz | sed -E 's/.*cert-manager-v([0-9.]+)\.tgz/\1/'); \
+	if ! kubectl get crd certificates.cert-manager.io >/dev/null 2>&1; then \
+		kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v$${CERT_MANAGER_VERSION}/cert-manager.crds.yaml; \
+	fi
+	@echo "Installing/Upgrading Helm release..."
+	helm upgrade --install pac-quota-controller ./charts/pac-quota-controller \
+		--namespace pac-quota-controller-system --create-namespace \
+		--set controllerManager.container.image.tag=$$(echo $(IMG) | cut -d: -f2) \
+		--set certManager.install=true
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

@@ -6,12 +6,12 @@ import (
 
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
-var setupLog = log.Log.WithName("setup.metrics")
+var setupLog = logf.Log.WithName("setup.metrics")
 
 // SetupMetricsServer configures the metrics server options
 func SetupMetricsServer(

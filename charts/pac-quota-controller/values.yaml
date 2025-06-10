@@ -10,6 +10,7 @@ controllerManager:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
       - "--health-probe-bind-address=:8081"
+      - "--webhook-cert-path=/tmp/k8s-webhook-server/serving-certs"
     resources:
       limits:
         cpu: 500m
@@ -70,8 +71,14 @@ prometheus:
 
 # [CERT-MANAGER]: To enable cert-manager injection to webhooks set true
 certmanager:
-  enable: false
+  # Used to install cert-manager in the current namespace, only if not already installed.
+  install: false
+  enable: true
 
 # [NETWORK POLICIES]: To enable NetworkPolicies set true
 networkPolicy:
   enable: false
+
+webhook:
+  enabled: true
+  dryRunOnly: false

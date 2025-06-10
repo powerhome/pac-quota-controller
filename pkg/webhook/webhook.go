@@ -7,11 +7,11 @@ import (
 
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
-var setupLog = log.Log.WithName("setup.webhook")
+var setupLog = logf.Log.WithName("setup.webhook")
 
 // SetupWebhookServer configures the webhook server
 func SetupWebhookServer(cfg *config.Config, tlsOpts []func(*tls.Config)) (webhook.Server, *certwatcher.CertWatcher) {
@@ -40,7 +40,9 @@ func SetupWebhookServer(cfg *config.Config, tlsOpts []func(*tls.Config)) (webhoo
 		})
 	}
 
+	// Ensure the webhook server listens on the configured port and all interfaces (default 9443)
 	webhookServer := webhook.NewServer(webhook.Options{
+		Port:    cfg.WebhookPort,
 		TLSOpts: webhookTLSOpts,
 	})
 

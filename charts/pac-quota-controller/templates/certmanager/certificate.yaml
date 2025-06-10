@@ -9,6 +9,29 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   selfSigned: {}
+---
+# Certificate for the webhook
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  annotations:
+    {{- if .Values.crd.keep }}
+    "helm.sh/resource-policy": keep
+    {{- end }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+  name: webhook-server-cert
+  namespace: {{ .Release.Namespace }}
+spec:
+  dnsNames:
+    - pac-quota-controller-webhook-service.{{ .Release.Namespace }}.svc
+    - pac-quota-controller-webhook-service.{{ .Release.Namespace }}.svc.cluster.local
+    - pac-quota-controller-controller-manager.{{ .Release.Namespace }}.svc
+    - pac-quota-controller-controller-manager.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: selfsigned-issuer
+  secretName: webhook-server-cert
 {{- if .Values.metrics.enable }}
 ---
 # Certificate for the metrics

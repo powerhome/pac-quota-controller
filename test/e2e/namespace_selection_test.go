@@ -17,102 +17,259 @@ limitations under the License.
 package e2e
 
 import (
-	"os/exec"
-	"strings"
-	"time"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/powerhome/pac-quota-controller/test/utils"
+	"math/rand"
+	"strconv"
+
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func crqStatusNamespaces(_ string) []string { // crqName is always the same, so mark as unused
-	cmd := exec.Command(
-		"kubectl", "get", "clusterresourcequota", "test-namespaceselection-quota",
-		"-o", "jsonpath={.status.namespaces[*].namespace}",
-	)
-	out, _ := utils.Run(cmd)
-	if strings.TrimSpace(out) == "" {
+func getCRQStatusNamespaces(crqName string) []string {
+	crq := &quotav1alpha1.ClusterResourceQuota{}
+	err := k8sClient.Get(ctx, client.ObjectKey{Name: crqName}, crq)
+	if err != nil || crq.Status.Namespaces == nil {
 		return nil
 	}
-	return strings.Fields(out)
+	nsList := make([]string, 0, len(crq.Status.Namespaces))
+	for _, ns := range crq.Status.Namespaces {
+		nsList = append(nsList, ns.Namespace)
+	}
+	return nsList
 }
 
-var _ = Describe("ClusterResourceQuota Namespace Selection", Ordered, func() {
-	const (
-		crqName       = "test-namespaceselection-quota"
-		matchingNS    = "test-namespaceselection-ns"
-		nonMatchingNS = "test-namespaceselection-ns-wrong-label"
-	)
-
-	BeforeAll(func() {
-		// No global setup needed, handled in e2e_suite_test.go
-
-		By("Creating test namespaces")
-		// Apply test manifest
-		cmd := exec.Command("kubectl", "apply", "-f", "test/fixtures/namespace_selection/")
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "Failed to create test manifests")
-
-		// Wait for controller to process
-		time.Sleep(2 * time.Second)
-	})
-
-	AfterAll(func() {
-		By("Cleaning up test resources")
-		cmd := exec.Command("kubectl", "delete", "namespace", matchingNS, nonMatchingNS, "--wait=false")
-		_, _ = utils.Run(cmd)
-		cmd = exec.Command("kubectl", "delete", "clusterresourcequota", crqName, "--wait=false")
-		_, _ = utils.Run(cmd)
-	})
-
+var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
 	It("Should create a ClusterResourceQuota and check if it exists", func() {
-		cmd := exec.Command("kubectl", "get", "clusterresourcequota", crqName)
-		out, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(out).To(ContainSubstring(crqName))
+		suffix := strconv.Itoa(rand.Intn(1000000))
+		crqName := "test-namespaceselection-quota-" + suffix
+		matchingNS := "test-namespaceselection-ns-" + suffix
+		nonMatchingNS := "test-namespaceselection-ns-wrong-label-" + suffix
+
+		matching := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   matchingNS,
+				Labels: map[string]string{"quota": "limited"},
+			},
+		}
+		nonMatching := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nonMatchingNS,
+				Labels: map[string]string{"quota": "other"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, matching)).To(Succeed())
+		Expect(k8sClient.Create(ctx, nonMatching)).To(Succeed())
+
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: crqName,
+			},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"quota": "limited"},
+				},
+				Hard: quotav1alpha1.ResourceList{},
+			},
+		}
+		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, matching)
+			_ = k8sClient.Delete(ctx, nonMatching)
+			_ = k8sClient.Delete(ctx, crq)
+		})
+
+		Eventually(func() error {
+			return k8sClient.Get(ctx, client.ObjectKey{Name: crqName}, crq)
+		}, "10s", "1s").Should(Succeed())
+		Expect(crq.Name).To(Equal(crqName))
 	})
 
 	It("Should add a matching namespace to the CRQ status", func() {
+		suffix := strconv.Itoa(rand.Intn(1000000))
+		crqName := "test-namespaceselection-quota-" + suffix
+		matchingNS := "test-namespaceselection-ns-" + suffix
+
+		matching := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   matchingNS,
+				Labels: map[string]string{"quota": "limited"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, matching)).To(Succeed())
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: crqName,
+			},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"quota": "limited"},
+				},
+				Hard: quotav1alpha1.ResourceList{},
+			},
+		}
+		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, matching)
+			_ = k8sClient.Delete(ctx, crq)
+		})
 		By("Waiting for namespace to appear in CRQ status")
 		Eventually(func() []string {
-			return crqStatusNamespaces(crqName)
+			return getCRQStatusNamespaces(crqName)
 		}, "10s", "1s").Should(ContainElement(matchingNS))
 	})
 
 	It("Should not add a non-matching namespace to the CRQ status", func() {
+		suffix := strconv.Itoa(rand.Intn(1000000))
+		crqName := "test-namespaceselection-quota-" + suffix
+		nonMatchingNS := "test-namespaceselection-ns-wrong-label-" + suffix
+
+		nonMatching := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nonMatchingNS,
+				Labels: map[string]string{"quota": "other"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, nonMatching)).To(Succeed())
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: crqName,
+			},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"quota": "limited"},
+				},
+				Hard: quotav1alpha1.ResourceList{},
+			},
+		}
+		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, nonMatching)
+			_ = k8sClient.Delete(ctx, crq)
+		})
 		Consistently(func() []string {
-			return crqStatusNamespaces(crqName)
+			return getCRQStatusNamespaces(crqName)
 		}, "5s", "1s").ShouldNot(ContainElement(nonMatchingNS))
 	})
 
 	It("Should update CRQ status when a namespace label is changed to match", func() {
-		cmd := exec.Command("kubectl", "label", "namespace", nonMatchingNS, "quota=limited", "--overwrite")
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred())
+		suffix := strconv.Itoa(rand.Intn(1000000))
+		crqName := "test-namespaceselection-quota-" + suffix
+		matchingNS := "test-namespaceselection-ns-" + suffix
+		nonMatchingNS := "test-namespaceselection-ns-wrong-label-" + suffix
 
+		matching := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   matchingNS,
+				Labels: map[string]string{"quota": "limited"},
+			},
+		}
+		nonMatching := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nonMatchingNS,
+				Labels: map[string]string{"quota": "other"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, matching)).To(Succeed())
+		Expect(k8sClient.Create(ctx, nonMatching)).To(Succeed())
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: crqName,
+			},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"quota": "limited"},
+				},
+				Hard: quotav1alpha1.ResourceList{},
+			},
+		}
+		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, matching)
+			_ = k8sClient.Delete(ctx, nonMatching)
+			_ = k8sClient.Delete(ctx, crq)
+		})
+		// Change label to match
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: nonMatchingNS}, nonMatching)).To(Succeed())
+		nonMatching.Labels["quota"] = "limited"
+		Expect(k8sClient.Update(ctx, nonMatching)).To(Succeed())
 		Eventually(func() []string {
-			return crqStatusNamespaces(crqName)
+			return getCRQStatusNamespaces(crqName)
 		}, "10s", "1s").Should(ContainElement(nonMatchingNS))
 	})
 
 	It("Should update CRQ status when a namespace label is changed to exclude it", func() {
-		cmd := exec.Command("kubectl", "label", "namespace", matchingNS, "quota-", "--overwrite")
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred())
+		suffix := strconv.Itoa(rand.Intn(1000000))
+		crqName := "test-namespaceselection-quota-" + suffix
+		matchingNS := "test-namespaceselection-ns-" + suffix
 
+		matching := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   matchingNS,
+				Labels: map[string]string{"quota": "limited"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, matching)).To(Succeed())
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: crqName,
+			},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"quota": "limited"},
+				},
+				Hard: quotav1alpha1.ResourceList{},
+			},
+		}
+		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, matching)
+			_ = k8sClient.Delete(ctx, crq)
+		})
+		// Remove label to exclude
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: matchingNS}, matching)).To(Succeed())
+		delete(matching.Labels, "quota")
+		Expect(k8sClient.Update(ctx, matching)).To(Succeed())
 		Eventually(func() []string {
-			return crqStatusNamespaces(crqName)
+			return getCRQStatusNamespaces(crqName)
 		}, "10s", "1s").ShouldNot(ContainElement(matchingNS))
 	})
 
 	It("Should update CRQ status when a namespace is deleted", func() {
-		cmd := exec.Command("kubectl", "delete", "namespace", nonMatchingNS, "--wait=false")
-		_, _ = utils.Run(cmd)
+		suffix := strconv.Itoa(rand.Intn(1000000))
+		crqName := "test-namespaceselection-quota-" + suffix
+		nonMatchingNS := "test-namespaceselection-ns-wrong-label-" + suffix
 
+		nonMatching := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   nonMatchingNS,
+				Labels: map[string]string{"quota": "other"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, nonMatching)).To(Succeed())
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: crqName,
+			},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"quota": "limited"},
+				},
+				Hard: quotav1alpha1.ResourceList{},
+			},
+		}
+		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, nonMatching)
+			_ = k8sClient.Delete(ctx, crq)
+		})
+		_ = k8sClient.Delete(ctx, nonMatching)
 		Eventually(func() []string {
-			return crqStatusNamespaces(crqName)
+			return getCRQStatusNamespaces(crqName)
 		}, "10s", "1s").ShouldNot(ContainElement(nonMatchingNS))
 	})
 })

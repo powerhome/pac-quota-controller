@@ -35,6 +35,8 @@ import (
 	"github.com/powerhome/pac-quota-controller/internal/controller/namespaceselection"
 )
 
+var log = logf.Log.WithName("clusterresourcequota-controller")
+
 // ClusterResourceQuotaReconciler reconciles a ClusterResourceQuota object
 type ClusterResourceQuotaReconciler struct {
 	client.Client
@@ -59,7 +61,7 @@ type ClusterResourceQuotaReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logf.FromContext(ctx).WithValues("clusterresourcequota", req.NamespacedName)
+	log := log.WithValues("clusterresourcequota", req.NamespacedName)
 	log.Info("Reconciling ClusterResourceQuota")
 
 	// Fetch the ClusterResourceQuota instance
@@ -101,6 +103,13 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	// Store current namespaces in annotation for future comparisons
 	if err := r.updateNamespaceStatus(ctx, crq, selectedNamespaces); err != nil {
 		log.Error(err, "Failed to update namespace annotation")
+		return ctrl.Result{}, err
+	}
+
+	// In the Reconcile function, after reconciling CRQs, update the ownership cache
+	// (This is a simplified example; actual logic should be placed after CRQ status is updated)
+	if err := r.updateNamespaceOwnershipCache(ctx); err != nil {
+		log.Error(err, "Failed to update namespace ownership cache")
 		return ctrl.Result{}, err
 	}
 
@@ -193,6 +202,48 @@ func (r *ClusterResourceQuotaReconciler) updateNamespaceStatus(ctx context.Conte
 	return r.Status().Update(ctx, crqCopy)
 }
 
+// updateNamespaceOwnershipCache updates the ownership cache for namespaces based on the most recent CRQ
+func (r *ClusterResourceQuotaReconciler) updateNamespaceOwnershipCache(ctx context.Context) error {
+	// List all CRQs
+	crqList := &quotav1alpha1.ClusterResourceQuotaList{}
+	if err := r.Client.List(ctx, crqList); err != nil {
+		return err
+	}
+	// List all namespaces
+	nsList := &corev1.NamespaceList{}
+	if err := r.Client.List(ctx, nsList); err != nil {
+		return err
+	}
+	// For each namespace, find the owning CRQ (most recent by timestamp/generation)
+	ownership := make(map[string]string)
+	for _, ns := range nsList.Items {
+		var owner *quotav1alpha1.ClusterResourceQuota
+		var ownerTimestamp metav1.Time
+		var ownerGeneration int64
+		for _, crq := range crqList.Items {
+			if crq.Spec.NamespaceSelector == nil {
+				continue
+			}
+			selector, err := metav1.LabelSelectorAsSelector(crq.Spec.NamespaceSelector)
+			if err != nil {
+				continue
+			}
+			if selector.Matches(labels.Set(ns.Labels)) {
+				if owner == nil || crq.CreationTimestamp.Time.After(ownerTimestamp.Time) ||
+					(crq.CreationTimestamp.Time.Equal(ownerTimestamp.Time) && crq.Generation > ownerGeneration) {
+					owner = &crq
+					ownerTimestamp = crq.CreationTimestamp
+					ownerGeneration = crq.Generation
+				}
+			}
+		}
+		if owner != nil {
+			ownership[ns.Name] = owner.Name
+		}
+	}
+	return nil
+}
+
 // findQuotasForNamespace maps Namespace objects to ClusterResourceQuota requests
 // that should be reconciled based on namespace selection criteria
 func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
@@ -201,8 +252,10 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Cont
 		return nil
 	}
 
-	logger := logf.FromContext(ctx)
-	logger.V(1).Info("Processing namespace event", "namespace", ns.Name)
+	logger := log
+	logger = logger.WithValues("namespace", ns.Name)
+
+	logger.Info("Processing namespace event")
 
 	// List all ClusterResourceQuotas
 	quotaList := &quotav1alpha1.ClusterResourceQuotaList{}
@@ -231,8 +284,8 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Cont
 		}
 
 		if shouldEnqueue {
-			logger.V(1).Info("Enqueueing ClusterResourceQuota for reconciliation due to namespace change",
-				"namespace", ns.Name, "quota", quota.Name)
+			logger.Info("Enqueueing ClusterResourceQuota for reconciliation due to namespace change",
+				"quota", quota.Name)
 			requests = append(requests, reconcile.Request{
 				NamespacedName: types.NamespacedName{
 					Name: quota.Name,

@@ -25,18 +25,19 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/spf13/cobra"
-	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/powerhome/pac-quota-controller/cmd/version"
+	"github.com/powerhome/pac-quota-controller/internal/webhook/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/powerhome/pac-quota-controller/pkg/logger"
 	"github.com/powerhome/pac-quota-controller/pkg/manager"
 	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 	"github.com/powerhome/pac-quota-controller/pkg/tls"
 	"github.com/powerhome/pac-quota-controller/pkg/webhook"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var setupLog = ctrl.Log.WithName("setup")
+var setupLog = logf.Log.WithName("setup")
 
 // nolint:gocyclo
 func main() {
@@ -94,7 +95,11 @@ func main() {
 				setupLog.Error(err, "unable to add certificate watchers")
 				os.Exit(1)
 			}
-
+			if err := v1alpha1.SetupClusterResourceQuotaWebhookWithManager(mgr); err != nil {
+				setupLog.Error(err, "unable to set up ClusterResourceQuota webhook")
+				os.Exit(1)
+			}
+			setupLog.Info("Webhook configured", "port", cfg.WebhookPort)
 			// Start the manager
 			manager.Start(mgr)
 		},

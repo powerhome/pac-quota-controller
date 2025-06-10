@@ -18,3 +18,8 @@ annotations:
   artifacthub.io/images: |
     - name: pac-quota-controller
       image: ghcr.io/powerhome/pac-quota-controller:latest
+dependencies:
+  - name: cert-manager
+    version: "1.18.0"
+    repository: "https://charts.jetstack.io"
+    condition: certmanager.deploy
