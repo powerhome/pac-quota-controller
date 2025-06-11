@@ -388,7 +388,7 @@ helm-deploy:
 	helm upgrade --install pac-quota-controller ./charts/pac-quota-controller \
 		--namespace pac-quota-controller-system --create-namespace \
 		--set controllerManager.container.image.tag=$$(echo $(IMG) | cut -d: -f2) \
-		--set certManager.install=true
+		--set certmanager.install=true
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary
