@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 30
     env:
       KIND_CLUSTER: pac-quota-controller-test-e2e
-      IMG: pac-quota-controller:e2e
+      IMG: ghcr.io/powerhome/pac-quota-controller:e2e
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -26,6 +26,7 @@ jobs:
         uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
         with:
           cluster_name: ${{ env.KIND_CLUSTER }}
+          wait: 60s # Add wait for Kind cluster to be ready
 
       - name: Install kustomize
         run: |

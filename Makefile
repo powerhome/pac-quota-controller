@@ -104,6 +104,11 @@ test-e2e-setup:
 	kind load docker-image $(IMG) --name $(KIND_CLUSTER)
 	@echo "[test-e2e-setup] Deploying Helm chart..."
 	make helm-deploy IMG=$(IMG)
+	@echo "[test-e2e-setup] Waiting for cert-manager deployments to be available..."
+	kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=300s deployment/pac-quota-controller-cert-manager || echo "Timed out waiting for pac-quota-controller-cert-manager deployment"
+	kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=300s deployment/pac-quota-controller-cert-manager-webhook || echo "Timed out waiting for pac-quota-controller-cert-manager-webhook deployment"
+	kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=300s deployment/pac-quota-controller-cert-manager-cainjector || echo "Timed out waiting for pac-quota-controller-cert-manager-cainjector deployment"
+	@echo "[test-e2e-setup] Cert-manager deployments are available."
 	@echo "[test-e2e-setup] Waiting for controller deployment to be available..."
 	kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=600s deployment/pac-quota-controller-controller-manager
 	@echo "[test-e2e-setup] Helm chart deployed and controller is available."
