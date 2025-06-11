@@ -58,7 +58,3 @@ var _ = Describe("ClusterResourceQuota", func() {
 		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
 	})
 })
-
-func resourceMustParse(val string) resource.Quantity {
-	return resource.MustParse(val)
-}
