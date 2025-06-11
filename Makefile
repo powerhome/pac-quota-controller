@@ -375,7 +375,6 @@ helm-deploy:
 	@echo "Ensuring Helm repo for cert-manager exists..."
 	@if ! helm repo list | grep -q 'https://charts.jetstack.io'; then \
 		helm repo add jetstack https://charts.jetstack.io; \
-		@helm repo update \
 	fi
 	@echo "Building Helm dependencies..."
 	helm dependency build ./charts/pac-quota-controller
