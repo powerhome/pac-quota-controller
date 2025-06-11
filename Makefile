@@ -164,9 +164,6 @@ kind-build: docker-build ## Build and load the controller image into Kind cluste
 kind-deploy: kind-up kind-build ## Deploy controller to local Kind cluster
 	@echo "Deploying controller to local Kind cluster with Helm..."
 	make helm-deploy IMG=$(IMG)
-	@echo "Waiting for controller to be ready..."
-	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager || true
-	@echo "Controller deploy finished."
 
 .PHONY: kind-sample
 kind-sample: ## Deploy a sample ClusterResourceQuota to test the controller
