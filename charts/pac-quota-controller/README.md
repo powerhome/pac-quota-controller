@@ -91,5 +91,5 @@ spec:
 
 > **Note:**
 >
-> - `certManager.enable` controls whether the chart configures resources to use cert-manager for certificates.
-> - `certManager.install` controls whether the chart will deploy cert-manager itself into the same namespace. Only set this to `true` if you do **not** already have cert-manager running in your cluster. If you already have cert-manager, set this to `false` to avoid duplicate installations.
+> - `certmanager.enable` controls whether the chart configures resources to use cert-manager for certificates.
+> - `certmanager.install` controls whether the chart will deploy cert-manager itself into the same namespace. Only set this to `true` if you do **not** already have cert-manager running in your cluster. If you already have cert-manager, set this to `false` to avoid duplicate installations.
