@@ -113,7 +113,7 @@ test-e2e-setup:
 	@echo "[test-e2e-setup] Deploying Helm chart..."
 	make helm-deploy IMG=$(IMG)
 	@echo "[test-e2e-setup] Waiting for controller deployment to be available..."
-	kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager
+	kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=300s deployment/pac-quota-controller-controller-manager
 	@echo "[test-e2e-setup] Helm chart deployed and controller is available."
 
 .PHONY: test-e2e-cleanup
@@ -124,7 +124,6 @@ test-e2e-cleanup:
 
 .PHONY: test-e2e
 # Run e2e tests with setup/cleanup
-
 test-e2e: test-e2e-cleanup test-e2e-setup
 	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v; \
 	make test-e2e-cleanup
