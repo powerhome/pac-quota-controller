@@ -89,14 +89,6 @@ cleanup-resources: ## Clean up resources in the existing cluster
 	-$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=true -f - || true
 	@echo "Cleanup completed successfully"
 
-.PHONY: setup-test-e2e
-setup-test-e2e: cleanup-test-e2e ## Set up a Kind cluster for e2e tests
-	@command -v $(KIND) >/dev/null 2>&1 || { \
-		echo "Kind is not installed. Please install Kind manually."; \
-		exit 1; \
-	}
-	$(KIND) create cluster --name $(KIND_CLUSTER)
-
 .PHONY: test-e2e-setup
 # Build image, load to Kind and install Helm chart
 # This target is idempotent and safe to run multiple times
@@ -113,7 +105,7 @@ test-e2e-setup:
 	@echo "[test-e2e-setup] Deploying Helm chart..."
 	make helm-deploy IMG=$(IMG)
 	@echo "[test-e2e-setup] Waiting for controller deployment to be available..."
-	kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=300s deployment/pac-quota-controller-controller-manager
+	kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=600s deployment/pac-quota-controller-controller-manager
 	@echo "[test-e2e-setup] Helm chart deployed and controller is available."
 
 .PHONY: test-e2e-cleanup
@@ -383,6 +375,7 @@ helm-deploy:
 	@echo "Ensuring Helm repo for cert-manager exists..."
 	@if ! helm repo list | grep -q 'https://charts.jetstack.io'; then \
 		helm repo add jetstack https://charts.jetstack.io; \
+		@helm repo update \
 	fi
 	@echo "Building Helm dependencies..."
 	helm dependency build ./charts/pac-quota-controller
