@@ -86,8 +86,8 @@ spec:
 
 | Name                      | Description                                                                                 | Type    | Default |
 |---------------------------|---------------------------------------------------------------------------------------------|---------|---------|
-| certManager.enable        | Enable support for cert-manager (required for webhooks and certificate management).          | bool    | true    |
-| certManager.install       | Install cert-manager in this namespace. **Should only be true if cert-manager is not already installed in your cluster.** If you already have a running cert-manager, set this to false to avoid conflicts. | bool    | true    |
+| certmanager.enable        | Enable support for cert-manager (required for webhooks and certificate management).          | bool    | true    |
+| certmanager.install       | Install cert-manager in this namespace. **Should only be true if cert-manager is not already installed in your cluster.** If you already have a running cert-manager, set this to false to avoid conflicts. | bool    | true    |
 
 > **Note:**
 >
