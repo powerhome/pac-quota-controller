@@ -22,7 +22,6 @@ import (
 
 	"math/rand"
 	"strconv"
-	"time"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -43,45 +42,12 @@ func getCRQStatusNamespaces(crqName string) []string {
 	return nsList
 }
 
-func testNonMatchingNamespaceNotInStatus(crqName, nsName string, nsLabels map[string]string, deleteNS bool) {
-	nonMatching := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   nsName,
-			Labels: nsLabels,
-		},
-	}
-	Expect(k8sClient.Create(ctx, nonMatching)).To(Succeed())
-	crq := &quotav1alpha1.ClusterResourceQuota{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: crqName,
-		},
-		Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-			NamespaceSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"quota": "limited"},
-			},
-			Hard: quotav1alpha1.ResourceList{},
-		},
-	}
-	Expect(k8sClient.Create(ctx, crq)).To(Succeed())
-	DeferCleanup(func() {
-		_ = k8sClient.Delete(ctx, crq)
-		if !deleteNS {
-			_ = k8sClient.Delete(ctx, nonMatching)
-		}
-	})
-	if deleteNS {
-		_ = k8sClient.Delete(ctx, nonMatching)
-		Eventually(func() []string {
-			return getCRQStatusNamespaces(crqName)
-		}, "10s", "1s").ShouldNot(ContainElement(nsName))
-	} else {
-		Consistently(func() []string {
-			return getCRQStatusNamespaces(crqName)
-		}, "5s", "1s").ShouldNot(ContainElement(nsName))
-	}
-}
-
-func testNonMatchingNamespaceNotInStatusWithLabels(crqName, nsName string, nsLabels map[string]string, labelKey, labelValue string, deleteNS bool) {
+func testNonMatchingNamespaceNotInStatusWithLabels(
+	crqName, nsName string,
+	nsLabels map[string]string,
+	labelKey, labelValue string,
+	deleteNS bool,
+) {
 	nonMatching := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   nsName,
@@ -140,10 +106,6 @@ func ensureCRQDeleted(name string) {
 }
 
 var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
-	BeforeEach(func() {
-		rand.Seed(time.Now().UnixNano())
-	})
-
 	It("Should add a matching namespace to the CRQ status", func() {
 		suffix := strconv.Itoa(rand.Intn(1000000))
 		labelKey := "quota-" + strconv.Itoa(rand.Intn(1000000))
@@ -193,7 +155,17 @@ var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
 		ensureNamespaceDeleted(nonMatchingNS)
 		ensureCRQDeleted(crqName)
 
-		testNonMatchingNamespaceNotInStatusWithLabels(crqName, nonMatchingNS, map[string]string{labelKey: "other-" + strconv.Itoa(rand.Intn(1000000))}, labelKey, labelValue, false)
+		nonMatchingLabels := map[string]string{
+			labelKey: "other-" + strconv.Itoa(rand.Intn(1000000)),
+		}
+		testNonMatchingNamespaceNotInStatusWithLabels(
+			crqName,
+			nonMatchingNS,
+			nonMatchingLabels,
+			labelKey,
+			labelValue,
+			false,
+		)
 	})
 
 	It("Should not add a non-matching namespace to the CRQ status (deletion)", func() {
@@ -206,7 +178,17 @@ var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
 		ensureNamespaceDeleted(matchingNS)
 		ensureCRQDeleted(crqName)
 
-		testNonMatchingNamespaceNotInStatusWithLabels(crqName, matchingNS, map[string]string{labelKey: labelValue}, labelKey, labelValue, true)
+		matchingLabels := map[string]string{
+			labelKey: labelValue,
+		}
+		testNonMatchingNamespaceNotInStatusWithLabels(
+			crqName,
+			matchingNS,
+			matchingLabels,
+			labelKey,
+			labelValue,
+			true,
+		)
 	})
 
 	It("Should update CRQ status when a namespace label is changed to match", func() {
@@ -348,8 +330,18 @@ var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
 		crqName := "test-namespaceselection-multi-" + suffix
 		ns1 := "test-ns1-" + suffix
 		ns2 := "test-ns2-" + suffix
-		matching1 := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns1, Labels: map[string]string{labelKey: labelValue}}}
-		matching2 := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns2, Labels: map[string]string{labelKey: labelValue}}}
+		matching1 := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   ns1,
+				Labels: map[string]string{labelKey: labelValue},
+			},
+		}
+		matching2 := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:   ns2,
+				Labels: map[string]string{labelKey: labelValue},
+			},
+		}
 		ensureNamespaceDeleted(ns1)
 		ensureNamespaceDeleted(ns2)
 		ensureCRQDeleted(crqName)
