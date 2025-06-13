@@ -72,9 +72,24 @@ jobs:
       - name: Install Helm chart for project
         run: make helm-deploy IMG=pac-quota-controller:v0.1.0
 
+
       - name: Check Helm release status
         run: |
           helm status pac-quota-controller --namespace pac-quota-controller-system
+
+      - name: Dump cluster info on failure (Helm Deploy)
+        if: failure()
+        run: |
+          echo "Dumping cluster state after potential Helm deploy failure..."
+          kubectl get all -n pac-quota-controller-system
+          kubectl describe pods -n pac-quota-controller-system
+          kubectl logs -l control-plane=controller-manager -n pac-quota-controller-system --tail=100 || true
+          echo "Dumping cert-manager state..."
+          kubectl get all -n cert-manager
+          kubectl describe pods -n cert-manager
+          kubectl logs -l app=cert-manager -n cert-manager --tail=100 || true
+          kubectl logs -l app.kubernetes.io/instance=cert-manager -n cert-manager --tail=100 || true
+
 
 # TODO: Uncomment if prometheus.enabled is set to true to confirm that the ServiceMonitor gets created
 #      - name: Check Presence of ServiceMonitor

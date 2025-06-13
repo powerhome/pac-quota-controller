@@ -46,5 +46,19 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: |
-          kubectl describe pods -n pac-quota-controller-system || true
-          kubectl logs -l control-plane=controller-manager -n pac-quota-controller-system || true
+          echo "Dumping cluster state after potential e2e test failure..."
+          kubectl get all -n pac-quota-controller-system
+          kubectl describe pods -n pac-quota-controller-system
+          kubectl logs -l control-plane=controller-manager -n pac-quota-controller-system --tail=100 || true
+          echo "Dumping cert-manager state..."
+          kubectl get all -n cert-manager
+          kubectl describe pods -n cert-manager
+          kubectl logs -l app=cert-manager -n cert-manager --tail=100 || true
+          kubectl logs -l app.kubernetes.io/instance=cert-manager -n cert-manager --tail=100 || true
+          echo "Describing CRDs..."
+          kubectl get crds
+          kubectl describe crd clusterresourcequotas.quota.powerapp.cloud
+          echo "Describing MutatingWebhookConfigurations..."
+          kubectl get mutatingwebhookconfigurations -oyaml
+          echo "Describing ValidatingWebhookConfigurations..."
+          kubectl get validatingwebhookconfigurations -oyaml
