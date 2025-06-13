@@ -32,20 +32,25 @@ var _ = Describe("Namespace Utils", func() {
 
 	Describe("ValidateNamespaceOwnershipWithAPI", func() {
 		var (
-			crq     *quotav1alpha1.ClusterResourceQuota
-			nsBlue  *corev1.Namespace
-			nsGreen *corev1.Namespace
+			crq   *quotav1alpha1.ClusterResourceQuota
+			nsOne *corev1.Namespace
+			nsTwo *corev1.Namespace
 		)
 
 		BeforeEach(func() {
-			nsBlue = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "blue", Labels: map[string]string{"color": "blue"}}}
-			nsGreen = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "green", Labels: map[string]string{"color": "green"}}}
+			nsOne = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-one", Labels: map[string]string{"labelkey1": "labelvalue1"}}}
+			nsTwo = &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "ns-two",
+					Labels: map[string]string{"labelkey2": "labelvalue2"},
+				},
+			}
 
 			crq = &quotav1alpha1.ClusterResourceQuota{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-crq"},
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"color": "blue"},
+						MatchLabels: map[string]string{"labelkey1": "labelvalue1"},
 					},
 				},
 			}
@@ -63,8 +68,10 @@ var _ = Describe("Namespace Utils", func() {
 
 		Context("when namespace selector selects no namespaces", func() {
 			It("should return no warnings and no error", func() {
-				crq.Spec.NamespaceSelector = &metav1.LabelSelector{MatchLabels: map[string]string{"color": "nonexistent"}}
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsBlue).Build() // nsBlue exists but won't be selected
+				crq.Spec.NamespaceSelector = &metav1.LabelSelector{
+					MatchLabels: map[string]string{"labelkey1": "nonexistentvalue"},
+				}
+				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne).Build()
 				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(warnings).To(BeEmpty())
@@ -73,7 +80,7 @@ var _ = Describe("Namespace Utils", func() {
 
 		Context("when namespaces are selected and no other CRQs exist", func() {
 			It("should return no warnings and no error", func() {
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsBlue).Build()
+				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne).Build()
 				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(warnings).To(BeEmpty())
@@ -85,18 +92,18 @@ var _ = Describe("Namespace Utils", func() {
 				otherCRQ := &quotav1alpha1.ClusterResourceQuota{
 					ObjectMeta: metav1.ObjectMeta{Name: "other-crq"},
 					Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-						NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"color": "green"}},
+						NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"labelkey2": "labelvalue2"}},
 					},
 					Status: quotav1alpha1.ClusterResourceQuotaStatus{
 						Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
 							{
-								Namespace: "green",
+								Namespace: "ns-two",
 								Status:    quotav1alpha1.ResourceQuotaStatus{},
 							},
 						},
 					},
 				}
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsBlue, nsGreen, otherCRQ).Build()
+				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne, nsTwo, otherCRQ).Build()
 				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(warnings).To(BeEmpty())
@@ -108,51 +115,59 @@ var _ = Describe("Namespace Utils", func() {
 				otherCRQ := &quotav1alpha1.ClusterResourceQuota{
 					ObjectMeta: metav1.ObjectMeta{Name: "other-crq"},
 					Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-						NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"color": "blue"}}, // This would also select 'blue'
+						NamespaceSelector: &metav1.LabelSelector{ // This selector isn't strictly necessary for the test logic as ownership is checked via Status.Namespaces
+							MatchLabels: map[string]string{"labelkey1": "labelvalue1"},
+						},
 					},
 					Status: quotav1alpha1.ClusterResourceQuotaStatus{
 						Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
 							{
-								Namespace: "blue",
+								Namespace: "ns-one", // otherCRQ claims ns-one
 								Status:    quotav1alpha1.ResourceQuotaStatus{},
 							},
 						},
 					},
 				}
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsBlue, otherCRQ).Build()
-				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
+				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne, otherCRQ).Build()
+				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq) // crq wants ns-one
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("namespace 'blue' is already owned by another ClusterResourceQuota"))
+				Expect(err.Error()).To(ContainSubstring("namespace 'ns-one' is already owned by another ClusterResourceQuota 'other-crq'"))
 				Expect(warnings).To(BeEmpty())
 			})
 		})
 
 		Context("when multiple selected namespaces are already owned by another CRQ", func() {
 			It("should return an error listing all conflicting namespaces", func() {
-				nsBlueGreen := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "bluegreen", Labels: map[string]string{"color": "blue", "env": "test"}}}
+				nsOneExtra := &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "ns-one-extra",
+						Labels: map[string]string{"labelkey1": "labelvalue1", "env": "test"}, // Also selected by crq
+					},
+				}
 				crq.Spec.NamespaceSelector = &metav1.LabelSelector{
-					MatchLabels: map[string]string{"color": "blue"}, // Selects blue and bluegreen
+					MatchLabels: map[string]string{"labelkey1": "labelvalue1"}, // Selects ns-one and ns-one-extra
 				}
 				otherCRQ := &quotav1alpha1.ClusterResourceQuota{
 					ObjectMeta: metav1.ObjectMeta{Name: "other-crq"},
+					// Spec.NamespaceSelector is not strictly needed here as Status is the source of truth for ownership
 					Status: quotav1alpha1.ClusterResourceQuotaStatus{
 						Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
 							{
-								Namespace: "blue",
+								Namespace: "ns-one", // otherCRQ claims ns-one
 								Status:    quotav1alpha1.ResourceQuotaStatus{},
 							},
 							{
-								Namespace: "bluegreen",
+								Namespace: "ns-one-extra", // otherCRQ claims ns-one-extra
 								Status:    quotav1alpha1.ResourceQuotaStatus{},
 							},
 						},
 					},
 				}
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsBlue, nsBlueGreen, otherCRQ).Build()
+				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne, nsOneExtra, otherCRQ).Build()
 				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("namespace 'blue' is already owned by another ClusterResourceQuota"))
-				Expect(err.Error()).To(ContainSubstring("namespace 'bluegreen' is already owned by another ClusterResourceQuota"))
+				Expect(err.Error()).To(ContainSubstring("namespace 'ns-one' is already owned by another ClusterResourceQuota 'other-crq'"))
+				Expect(err.Error()).To(ContainSubstring("namespace 'ns-one-extra' is already owned by another ClusterResourceQuota 'other-crq'"))
 				Expect(warnings).To(BeEmpty())
 			})
 		})
@@ -160,14 +175,34 @@ var _ = Describe("Namespace Utils", func() {
 
 	Describe("GetSelectedNamespaces", func() {
 		var (
-			crq    *quotav1alpha1.ClusterResourceQuota
-			nsBlue *corev1.Namespace
-			nsRed  *corev1.Namespace
+			crq *quotav1alpha1.ClusterResourceQuota
+			nsA *corev1.Namespace
+			nsB *corev1.Namespace
 		)
 
 		BeforeEach(func() {
-			nsBlue = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "blue", Labels: map[string]string{"color": "blue", "env": "prod"}}}
-			nsRed = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "red", Labels: map[string]string{"color": "red", "env": "dev"}}}
+			nsA = &corev1.Namespace{ // Corresponds to original "another-blue" due to naming for sort order
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "ns-a", // Alphabetically first
+					Labels: map[string]string{"app": "my-app", "env": "prod"},
+				},
+			}
+			nsB = &corev1.Namespace{ // Corresponds to original "blue"
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "ns-b", // Alphabetically second
+					Labels: map[string]string{"app": "my-app", "env": "staging"},
+				},
+			}
+			// nsC is for other tests, not selected by default app:my-app selector
+			nsC := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "ns-c",
+					Labels: map[string]string{"app": "other-app", "env": "dev"},
+				},
+			}
+			// Initialize k8sClient here as it's used in multiple contexts
+			k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsA, nsB, nsC).Build()
+
 			crq = &quotav1alpha1.ClusterResourceQuota{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-crq"},
 			}
@@ -176,7 +211,7 @@ var _ = Describe("Namespace Utils", func() {
 		Context("when CRQ has no namespace selector", func() {
 			It("should return nil and no error", func() {
 				crq.Spec.NamespaceSelector = nil
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).Build()
+				// k8sClient already initialized with no specific objects needed for this case beyond scheme
 				selected, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(selected).To(BeNil())
@@ -185,38 +220,47 @@ var _ = Describe("Namespace Utils", func() {
 
 		Context("when namespace selector matches specific namespaces", func() {
 			It("should return the names of the matched namespaces, sorted", func() {
-				nsAnotherBlue := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "another-blue", Labels: map[string]string{"color": "blue", "env": "staging"}}}
-				crq.Spec.NamespaceSelector = &metav1.LabelSelector{MatchLabels: map[string]string{"color": "blue"}}
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsBlue, nsRed, nsAnotherBlue).Build()
+				// nsA (ns-a) and nsB (ns-b) both have "app: my-app"
+				crq.Spec.NamespaceSelector = &metav1.LabelSelector{MatchLabels: map[string]string{"app": "my-app"}}
+				// k8sClient already initialized with nsA, nsB, nsC
 
 				selected, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(selected).To(ConsistOf("blue", "another-blue"))       // Order doesn't matter for ConsistOf, but the function sorts it.
-				Expect(selected).To(Equal([]string{"another-blue", "blue"})) // Check sorted order
+				Expect(selected).To(ConsistOf("ns-a", "ns-b"))
+				Expect(selected).To(Equal([]string{"ns-a", "ns-b"})) // Sorted alphabetically
 			})
 		})
 
 		Context("when namespace selector uses MatchExpressions", func() {
 			It("should return the names of the matched namespaces, sorted", func() {
-				nsBlueDev := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "blue-dev", Labels: map[string]string{"color": "blue", "env": "dev"}}}
+				// nsA (app:my-app, env:prod)
+				// nsB (app:my-app, env:staging)
+				// nsD (app:my-app, env:dev) - new namespace for this test
+				nsD := &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   "ns-d",
+						Labels: map[string]string{"app": "my-app", "env": "dev"},
+					},
+				}
+				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsA, nsB, nsD).Build()
+
 				crq.Spec.NamespaceSelector = &metav1.LabelSelector{
 					MatchExpressions: []metav1.LabelSelectorRequirement{
-						{Key: "color", Operator: metav1.LabelSelectorOpIn, Values: []string{"blue"}},
+						{Key: "app", Operator: metav1.LabelSelectorOpIn, Values: []string{"my-app"}},
 						{Key: "env", Operator: metav1.LabelSelectorOpNotIn, Values: []string{"prod"}},
 					},
-				} // Should match blue-dev (color:blue, env:dev) but not nsBlue (color:blue, env:prod)
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsBlue, nsRed, nsBlueDev).Build()
+				} // Should match ns-b (env:staging) and ns-d (env:dev), but not ns-a (env:prod)
 				selected, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(selected).To(ConsistOf("blue-dev"))
-				Expect(selected).To(Equal([]string{"blue-dev"}))
+				Expect(selected).To(ConsistOf("ns-b", "ns-d"))
+				Expect(selected).To(Equal([]string{"ns-b", "ns-d"})) // Sorted
 			})
 		})
 
 		Context("when namespace selector matches no namespaces", func() {
 			It("should return an empty slice and no error", func() {
-				crq.Spec.NamespaceSelector = &metav1.LabelSelector{MatchLabels: map[string]string{"color": "nonexistent"}}
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsBlue, nsRed).Build()
+				crq.Spec.NamespaceSelector = &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nonexistent-app"}}
+				// k8sClient already initialized with nsA, nsB, nsC
 				selected, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(selected).To(BeEmpty())
@@ -227,16 +271,13 @@ var _ = Describe("Namespace Utils", func() {
 			It("should return an error", func() {
 				crq.Spec.NamespaceSelector = &metav1.LabelSelector{
 					MatchExpressions: []metav1.LabelSelectorRequirement{
-						{Key: "color", Operator: "InvalidOperator", Values: []string{"blue"}},
+						{Key: "app", Operator: "InvalidOperator", Values: []string{"my-app"}},
 					},
 				}
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsBlue).Build()
+				// k8sClient already initialized
 				_, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to create namespace selector"))
-				// The underlying error from metav1.LabelSelectorAsSelector will be something like:
-				// "operator: Invalid value: "InvalidOperator": not a valid selector operator"
-				// We check for our wrapped error message.
 			})
 		})
 	})
@@ -310,7 +351,6 @@ var _ = Describe("Namespace Utils", func() {
 		}
 
 		for _, tc := range testCases {
-			tc := tc // Capture range variable
 			It(fmt.Sprintf("should correctly determine changes when %s", tc.description), func() {
 				added, removed := kubernetes.DetermineNamespaceChanges(tc.previous, tc.current)
 				if len(tc.expectedAdded) == 0 {
@@ -328,7 +368,8 @@ var _ = Describe("Namespace Utils", func() {
 	})
 })
 
-// MockNamespaceSelector is a utility for testing GetSelectedNamespaces when direct mocking of the selector logic is needed.
+// MockNamespaceSelector is a utility for testing GetSelectedNamespaces
+// when direct mocking of the selector logic is needed.
 // However, for these tests, using the fake client and actual LabelSelector logic is preferred.
 type MockNamespaceSelector struct {
 	NamespacesToReturn []string

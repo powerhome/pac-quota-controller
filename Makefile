@@ -171,7 +171,7 @@ install-cert-manager: ## Install cert-manager using Helm for e2e tests or local 
 	helm upgrade --install cert-manager jetstack/cert-manager \
 	  --namespace cert-manager \
 	  --create-namespace \
-	  --set installCRDs=true \
+	  --set crds.enabled=true \
 	  --wait --timeout 5m0s
 	@echo "Waiting for cert-manager webhook to be ready..."
 	@$(KUBECTL) -n cert-manager wait --for=condition=Available deployment/cert-manager-webhook --timeout=2m

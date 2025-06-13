@@ -31,7 +31,7 @@ import (
 	testutils "github.com/powerhome/pac-quota-controller/test/utils"
 )
 
-var _ = Describe("Namespace Validation Webhook", func() {
+var _ = Describe("NamespaceValidationWebhook", func() {
 	var (
 		ctx context.Context
 	)
@@ -40,20 +40,37 @@ var _ = Describe("Namespace Validation Webhook", func() {
 		ctx = context.Background()
 	})
 
-	Context("Namespace Update Validation", func() {
+	// Helper function to create and cleanup CRQs for tests
+	createCRQWithLabels := func(name string, labels map[string]string) *quotav1alpha1.ClusterResourceQuota {
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: labels,
+				},
+				Hard: quotav1alpha1.ResourceList{},
+			},
+		}
+		Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq)).To(Succeed())
+		DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq)
+		return crq
+	}
+
+	Context("When updating a Namespace", func() {
 		var (
-			crq1Name, crq2Name string
-			testNsName         string
-			baseLabels         map[string]string
+			baseLabels map[string]string
+			suffix     string
+			testNsName string
+			crq1Name   string
+			crq2Name   string
 		)
 
 		BeforeEach(func() {
-			// Use unique names for each test execution within this context
-			suffix := rand.String(5)
+			suffix = rand.String(5)
+			testNsName = "test-ns-webhook-" + suffix
 			crq1Name = "crq1-" + suffix
 			crq2Name = "crq2-" + suffix
-			testNsName = "ns-update-" + suffix
-			baseLabels = map[string]string{"e2e-test": "namespace-validation"}
+			baseLabels = map[string]string{"e2e-test": "namespace-validation-" + suffix}
 		})
 
 		It("should allow update if labels do not change", func() {
@@ -89,7 +106,7 @@ var _ = Describe("Namespace Validation Webhook", func() {
 			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq1)).To(Succeed())
 			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq1)
 
-			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "frontend"})
+			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "frontend-" + suffix})
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(testutils.DeleteNamespace, ctx, k8sClient, testNsName)
 
@@ -98,7 +115,7 @@ var _ = Describe("Namespace Validation Webhook", func() {
 				if getErr != nil {
 					return getErr
 				}
-				updatedNs.Labels = map[string]string{"app": "database"} // Matches no CRQs
+				updatedNs.Labels = map[string]string{"app": "database-" + suffix} // Matches no CRQs
 				return k8sClient.Update(ctx, updatedNs)
 			}, time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -171,7 +188,7 @@ var _ = Describe("Namespace Validation Webhook", func() {
 			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq2)).To(Succeed())
 			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq2)
 
-			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "frontend"})
+			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "frontend-" + suffix})
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(testutils.DeleteNamespace, ctx, k8sClient, testNsName)
 
@@ -196,31 +213,8 @@ var _ = Describe("Namespace Validation Webhook", func() {
 		})
 
 		It("should allow update if labels change from matching multiple CRQs to one CRQ", func() {
-			crq1 := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
-				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"app": "backend",
-						}},
-					Hard: quotav1alpha1.ResourceList{},
-				},
-			}
-			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq1)).To(Succeed())
-			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq1)
-
-			crq2 := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{Name: crq2Name},
-				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"env": "prod",
-						}},
-					Hard: quotav1alpha1.ResourceList{},
-				},
-			}
-			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq2)).To(Succeed())
-			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq2)
+			createCRQWithLabels(crq1Name, map[string]string{"app": "backend"})
+			createCRQWithLabels(crq2Name, map[string]string{"env": "prod"})
 
 			// Create namespace that initially matches both (creation is not blocked by this specific update webhook logic)
 			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "backend", "env": "prod"})
@@ -238,31 +232,8 @@ var _ = Describe("Namespace Validation Webhook", func() {
 		})
 
 		It("should allow update if labels change from matching multiple CRQs to no CRQs", func() {
-			crq1 := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
-				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"app": "backend",
-						}},
-					Hard: quotav1alpha1.ResourceList{},
-				},
-			}
-			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq1)).To(Succeed())
-			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq1)
-
-			crq2 := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{Name: crq2Name},
-				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"env": "prod",
-						}},
-					Hard: quotav1alpha1.ResourceList{},
-				},
-			}
-			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq2)).To(Succeed())
-			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq2)
+			createCRQWithLabels(crq1Name, map[string]string{"app": "backend"})
+			createCRQWithLabels(crq2Name, map[string]string{"env": "prod"})
 
 			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "backend", "env": "prod"})
 			Expect(err).NotTo(HaveOccurred())
@@ -273,7 +244,7 @@ var _ = Describe("Namespace Validation Webhook", func() {
 				if getErr != nil {
 					return getErr
 				}
-				updatedNs.Labels = map[string]string{"app": "frontend"} // Now matches no CRQs
+				updatedNs.Labels = map[string]string{"app": "frontend-" + suffix} // Now matches no CRQs
 				return k8sClient.Update(ctx, updatedNs)
 			}, time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -282,8 +253,8 @@ var _ = Describe("Namespace Validation Webhook", func() {
 	Context("Namespace Create Validation", func() {
 		It("should always allow creation (webhook doesn't validate creates for this rule)", func() {
 			suffix := rand.String(5)
-			crq1Name := "crq1-create-" + suffix
-			crq2Name := "crq2-create-" + suffix
+			crq1Name := "crq1-create-" + suffix // Differentiate from update context
+			crq2Name := "crq2-create-" + suffix // Differentiate from update context
 			testNsName := "ns-create-" + suffix
 
 			crq1 := &quotav1alpha1.ClusterResourceQuota{
@@ -322,7 +293,7 @@ var _ = Describe("Namespace Validation Webhook", func() {
 	Context("Namespace Delete Validation", func() {
 		It("should always allow deletion (webhook doesn't validate deletes for this rule)", func() {
 			testNsName := "ns-delete-" + rand.String(5)
-			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"e2e-test": "delete-validation"})
+			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"e2e-test": "delete-validation-" + rand.String(3)})
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(testutils.DeleteNamespace(ctx, k8sClient, testNsName)).To(Succeed())

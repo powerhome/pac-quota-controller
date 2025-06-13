@@ -13,7 +13,11 @@ import (
 )
 
 // ValidateNamespaceOwnershipWithAPI checks the API to ensure no namespace is already owned by another CRQ.
-func ValidateNamespaceOwnershipWithAPI(ctx context.Context, c client.Client, crq *quotav1alpha1.ClusterResourceQuota) (admission.Warnings, error) {
+func ValidateNamespaceOwnershipWithAPI(
+	ctx context.Context,
+	c client.Client,
+	crq *quotav1alpha1.ClusterResourceQuota,
+) (admission.Warnings, error) {
 	if crq.Spec.NamespaceSelector == nil {
 		return nil, nil // If no selector, nothing to check
 	}
@@ -49,7 +53,10 @@ func ValidateNamespaceOwnershipWithAPI(ctx context.Context, c client.Client, crq
 		}
 		for _, nsStatus := range otherCRQ.Status.Namespaces {
 			if _, conflict := myNamespaces[nsStatus.Namespace]; conflict {
-				conflicts = append(conflicts, fmt.Sprintf("namespace '%s' is already owned by another ClusterResourceQuota", nsStatus.Namespace))
+				conflicts = append(conflicts, fmt.Sprintf(
+					"namespace '%s' is already owned by another ClusterResourceQuota",
+					nsStatus.Namespace,
+				))
 			}
 		}
 	}
@@ -59,7 +66,11 @@ func ValidateNamespaceOwnershipWithAPI(ctx context.Context, c client.Client, crq
 	return nil, nil
 }
 
-func GetSelectedNamespaces(ctx context.Context, c client.Client, crq *quotav1alpha1.ClusterResourceQuota) ([]string, error) {
+func GetSelectedNamespaces(
+	ctx context.Context,
+	c client.Client,
+	crq *quotav1alpha1.ClusterResourceQuota,
+) ([]string, error) {
 	if crq.Spec.NamespaceSelector == nil {
 		return nil, nil // No selector means no namespaces to select
 	}

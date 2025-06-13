@@ -15,7 +15,7 @@ func TestInitConfig(t *testing.T) {
 
 	// Test with default values
 	cfg := InitConfig()
-	assert.Equal(t, "0", cfg.MetricsAddr)
+	assert.Equal(t, ":8443", cfg.MetricsAddr)
 	assert.Equal(t, ":8081", cfg.ProbeAddr)
 	assert.Equal(t, false, cfg.EnableLeaderElection)
 	assert.Equal(t, true, cfg.SecureMetrics)

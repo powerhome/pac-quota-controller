@@ -98,7 +98,7 @@ helm install \
   --namespace cert-manager \
   --create-namespace \
   --version <CERT_MANAGER_VERSION> \
-  --set installCRDs=true
+  --set crds.enabled=true
 ```
 
 Replace `<CERT_MANAGER_VERSION>` with a compatible version (e.g., v1.18.0 or later).
@@ -107,11 +107,11 @@ Replace `<CERT_MANAGER_VERSION>` with a compatible version (e.g., v1.18.0 or lat
 
 If you choose not to use cert-manager (`certmanager.enable: false`), you must provide your own TLS certificates. This involves:
 
-1.  Creating Kubernetes `Secret` resources containing `tls.crt`, `tls.key`, and `ca.crt`.
-2.  Configuring the following values in `values.yaml`:
-    *   `webhook.customTLS.secretName`: Name of the Secret for the webhook server (must contain `tls.crt`, `tls.key`, `ca.crt`).
-    *   `webhook.customTLS.caBundle`: Base64 encoded CA bundle (content of `ca.crt`) that Kubernetes API server will use to trust your webhook.
-    *   `metrics.customTLS.secretName`: Name of the Secret for the metrics server (must contain `tls.crt`, `tls.key`).
+1. Creating Kubernetes `Secret` resources containing `tls.crt`, `tls.key`, and `ca.crt`.
+2. Configuring the following values in `values.yaml`:
+    * `webhook.customTLS.secretName`: Name of the Secret for the webhook server (must contain `tls.crt`, `tls.key`, `ca.crt`).
+    * `webhook.customTLS.caBundle`: Base64 encoded CA bundle (content of `ca.crt`) that Kubernetes API server will use to trust your webhook.
+    * `metrics.customTLS.secretName`: Name of the Secret for the metrics server (must contain `tls.crt`, `tls.key`).
 
 | Name                        | Description                                                                                                                              | Type    | Default |
 |-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------|---------|---------|
@@ -154,7 +154,7 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | crd.enable | bool | `true` |  |
 | crd.keep | bool | `true` |  |
 | metrics.enable | bool | `true` |  |
-| networkPolicy.enable | bool | `false` |  |
+| networkPolicy.enable | string | `"enable"` |  |
 | prometheus.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |
