@@ -8,68 +8,91 @@ import (
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	. "github.com/onsi/gomega"
 )
 
 // ServiceAccountToken returns a token for the specified service account in the given namespace.
 // It uses the Kubernetes TokenRequest API via a clientset created from the controller-runtime client config.
-func ServiceAccountToken(ctx context.Context, clientSet *kubernetes.Clientset, k8sClient client.Client, namespace, serviceAccountName string) (string, error) {
-	var tokenData string
+func ServiceAccountToken(
+	ctx context.Context,
+	clientSet *kubernetes.Clientset,
+	k8sClient client.Client,
+	namespace,
+	serviceAccountName string,
+) (string, error) {
+	// First, verify the service account exists
+	sa := &corev1.ServiceAccount{}
+	err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: serviceAccountName}, sa)
+	if err != nil {
+		return "", fmt.Errorf("failed to get service account %s/%s: %w", namespace, serviceAccountName, err)
+	}
 
-	Eventually(func(g Gomega) {
-		// First, verify the service account exists
-		sa := &corev1.ServiceAccount{}
-		err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: serviceAccountName}, sa)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get service account %s/%s", namespace, serviceAccountName)
-
-		tokenRequest := &authenticationv1.TokenRequest{
-			Spec: authenticationv1.TokenRequestSpec{}, // default spec
-		}
-		result, err := clientSet.CoreV1().ServiceAccounts(namespace).CreateToken(ctx, serviceAccountName, tokenRequest, metav1.CreateOptions{})
-		g.Expect(err).NotTo(HaveOccurred(), "failed to create token request for SA %s/%s", namespace, serviceAccountName)
-		g.Expect(result.Status.Token).NotTo(BeEmpty(), "extracted token is empty")
-		tokenData = result.Status.Token
-	}).Should(Succeed())
-
-	return tokenData, nil
+	tokenRequest := &authenticationv1.TokenRequest{
+		Spec: authenticationv1.TokenRequestSpec{}, // default spec
+	}
+	result, err := clientSet.CoreV1().ServiceAccounts(namespace).CreateToken(
+		ctx, serviceAccountName, tokenRequest, metav1.CreateOptions{},
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to create token request for SA %s/%s: %w", namespace, serviceAccountName, err)
+	}
+	if result.Status.Token == "" {
+		return "", fmt.Errorf("extracted token is empty for SA %s/%s", namespace, serviceAccountName)
+	}
+	return result.Status.Token, nil
 }
 
 // GetMetricsOutput retrieves and returns the logs from the curl pod used to access the metrics endpoint.
-func GetMetricsOutput(ctx context.Context, clientSet *kubernetes.Clientset, namespace, curlPodName string) string {
-	var metricsOutput string
-	Eventually(func(g Gomega) {
-		podLogOpts := &corev1.PodLogOptions{}
-		req := clientSet.CoreV1().Pods(namespace).GetLogs(curlPodName, podLogOpts)
+// It now returns an error if any step fails or if the metrics endpoint doesn't return 200 OK.
+func GetMetricsOutput(
+	ctx context.Context,
+	clientSet *kubernetes.Clientset,
+	namespace, curlPodName string,
+) (string, error) {
+	podLogOpts := &corev1.PodLogOptions{}
+	req := clientSet.CoreV1().Pods(namespace).GetLogs(curlPodName, podLogOpts)
 
-		logStream, err := req.Stream(ctx)
-		g.Expect(err).NotTo(HaveOccurred(), "Failed to stream logs from curl pod '%s'", curlPodName)
-		defer logStream.Close()
+	logStream, err := req.Stream(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to stream logs from curl pod '%s': %w", curlPodName, err)
+	}
+	defer func() {
+		if closeErr := logStream.Close(); closeErr != nil {
+			// Log or handle the close error if necessary, though we can't return it from the main function here.
+			// For now, we rely on the primary error handling of the function.
+			fmt.Printf("Warning: Failed to close log stream for pod '%s': %v\n", curlPodName, closeErr)
+		}
+	}()
 
-		buf := new(bytes.Buffer)
-		_, err = io.Copy(buf, logStream)
-		g.Expect(err).NotTo(HaveOccurred(), "Failed to copy log stream to buffer for pod '%s'", curlPodName)
+	buf := new(bytes.Buffer)
+	_, err = io.Copy(buf, logStream)
+	if err != nil {
+		return "", fmt.Errorf("failed to copy log stream to buffer for pod '%s': %w", curlPodName, err)
+	}
 
-		output := buf.String()
-		g.Expect(output).To(ContainSubstring("< HTTP/1.1 200 OK"), "Metrics endpoint did not return 200 OK. Logs: %s", output)
-		metricsOutput = output
-	}).Should(Succeed())
-	return metricsOutput
+	output := buf.String()
+	// Basic check for HTTP 200 OK. A more robust check might involve parsing the HTTP status line.
+	if !bytes.Contains(buf.Bytes(), []byte("HTTP/1.1 200 OK")) { // Using bytes.Contains for efficiency
+		return output, fmt.Errorf("metrics endpoint did not return 200 OK. Logs: %s", output)
+	}
+	return output, nil
 }
 
 // Helper functions for logs, events, pod description, and pointer helpers
 func GetPodLogs(ctx context.Context, clientSet *kubernetes.Clientset, namespace, podName string) string {
-	podLogOpts := &v1.PodLogOptions{}
+	podLogOpts := &corev1.PodLogOptions{}
 	req := clientSet.CoreV1().Pods(namespace).GetLogs(podName, podLogOpts)
 	logStream, err := req.Stream(ctx)
 	if err != nil {
 		return fmt.Sprintf("Failed to stream logs: %v", err)
 	}
-	defer logStream.Close()
+	defer func() {
+		if err := logStream.Close(); err != nil {
+			fmt.Printf("Failed to close log stream: %v\n", err)
+		}
+	}()
 	buf := new(bytes.Buffer)
 	_, err = io.Copy(buf, logStream)
 	if err != nil {
@@ -91,7 +114,7 @@ func GetEvents(ctx context.Context, clientSet *kubernetes.Clientset, namespace s
 }
 
 func DescribePod(ctx context.Context, k8sClient client.Client, namespace, podName string) string {
-	pod := &v1.Pod{}
+	pod := &corev1.Pod{}
 	err := k8sClient.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod)
 	if err != nil {
 		return fmt.Sprintf("Failed to get pod: %v", err)

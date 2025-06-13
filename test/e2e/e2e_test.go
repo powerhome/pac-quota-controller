@@ -33,15 +33,6 @@ import (
 // namespace where the project is deployed in
 const namespace = "pac-quota-controller-system"
 
-// serviceAccountName created for the project
-const serviceAccountName = "pac-quota-controller-manager"
-
-// metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "pac-quota-controller-metrics-service"
-
-// metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "pac-quota-controller-manager-metrics-binding"
-
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
 
@@ -112,7 +103,14 @@ var _ = Describe("Manager", Ordered, func() {
 			By("validating that the controller-manager pod is running as expected")
 			verifyControllerUp := func(g Gomega) {
 				podList := &v1.PodList{}
-				err := k8sClient.List(ctx, podList, client.MatchingLabels{"control-plane": "controller-manager"}, client.InNamespace(namespace))
+				err := k8sClient.List(
+					ctx,
+					podList,
+					client.MatchingLabels{
+						"control-plane": "controller-manager",
+					},
+					client.InNamespace(namespace),
+				)
 				g.Expect(err).NotTo(HaveOccurred(), "Failed to retrieve controller-manager pod information")
 				var runningPods []string
 				for _, pod := range podList.Items {
