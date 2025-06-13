@@ -349,9 +349,9 @@ helm-deploy: helm-lint ## Deploy the Helm chart
 	helm upgrade --install $(HELM_RELEASE_NAME) ./charts/pac-quota-controller \
 		--namespace $(HELM_NAMESPACE) \
 		--create-namespace \
-		--set image.repository=$(shell echo $(IMG) | cut -d: -f1) \
-		--set image.tag=$(shell echo $(IMG) | cut -d: -f2) \
-		--set certmanager.enable=$(CERT_MANAGER_INSTALL) \
+		--set controllerManager.container.image.repository=$(shell echo $(IMG) | cut -d: -f1) \
+		--set controllerManager.container.image.tag=$(shell echo $(IMG) | cut -d: -f2) \
+		--set controllerManager.container.image.pullPolicy=Never \
 		--wait --timeout 10m0s
 	@echo "Helm chart deployed."
 
