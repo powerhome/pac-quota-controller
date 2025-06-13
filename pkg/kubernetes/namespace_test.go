@@ -38,7 +38,12 @@ var _ = Describe("Namespace Utils", func() {
 		)
 
 		BeforeEach(func() {
-			nsOne = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ns-one", Labels: map[string]string{"labelkey1": "labelvalue1"}}}
+			nsOne = &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "ns-one",
+					Labels: map[string]string{"labelkey1": "labelvalue1"},
+				},
+			}
 			nsTwo = &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "ns-two",
@@ -115,7 +120,7 @@ var _ = Describe("Namespace Utils", func() {
 				otherCRQ := &quotav1alpha1.ClusterResourceQuota{
 					ObjectMeta: metav1.ObjectMeta{Name: "other-crq"},
 					Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-						NamespaceSelector: &metav1.LabelSelector{ // This selector isn't strictly necessary for the test logic as ownership is checked via Status.Namespaces
+						NamespaceSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{"labelkey1": "labelvalue1"},
 						},
 					},
@@ -131,7 +136,10 @@ var _ = Describe("Namespace Utils", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne, otherCRQ).Build()
 				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq) // crq wants ns-one
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("namespace 'ns-one' is already owned by another ClusterResourceQuota 'other-crq'"))
+				Expect(err.Error()).To(ContainSubstring(
+					"namespace 'ns-one' is already owned by another ClusterResourceQuota 'other-crq'",
+				),
+				)
 				Expect(warnings).To(BeEmpty())
 			})
 		})
@@ -166,8 +174,14 @@ var _ = Describe("Namespace Utils", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne, nsOneExtra, otherCRQ).Build()
 				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("namespace 'ns-one' is already owned by another ClusterResourceQuota 'other-crq'"))
-				Expect(err.Error()).To(ContainSubstring("namespace 'ns-one-extra' is already owned by another ClusterResourceQuota 'other-crq'"))
+				Expect(err.Error()).To(ContainSubstring(
+					"namespace 'ns-one' is already owned by another ClusterResourceQuota 'other-crq'",
+				),
+				)
+				Expect(err.Error()).To(ContainSubstring(
+					"namespace 'ns-one-extra' is already owned by another ClusterResourceQuota 'other-crq'",
+				),
+				)
 				Expect(warnings).To(BeEmpty())
 			})
 		})

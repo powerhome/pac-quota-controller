@@ -172,7 +172,7 @@ install-cert-manager: ## Install cert-manager using Helm for e2e tests or local 
 	  --namespace cert-manager \
 	  --create-namespace \
 	  --set crds.enabled=true \
-	  --wait --timeout 5m0s
+	  --wait --timeout 10m0s
 	@echo "Waiting for cert-manager webhook to be ready..."
 	@$(KUBECTL) -n cert-manager wait --for=condition=Available deployment/cert-manager-webhook --timeout=2m
 	@echo "Cert-manager installed and webhook is ready."
@@ -352,7 +352,7 @@ helm-deploy: helm-lint ## Deploy the Helm chart
 		--set image.repository=$(shell echo $(IMG) | cut -d: -f1) \
 		--set image.tag=$(shell echo $(IMG) | cut -d: -f2) \
 		--set certmanager.enable=$(CERT_MANAGER_INSTALL) \
-		--wait --timeout 5m0s
+		--wait --timeout 10m0s
 	@echo "Helm chart deployed."
 
 .PHONY: helm-uninstall

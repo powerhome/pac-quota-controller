@@ -293,7 +293,14 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 	Context("Namespace Delete Validation", func() {
 		It("should always allow deletion (webhook doesn't validate deletes for this rule)", func() {
 			testNsName := "ns-delete-" + rand.String(5)
-			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"e2e-test": "delete-validation-" + rand.String(3)})
+			err := testutils.CreateNamespace(
+				ctx,
+				k8sClient,
+				testNsName,
+				map[string]string{
+					"e2e-test": "delete-validation-" + rand.String(3),
+				},
+			)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(testutils.DeleteNamespace(ctx, k8sClient, testNsName)).To(Succeed())
