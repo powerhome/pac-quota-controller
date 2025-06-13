@@ -36,7 +36,6 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 	"github.com/powerhome/pac-quota-controller/pkg/tls"
 	"github.com/powerhome/pac-quota-controller/pkg/webhook"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var setupLog = logf.Log.WithName("setup")
