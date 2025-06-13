@@ -82,14 +82,80 @@ spec:
     limits.memory: 40Gi
 ```
 
-## Cert-Manager
+## Certificates
 
-| Name                      | Description                                                                                 | Type    | Default |
-|---------------------------|---------------------------------------------------------------------------------------------|---------|---------|
-| certmanager.enable        | Enable support for cert-manager (required for webhooks and certificate management).          | bool    | true    |
-| certmanager.install       | Install cert-manager in this namespace. **Should only be true if cert-manager is not already installed in your cluster.** If you already have a running cert-manager, set this to false to avoid conflicts. | bool    | true    |
+### Certmanager
 
-> **Note:**
->
-> - `certmanager.enable` controls whether the chart configures resources to use cert-manager for certificates.
-> - `certmanager.install` controls whether the chart will deploy cert-manager itself into the same namespace. Only set this to `true` if you do **not** already have cert-manager running in your cluster. If you already have cert-manager, set this to `false` to avoid duplicate installations.
+This chart supports integration with [cert-manager](https://cert-manager.io/) for automatic provisioning and management of TLS certificates for webhooks and metrics endpoints. It is **strongly recommended** to use cert-manager.
+
+If `certmanager.enable` is `true` (default), the chart will create `Certificate` resources, and cert-manager will be responsible for issuing and injecting the CA bundle and server certificates.
+
+```sh
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm install \
+  cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --version <CERT_MANAGER_VERSION> \
+  --set installCRDs=true
+```
+
+Replace `<CERT_MANAGER_VERSION>` with a compatible version (e.g., v1.18.0 or later).
+
+### Manual Certificate Provisioning (Not Recommended)
+
+If you choose not to use cert-manager (`certmanager.enable: false`), you must provide your own TLS certificates. This involves:
+
+1.  Creating Kubernetes `Secret` resources containing `tls.crt`, `tls.key`, and `ca.crt`.
+2.  Configuring the following values in `values.yaml`:
+    *   `webhook.customTLS.secretName`: Name of the Secret for the webhook server (must contain `tls.crt`, `tls.key`, `ca.crt`).
+    *   `webhook.customTLS.caBundle`: Base64 encoded CA bundle (content of `ca.crt`) that Kubernetes API server will use to trust your webhook.
+    *   `metrics.customTLS.secretName`: Name of the Secret for the metrics server (must contain `tls.crt`, `tls.key`).
+
+| Name                        | Description                                                                                                                              | Type    | Default |
+|-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------|---------|---------|
+| `certmanager.enable`        | Enable support for cert-manager. If `false`, manual certificate provisioning is required via `webhook.customTLS` and `metrics.customTLS`. | `bool`  | `true`  |
+| `webhook.customTLS.secretName` | Secret name for webhook TLS certs if `certmanager.enable` is `false`.                                                                      | `string`| `""`    |
+| `webhook.customTLS.caBundle`   | Base64 CA bundle for webhook if `certmanager.enable` is `false`.                                                                           | `string`| `""`    |
+| `metrics.customTLS.secretName` | Secret name for metrics TLS certs if `certmanager.enable` is `false` and metrics are HTTPS.                                                | `string`| `""`    |
+
+## Values
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| certmanager.enable | bool | `true` |  |
+| controllerManager.container.args[0] | string | `"--leader-elect"` |  |
+| controllerManager.container.args[1] | string | `"--metrics-bind-address=:8443"` |  |
+| controllerManager.container.args[2] | string | `"--health-probe-bind-address=:8081"` |  |
+| controllerManager.container.image.pullPolicy | string | `"IfNotPresent"` |  |
+| controllerManager.container.image.repository | string | `"ghcr.io/powerhome/pac-quota-controller"` |  |
+| controllerManager.container.image.tag | string | `"latest"` |  |
+| controllerManager.container.livenessProbe.httpGet.path | string | `"/healthz"` |  |
+| controllerManager.container.livenessProbe.httpGet.port | int | `8081` |  |
+| controllerManager.container.livenessProbe.initialDelaySeconds | int | `15` |  |
+| controllerManager.container.livenessProbe.periodSeconds | int | `20` |  |
+| controllerManager.container.readinessProbe.httpGet.path | string | `"/readyz"` |  |
+| controllerManager.container.readinessProbe.httpGet.port | int | `8081` |  |
+| controllerManager.container.readinessProbe.initialDelaySeconds | int | `5` |  |
+| controllerManager.container.readinessProbe.periodSeconds | int | `10` |  |
+| controllerManager.container.resources.limits.cpu | string | `"500m"` |  |
+| controllerManager.container.resources.limits.memory | string | `"128Mi"` |  |
+| controllerManager.container.resources.requests.cpu | string | `"10m"` |  |
+| controllerManager.container.resources.requests.memory | string | `"64Mi"` |  |
+| controllerManager.container.securityContext.allowPrivilegeEscalation | bool | `false` |  |
+| controllerManager.container.securityContext.capabilities.drop[0] | string | `"ALL"` |  |
+| controllerManager.container.webhookCertPath | string | `"/tmp/k8s-webhook-server/serving-certs"` |  |
+| controllerManager.replicas | int | `1` |  |
+| controllerManager.securityContext.runAsNonRoot | bool | `true` |  |
+| controllerManager.securityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
+| controllerManager.serviceAccountName | string | `"pac-quota-controller-manager"` |  |
+| controllerManager.terminationGracePeriodSeconds | int | `10` |  |
+| crd.enable | bool | `true` |  |
+| crd.keep | bool | `true` |  |
+| metrics.enable | bool | `true` |  |
+| networkPolicy.enable | bool | `false` |  |
+| prometheus.enable | bool | `false` |  |
+| rbac.enable | bool | `true` |  |
+| webhook.dryRunOnly | bool | `false` |  |
+| webhook.enabled | bool | `true` |  |

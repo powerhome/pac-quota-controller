@@ -50,7 +50,6 @@ archives:
     files:
       - LICENSE
       - README.md
-      - config/**/*
 
 checksum:
   name_template: 'checksums.txt'

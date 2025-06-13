@@ -60,7 +60,7 @@ var _ = Describe("ClusterResourceQuota Namespace Ownership Webhook", func() {
 		// Should be denied by webhook
 		err := k8sClient.Create(ctx, crq2)
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("already owned"))
+		Expect(err.Error()).To(ContainSubstring("namespace ownership conflict")) // More specific to the webhook error
 
 		DeferCleanup(func() {
 			_ = k8sClient.Delete(ctx, ns)

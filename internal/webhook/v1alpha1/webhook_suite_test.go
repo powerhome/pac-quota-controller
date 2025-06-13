@@ -73,7 +73,7 @@ var _ = BeforeSuite(func() {
 
 	By("bootstrapping test environment")
 	testEnv = &envtest.Environment{
-		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "charts", "pac-quota-controller", "templates", "crd")},
 		ErrorIfCRDPathMissing: false,
 	}
 
@@ -106,6 +106,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 
 	err = SetupClusterResourceQuotaWebhookWithManager(mgr)
+	Expect(err).NotTo(HaveOccurred())
+	err = SetupNamespaceWebhookWithManager(mgr)
 	Expect(err).NotTo(HaveOccurred())
 
 	// +kubebuilder:scaffold:webhook

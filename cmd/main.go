@@ -26,6 +26,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
 	"github.com/powerhome/pac-quota-controller/cmd/version"
 	"github.com/powerhome/pac-quota-controller/internal/webhook/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
@@ -34,7 +36,6 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 	"github.com/powerhome/pac-quota-controller/pkg/tls"
 	"github.com/powerhome/pac-quota-controller/pkg/webhook"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var setupLog = logf.Log.WithName("setup")
@@ -97,6 +98,10 @@ func main() {
 			}
 			if err := v1alpha1.SetupClusterResourceQuotaWebhookWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to set up ClusterResourceQuota webhook")
+				os.Exit(1)
+			}
+			if err := v1alpha1.SetupNamespaceWebhookWithManager(mgr); err != nil {
+				setupLog.Error(err, "unable to set up Namespace webhook")
 				os.Exit(1)
 			}
 			setupLog.Info("Webhook configured", "port", cfg.WebhookPort)

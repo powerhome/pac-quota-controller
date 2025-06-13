@@ -20,15 +20,15 @@ import (
 	"context"
 	"fmt"
 
-	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/internal/controller/namespaceselection"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes"
 )
 
 var clusterresourcequotalog = logf.Log.WithName("clusterresourcequota-resource")
@@ -40,7 +40,7 @@ func SetupClusterResourceQuotaWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/validate-quota-powerapp-cloud-v1alpha1-clusterresourcequota,mutating=false,failurePolicy=fail,sideEffects=None,groups=quota.powerapp.cloud,resources=clusterresourcequotas,verbs=create;update,versions=v1alpha1,name=vclusterresourcequota-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-quota-powerapp-cloud-v1alpha1-clusterresourcequota,mutating=false,failurePolicy=fail,sideEffects=None,groups=quota.powerapp.cloud,resources=clusterresourcequotas,verbs=create;update,versions=v1alpha1,name=vclusterresourcequota-v1alpha1.powerapp.cloud,admissionReviewVersions=v1
 // ClusterResourceQuotaCustomValidator struct is responsible for validating the ClusterResourceQuota resource
 // when it is created, updated, or deleted.
 type ClusterResourceQuotaCustomValidator struct {
@@ -57,7 +57,7 @@ func (v *ClusterResourceQuotaCustomValidator) ValidateCreate(ctx context.Context
 	}
 	clusterresourcequotalog.Info("Validating namespace ownership on create", "name", crq.GetName())
 
-	return validateNamespaceOwnershipWithAPI(ctx, v.Client, crq)
+	return kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, v.Client, crq)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClusterResourceQuota.
@@ -68,7 +68,7 @@ func (v *ClusterResourceQuotaCustomValidator) ValidateUpdate(ctx context.Context
 	}
 	clusterresourcequotalog.Info("Validating namespace ownership on update", "name", crq.GetName())
 
-	return validateNamespaceOwnershipWithAPI(ctx, v.Client, crq)
+	return kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, v.Client, crq)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type ClusterResourceQuota.
@@ -79,52 +79,5 @@ func (v *ClusterResourceQuotaCustomValidator) ValidateDelete(ctx context.Context
 	}
 	clusterresourcequotalog.Info("Validation for ClusterResourceQuota upon deletion", "name", clusterresourcequota.GetName())
 
-	return nil, nil
-}
-
-// validateNamespaceOwnershipWithAPI checks the API to ensure no namespace is already owned by another CRQ.
-func validateNamespaceOwnershipWithAPI(ctx context.Context, c client.Client, crq *quotav1alpha1.ClusterResourceQuota) (admission.Warnings, error) {
-	if crq.Spec.NamespaceSelector == nil {
-		return nil, nil // If no selector, nothing to check
-	}
-
-	// Use the namespace selector utility to get intended namespaces for this CRQ
-	selector, err := namespaceselection.NewLabelBasedNamespaceSelector(c, crq.Spec.NamespaceSelector)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create namespace selector: %w", err)
-	}
-	intendedNamespaces, err := selector.GetSelectedNamespaces(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to select namespaces: %w", err)
-	}
-	if len(intendedNamespaces) == 0 {
-		return nil, nil // No intended namespaces, nothing to check
-	}
-	myNamespaces := make(map[string]struct{}, len(intendedNamespaces))
-	for _, ns := range intendedNamespaces {
-		myNamespaces[ns] = struct{}{}
-	}
-
-	// List all CRQs
-	crqList := &quotav1alpha1.ClusterResourceQuotaList{}
-	if err := c.List(ctx, crqList); err != nil {
-		return nil, fmt.Errorf("failed to list ClusterResourceQuotas: %w", err)
-	}
-
-	// Check for conflicts with other CRQs' status.namespaces
-	conflicts := []string{}
-	for _, otherCRQ := range crqList.Items {
-		if otherCRQ.Name == crq.Name {
-			continue
-		}
-		for _, nsStatus := range otherCRQ.Status.Namespaces {
-			if _, conflict := myNamespaces[nsStatus.Namespace]; conflict {
-				conflicts = append(conflicts, fmt.Sprintf("namespace '%s' is already owned by another ClusterResourceQuota", nsStatus.Namespace))
-			}
-		}
-	}
-	if len(conflicts) > 0 {
-		return nil, fmt.Errorf("namespace ownership conflict: %s", conflicts)
-	}
 	return nil, nil
 }

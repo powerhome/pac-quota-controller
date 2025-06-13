@@ -31,7 +31,7 @@ type Config struct {
 
 // setDefaults configures the default values for configuration parameters
 func setDefaults() {
-	viper.SetDefault("metrics-bind-address", "0")
+	viper.SetDefault("metrics-bind-address", ":8443")
 	viper.SetDefault("health-probe-bind-address", ":8081")
 	viper.SetDefault("leader-elect", false)
 	viper.SetDefault("metrics-secure", true)

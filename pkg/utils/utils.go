@@ -22,3 +22,16 @@ func DeduplicateAndSort(input []string) []string {
 	sort.Strings(result)
 	return result
 }
+
+// equalStringMap compares two string maps for equality.
+func EqualStringMap(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if b[k] != v {
+			return false
+		}
+	}
+	return true
+}

@@ -7,13 +7,18 @@ metadata:
   labels:
     app.kubernetes.io/name: pac-quota-controller
   annotations:
+    {{- if .Values.certmanager.enable }}
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/webhook-server-cert
+    {{- end }}
 webhooks:
-  - name: vclusterresourcequota-v1alpha1.kb.io
+  - name: vclusterresourcequota-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
     failurePolicy: Fail
     clientConfig:
+      {{- if not .Values.certmanager.enable }}
+      caBundle: {{ .Values.webhook.customTLS.caBundle }}
+      {{- end }}
       service:
         name: pac-quota-controller-webhook-service
         namespace: {{ .Release.Namespace }}
@@ -23,5 +28,23 @@ webhooks:
         apiVersions: ["v1alpha1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["clusterresourcequotas"]
+    namespaceSelector: {}
+  - name: vnamespace-v1alpha1.powerapp.cloud
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      {{- if not .Values.certmanager.enable }}
+      caBundle: {{ .Values.webhook.customTLS.caBundle }}
+      {{- end }}
+      service:
+        name: pac-quota-controller-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /validate--v1-namespace
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["namespaces"]
     namespaceSelector: {}
 {{- end }}

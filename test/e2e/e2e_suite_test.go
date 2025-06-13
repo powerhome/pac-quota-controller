@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	k8sconfig "sigs.k8s.io/controller-runtime/pkg/client/config"
@@ -32,6 +33,7 @@ import (
 
 var (
 	k8sClient client.Client
+	clientSet *kubernetes.Clientset
 	ctx       context.Context
 )
 
@@ -59,6 +61,8 @@ var _ = BeforeSuite(func() {
 
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred(), "Failed to create k8s client")
+	clientSet, err = kubernetes.NewForConfig(cfg)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create Kubernetes clientset")
 })
 
 var _ = AfterSuite(func() {

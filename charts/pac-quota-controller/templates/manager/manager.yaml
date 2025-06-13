@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: pac-quota-controller-controller-manager
+  name: pac-quota-controller-manager
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "chart.labels" . | nindent 4 }}
@@ -34,10 +34,16 @@ spec:
             {{- if .Values.webhook.dryRunOnly }}
             - --webhook-dry-run-only=true
             {{- end }}
+            - --webhook-cert-path={{ .Values.controllerManager.container.webhookCertPath }}
           ports:
           - containerPort: 9443
             name: webhook-server
             protocol: TCP
+          {{- if .Values.metrics.enable }}
+          - containerPort: 8443
+            name: metrics-server
+            protocol: TCP
+          {{- end }}
           command:
             - /manager
           image: {{ .Values.controllerManager.container.image.repository }}:{{ .Values.controllerManager.container.image.tag }}
@@ -57,35 +63,59 @@ spec:
             {{- toYaml .Values.controllerManager.container.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.controllerManager.container.securityContext | nindent 12 }}
-          {{- if and .Values.certmanager.enable .Values.metrics.enable }}
+          {{- /* Conditionally define volumeMounts if cert-manager is enabled OR custom TLS secrets are provided */}}
+          {{- if or .Values.certmanager.enable (and (not .Values.certmanager.enable) .Values.webhook.customTLS.secretName) (and (not .Values.certmanager.enable) .Values.metrics.customTLS.secretName .Values.metrics.enable) }}
           volumeMounts:
-            {{- if and .Values.metrics.enable .Values.certmanager.enable }}
+            {{- if and .Values.metrics.enable }}
+            {{- if .Values.certmanager.enable }}
             - name: metrics-certs
-              mountPath: /tmp/k8s-metrics-server/metrics-certs
+              mountPath: /tmp/k8s-metrics-server/metrics-certs # Default path for controller-runtime when certs are auto-generated
+              readOnly: true
+            {{- else if and (not .Values.certmanager.enable) .Values.metrics.customTLS.secretName }}
+            - name: metrics-certs
+              mountPath: /tmp/k8s-metrics-server/metrics-certs # Ensure your controller expects certs here if using custom
               readOnly: true
             {{- end }}
-          {{- end }}
-          {{- if .Values.certmanager.enable }}
-          volumeMounts:
+            {{- end }}
+            {{- if .Values.webhook.enabled }}
+            {{- if .Values.certmanager.enable }}
             - name: webhook-certs
-              mountPath: /tmp/k8s-webhook-server/serving-certs
+              mountPath: {{ .Values.controllerManager.container.webhookCertPath | default "/tmp/k8s-webhook-server/serving-certs" }}
               readOnly: true
+            {{- else if and (not .Values.certmanager.enable) .Values.webhook.customTLS.secretName }}
+            - name: webhook-certs
+              mountPath: {{ .Values.controllerManager.container.webhookCertPath | default "/tmp/k8s-webhook-server/serving-certs" }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
           {{- end }}
       securityContext:
         {{- toYaml .Values.controllerManager.securityContext | nindent 8 }}
       serviceAccountName: {{ .Values.controllerManager.serviceAccountName }}
       terminationGracePeriodSeconds: {{ .Values.controllerManager.terminationGracePeriodSeconds }}
-      {{- if and .Values.certmanager.enable .Values.metrics.enable }}
+      {{- /* Conditionally define volumes if cert-manager is enabled OR custom TLS secrets are provided */}}
+      {{- if or .Values.certmanager.enable (and (not .Values.certmanager.enable) .Values.webhook.customTLS.secretName) (and (not .Values.certmanager.enable) .Values.metrics.customTLS.secretName .Values.metrics.enable) }}
       volumes:
-        {{- if and .Values.metrics.enable .Values.certmanager.enable }}
+        {{- if and .Values.metrics.enable }}
+        {{- if .Values.certmanager.enable }}
         - name: metrics-certs
           secret:
-            secretName: metrics-server-cert
+            secretName: metrics-server-cert # Default secret name for cert-manager managed metrics certs
+        {{- else if and (not .Values.certmanager.enable) .Values.metrics.customTLS.secretName }}
+        - name: metrics-certs
+          secret:
+            secretName: {{ .Values.metrics.customTLS.secretName }}
         {{- end }}
-      {{- end }}
-      {{- if .Values.certmanager.enable }}
-      volumes:
+        {{- end }}
+        {{- if .Values.webhook.enabled }}
+        {{- if .Values.certmanager.enable }}
         - name: webhook-certs
           secret:
-            secretName: webhook-server-cert
+            secretName: webhook-server-cert # Default secret name for cert-manager managed webhook certs
+        {{- else if and (not .Values.certmanager.enable) .Values.webhook.customTLS.secretName }}
+        - name: webhook-certs
+          secret:
+            secretName: {{ .Values.webhook.customTLS.secretName }}
+        {{- end }}
+        {{- end }}
       {{- end }}
