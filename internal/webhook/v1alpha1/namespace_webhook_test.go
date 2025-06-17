@@ -24,11 +24,19 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
+
+func newValidator(fakeClient client.WithWatch) NamespaceCustomValidator {
+	return NamespaceCustomValidator{
+		Client:    fakeClient,
+		crqClient: quota.NewCRQClient(fakeClient),
+	}
+}
 
 var _ = Describe("Namespace Webhook", func() {
 	var (
@@ -50,10 +58,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 
 			fakeClient := fake.NewClientBuilder().Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			warnings, err := validator.ValidateCreate(ctx, ns)
 			Expect(err).NotTo(HaveOccurred())
@@ -157,10 +162,7 @@ var _ = Describe("Namespace Webhook", func() {
 			notANamespace := &corev1.Pod{}
 
 			fakeClient := fake.NewClientBuilder().Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			_, err := validator.ValidateCreate(ctx, notANamespace)
 			Expect(err).To(HaveOccurred())
@@ -187,10 +189,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 
 			fakeClient := fake.NewClientBuilder().Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			warnings, err := validator.ValidateUpdate(ctx, oldNS, newNS)
 			Expect(err).NotTo(HaveOccurred())
@@ -212,10 +211,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 
 			fakeClient := fake.NewClientBuilder().Build() // No CRQs in cluster
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			warnings, err := validator.ValidateUpdate(ctx, oldNS, newNS)
 			Expect(err).NotTo(HaveOccurred())
@@ -247,10 +243,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 
 			fakeClient := fake.NewClientBuilder().WithObjects(crq).Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			warnings, err := validator.ValidateUpdate(ctx, oldNS, newNS)
 			Expect(err).NotTo(HaveOccurred())
@@ -290,10 +283,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 
 			fakeClient := fake.NewClientBuilder().WithObjects(crq1, crq2).Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			warnings, err := validator.ValidateUpdate(ctx, oldNS, newNS)
 			Expect(err).To(HaveOccurred())
@@ -338,10 +328,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 
 			fakeClient := fake.NewClientBuilder().WithObjects(crq1, crq2).Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			warnings, err := validator.ValidateUpdate(ctx, oldNS, newNS)
 			Expect(err).To(HaveOccurred())
@@ -356,10 +343,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 
 			fakeClient := fake.NewClientBuilder().Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			_, err := validator.ValidateUpdate(ctx, notANamespace, newNS)
 			Expect(err).To(HaveOccurred())
@@ -373,10 +357,7 @@ var _ = Describe("Namespace Webhook", func() {
 			notANamespace := &corev1.Pod{}
 
 			fakeClient := fake.NewClientBuilder().Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			_, err := validator.ValidateUpdate(ctx, oldNS, notANamespace)
 			Expect(err).To(HaveOccurred())
@@ -407,10 +388,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 
 			fakeClient := fake.NewClientBuilder().WithObjects(crq).Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			warnings, err := validator.ValidateUpdate(ctx, oldNS, newNS)
 			Expect(err).NotTo(HaveOccurred())
@@ -428,10 +406,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 
 			fakeClient := fake.NewClientBuilder().Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			warnings, err := validator.ValidateDelete(ctx, ns)
 			Expect(err).NotTo(HaveOccurred())
@@ -444,10 +419,7 @@ var _ = Describe("Namespace Webhook", func() {
 			notANamespace := &corev1.Pod{}
 
 			fakeClient := fake.NewClientBuilder().Build()
-			validator = NamespaceCustomValidator{
-				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
-			}
+			validator = newValidator(fakeClient)
 
 			_, err := validator.ValidateDelete(ctx, notANamespace)
 			Expect(err).To(HaveOccurred())

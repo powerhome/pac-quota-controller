@@ -1,4 +1,4 @@
-package namespaceselection
+package namespace
 
 import (
 	"context"

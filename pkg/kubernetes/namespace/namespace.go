@@ -1,19 +1,18 @@
-package kubernetes
+package namespace
 
 import (
 	"context"
 	"fmt"
 	"sort"
 
-	"github.com/powerhome/pac-quota-controller/internal/controller/namespaceselection"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
-// ValidateNamespaceOwnershipWithAPI checks the API to ensure no namespace is already owned by another CRQ.
-func ValidateNamespaceOwnershipWithAPI(
+// ValidateNamespaceOwnership checks to ensure no namespace is already owned by another CRQ.
+func ValidateNamespaceOwnership(
 	ctx context.Context,
 	c client.Client,
 	crq *quotav1alpha1.ClusterResourceQuota,
@@ -23,7 +22,7 @@ func ValidateNamespaceOwnershipWithAPI(
 	}
 
 	// Use the namespace selector utility to get intended namespaces for this CRQ
-	selector, err := namespaceselection.NewLabelBasedNamespaceSelector(c, crq.Spec.NamespaceSelector)
+	selector, err := NewLabelBasedNamespaceSelector(c, crq.Spec.NamespaceSelector)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create namespace selector: %w", err)
 	}
@@ -76,7 +75,7 @@ func GetSelectedNamespaces(
 	}
 
 	// Use the namespace selector utility to get intended namespaces for this CRQ
-	selector, err := namespaceselection.NewLabelBasedNamespaceSelector(c, crq.Spec.NamespaceSelector)
+	selector, err := NewLabelBasedNamespaceSelector(c, crq.Spec.NamespaceSelector)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create namespace selector: %w", err)
 	}

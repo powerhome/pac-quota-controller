@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/utils"
 )
 
@@ -40,7 +40,7 @@ func SetupNamespaceWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).For(&corev1.Namespace{}).
 		WithValidator(&NamespaceCustomValidator{
 			Client:    mgr.GetClient(),
-			crqClient: kubernetes.NewCRQClient(mgr.GetClient()),
+			crqClient: quota.NewCRQClient(mgr.GetClient()),
 		}).
 		Complete()
 }
@@ -50,7 +50,7 @@ func SetupNamespaceWebhookWithManager(mgr ctrl.Manager) error {
 // when it is created, updated, or deleted.
 type NamespaceCustomValidator struct {
 	Client    client.Client
-	crqClient *kubernetes.CRQClient
+	crqClient *quota.CRQClient
 }
 
 var _ webhook.CustomValidator = &NamespaceCustomValidator{}

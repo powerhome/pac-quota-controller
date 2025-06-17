@@ -1,4 +1,4 @@
-package kubernetes_test
+package quota
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,7 +17,7 @@ var _ = Describe("CRQClient", func() {
 	var (
 		ctx       context.Context
 		k8sClient client.Client
-		crqClient *kubernetes.CRQClient
+		crqClient *CRQClient
 		sch       *runtime.Scheme
 		crq1      *quotav1alpha1.ClusterResourceQuota
 		crq2      *quotav1alpha1.ClusterResourceQuota
@@ -82,7 +81,7 @@ var _ = Describe("CRQClient", func() {
 	})
 
 	JustBeforeEach(func() {
-		crqClient = kubernetes.NewCRQClient(k8sClient)
+		crqClient = NewCRQClient(k8sClient)
 	})
 
 	Describe("ListAllCRQs", func() {

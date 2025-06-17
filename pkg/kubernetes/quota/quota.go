@@ -1,7 +1,4 @@
-// pkg/kubernetes/quota.go
-// Provides a CRQClient for ClusterResourceQuota operations shared by controller and webhook.
-
-package kubernetes
+package quota
 
 import (
 	"context"

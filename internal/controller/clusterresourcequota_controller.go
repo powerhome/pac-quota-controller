@@ -29,7 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
 
 var log = logf.Log.WithName("clusterresourcequota-controller")
@@ -38,7 +39,7 @@ var log = logf.Log.WithName("clusterresourcequota-controller")
 type ClusterResourceQuotaReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
-	crqClient *kubernetes.CRQClient
+	crqClient *quota.CRQClient
 }
 
 // +kubebuilder:rbac:groups=quota.powerapp.cloud,resources=clusterresourcequotas,verbs=get;list;watch;create;update;patch;delete
@@ -77,9 +78,9 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Use CRQClient for namespace selection
 	if r.crqClient == nil {
-		r.crqClient = kubernetes.NewCRQClient(r.Client)
+		r.crqClient = quota.NewCRQClient(r.Client)
 	}
-	selectedNamespaces, err := kubernetes.GetSelectedNamespaces(ctx, r.Client, crq)
+	selectedNamespaces, err := namespace.GetSelectedNamespaces(ctx, r.Client, crq)
 	if err != nil {
 		log.Error(err, "Failed to get selected namespaces")
 		return ctrl.Result{}, err
@@ -91,7 +92,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	previousNamespaces := r.crqClient.GetNamespacesFromStatus(crq)
 
 	// Determine what changed (which namespaces were added or removed)
-	addedNamespaces, removedNamespaces := kubernetes.DetermineNamespaceChanges(previousNamespaces, selectedNamespaces)
+	addedNamespaces, removedNamespaces := namespace.DetermineNamespaceChanges(previousNamespaces, selectedNamespaces)
 
 	if len(addedNamespaces) > 0 {
 		log.Info("Namespaces added to selection", "namespaces", addedNamespaces)
@@ -121,39 +122,24 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Cont
 	if !ok {
 		return nil
 	}
-
-	logger := log
-	logger = logger.WithValues("namespace", ns.Name)
-
-	logger.Info("Processing namespace event")
-
-	// List all ClusterResourceQuotas
-	quotaList := &quotav1alpha1.ClusterResourceQuotaList{}
-	if err := r.List(ctx, quotaList); err != nil {
-		logger.Error(err, "Failed to list ClusterResourceQuotas")
+	log := log.WithValues("clusterresourcequota", ns.ObjectMeta.Name)
+	log.Info("Processing namespace event")
+	quotaList, err := r.crqClient.ListCRQsForNamespace(ns)
+	if err != nil {
+		log.Error(err, "Failed to list ClusterResourceQuotas")
 		return nil
 	}
-
-	// For each ClusterResourceQuota, check if the namespace matches any of its selection criteria
 	var requests []reconcile.Request
-	for i := range quotaList.Items {
-		quota := &quotaList.Items[i]
-		shouldEnqueue, err := r.crqClient.NamespaceMatchesCRQ(ns, quota)
-		if err != nil {
-			logger.Error(err, "Failed to check namespace match", "quota", quota.Name)
-			continue
-		}
-		if shouldEnqueue {
-			logger.Info("Enqueueing ClusterResourceQuota for reconciliation due to namespace change",
-				"quota", quota.Name)
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name: quota.Name,
-				},
-			})
-		}
+	for i := range quotaList {
+		quota := quotaList[i]
+		log.Info("Enqueueing ClusterResourceQuota for reconciliation due to namespace change",
+			"quota", quota.Name)
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name: quota.Name,
+			},
+		})
 	}
-
 	return requests
 }
 

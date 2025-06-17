@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 )
 
 var clusterresourcequotalog = logf.Log.WithName("clusterresourcequota-resource")
@@ -57,7 +57,7 @@ func (v *ClusterResourceQuotaCustomValidator) ValidateCreate(ctx context.Context
 	}
 	clusterresourcequotalog.Info("Validating namespace ownership on create", "name", crq.GetName())
 
-	return kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, v.Client, crq)
+	return namespace.ValidateNamespaceOwnership(ctx, v.Client, crq)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type ClusterResourceQuota.
@@ -68,7 +68,7 @@ func (v *ClusterResourceQuotaCustomValidator) ValidateUpdate(ctx context.Context
 	}
 	clusterresourcequotalog.Info("Validating namespace ownership on update", "name", crq.GetName())
 
-	return kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, v.Client, crq)
+	return namespace.ValidateNamespaceOwnership(ctx, v.Client, crq)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type ClusterResourceQuota.
