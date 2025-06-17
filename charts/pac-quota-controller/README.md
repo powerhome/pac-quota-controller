@@ -108,10 +108,12 @@ Replace `<CERT_MANAGER_VERSION>` with a compatible version (e.g., v1.18.0 or lat
 If you choose not to use cert-manager (`certmanager.enable: false`), you must provide your own TLS certificates. This involves:
 
 1. Creating Kubernetes `Secret` resources containing `tls.crt`, `tls.key`, and `ca.crt`.
-2. Configuring the following values in `values.yaml`:
-    * `webhook.customTLS.secretName`: Name of the Secret for the webhook server (must contain `tls.crt`, `tls.key`, `ca.crt`).
-    * `webhook.customTLS.caBundle`: Base64 encoded CA bundle (content of `ca.crt`) that Kubernetes API server will use to trust your webhook.
-    * `metrics.customTLS.secretName`: Name of the Secret for the metrics server (must contain `tls.crt`, `tls.key`).
+2. Configure the following values in your `values.yaml` file:
+    - `certmanager.enable`: Set to `false` to disable cert-manager integration.
+    - `webhook.customTLS`:
+        - `secretName`: Name of the Secret for the webhook server (must contain `tls.crt`, `tls.key`, `ca.crt`).
+        - `caBundle`: Base64 encoded CA bundle (content of `ca.crt`) that the Kubernetes API server will use to trust your webhook.
+    - `metrics.customTLS.secretName`: Name of the Secret for the metrics server (must contain `tls.crt`, `tls.key`).
 
 | Name                        | Description                                                                                                                              | Type    | Default |
 |-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------|---------|---------|
