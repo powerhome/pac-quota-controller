@@ -78,7 +78,7 @@ spec:
             {{- end }}
       securityContext:
         {{- toYaml .Values.controllerManager.securityContext | nindent 8 }}
-      serviceAccountName: {{ .Values.controllerManager.serviceAccount.name | default "pac-quota-controller-manager" }}
+      serviceAccountName: {{ .Values.controllerManager.serviceAccount.name }}
       terminationGracePeriodSeconds: {{ .Values.controllerManager.terminationGracePeriodSeconds }}
       volumes:
         {{- if .Values.metrics.enable }}
