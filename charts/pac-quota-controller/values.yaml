@@ -67,5 +67,5 @@ networkPolicy:
   enable: enable
 
 webhook:
-  enabled: true
+  enable: true
   dryRunOnly: false

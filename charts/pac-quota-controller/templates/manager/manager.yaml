@@ -71,7 +71,7 @@ spec:
               mountPath: /tmp/k8s-metrics-server/metrics-certs
               readOnly: true
             {{- end }}
-            {{- if .Values.webhook.enabled }}
+            {{- if .Values.webhook.enable }}
             - name: webhook-certs
               mountPath: {{ .Values.controllerManager.container.webhookCertPath | default "/tmp/k8s-webhook-server/serving-certs" }}
               readOnly: true
@@ -92,7 +92,7 @@ spec:
             secretName: {{ .Values.metrics.customTLS.secretName }}
         {{- end }}
         {{- end }}
-        {{- if .Values.webhook.enabled }}
+        {{- if .Values.webhook.enable }}
         {{- if .Values.certmanager.enable }}
         - name: webhook-certs
           secret:

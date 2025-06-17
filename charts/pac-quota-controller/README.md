@@ -161,4 +161,4 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | prometheus.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |
-| webhook.enabled | bool | `true` |  |
+| webhook.enable | bool | `true` |  |
