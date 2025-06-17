@@ -11,6 +11,6 @@ roleRef:
   name: pac-quota-controller-manager-role
 subjects:
 - kind: ServiceAccount
-  name: {{ .Values.controllerManager.serviceAccountName }}
+  name: {{ .Values.controllerManager.serviceAccount.name | default "pac-quota-controller-manager" }}
   namespace: {{ .Release.Namespace }}
 {{- end -}}

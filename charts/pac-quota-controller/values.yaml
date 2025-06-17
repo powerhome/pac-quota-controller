@@ -39,7 +39,9 @@ controllerManager:
     seccompProfile:
       type: RuntimeDefault
   terminationGracePeriodSeconds: 10
-  serviceAccountName: pac-quota-controller-manager
+  serviceAccount: 
+    name: pac-quota-controller-manager
+    annotations: {}
 
 rbac:
   enable: true
