@@ -327,21 +327,8 @@ helm-lint: ## Lint Helm chart
 .PHONY: helm-package
 helm-package: helm-docs helm-lint ## Package Helm chart
 	@echo "Packaging Helm chart..."
-	@mkdir -p .cr-release-packages
-	helm package charts/pac-quota-controller -d .cr-release-packages
-
-.PHONY: helm-test
-helm-test: helm-package ## Test Helm chart installation in a Kind cluster
-	@echo "Creating temporary Kind cluster for Helm chart testing..."
-	@if ! command -v kind > /dev/null 2>&1; then \
-		echo "kind is not installed. Please install kind first."; \
-		exit 1; \
-	fi
-	@kind create cluster --name helm-test --wait 60s || true
-	@echo "Installing Helm chart in the test cluster..."
-	make helm-deploy IMG=$(IMG)
-	@echo "Helm installation test completed."
-	@kind delete cluster --name helm-test
+	@mkdir -p dist/chart
+	helm package charts/pac-quota-controller -d dist/chart
 
 .PHONY: helm-deploy
 helm-deploy: helm-lint ## Deploy the Helm chart

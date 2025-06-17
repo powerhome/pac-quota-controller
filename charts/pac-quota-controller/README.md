@@ -149,7 +149,8 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.replicas | int | `1` |  |
 | controllerManager.securityContext.runAsNonRoot | bool | `true` |  |
 | controllerManager.securityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
-| controllerManager.serviceAccountName | string | `"pac-quota-controller-manager"` |  |
+| controllerManager.serviceAccount.annotations | object | `{}` |  |
+| controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
 | controllerManager.terminationGracePeriodSeconds | int | `10` |  |
 | crd.enable | bool | `true` |  |
 | crd.keep | bool | `true` |  |

@@ -9,6 +9,7 @@ Dockerfile.cross
 dist/
 config/
 charts/pac-quota-controller/charts
+.cr-release-packages/
 
 # Test binary, built with `go test -c`
 *.test
