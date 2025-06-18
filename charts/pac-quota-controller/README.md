@@ -148,6 +148,7 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.container.securityContext.allowPrivilegeEscalation | bool | `false` |  |
 | controllerManager.container.securityContext.capabilities.drop[0] | string | `"ALL"` |  |
 | controllerManager.container.webhookCertPath | string | `"/tmp/k8s-webhook-server/serving-certs"` |  |
+| controllerManager.excludeNamespaceLabelKey | string | `"pac-quota-controller.powerapp.cloud/exclude"` |  |
 | controllerManager.replicas | int | `1` |  |
 | controllerManager.securityContext.runAsNonRoot | bool | `true` |  |
 | controllerManager.securityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
