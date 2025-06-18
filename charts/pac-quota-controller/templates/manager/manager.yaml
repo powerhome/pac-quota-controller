@@ -70,10 +70,6 @@ spec:
             - name: metrics-certs
               mountPath: /tmp/k8s-metrics-server/metrics-certs # Default path for controller-runtime when certs are auto-generated
               readOnly: true
-            {{- else if and (not .Values.certmanager.enable) .Values.metrics.customTLS.secretName }}
-            - name: metrics-certs
-              mountPath: /tmp/k8s-metrics-server/metrics-certs # Ensure your controller expects certs here if using custom
-              readOnly: true
             {{- end }}
             {{- if .Values.webhook.enable }}
             - name: webhook-certs

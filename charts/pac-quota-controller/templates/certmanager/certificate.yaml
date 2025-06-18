@@ -32,8 +32,6 @@ spec:
     kind: Issuer
     name: selfsigned-issuer
   secretName: webhook-server-cert
-  privateKey:
-    rotationPolicy: Never
 {{- if .Values.metrics.enable }}
 ---
 # Certificate for the metrics
@@ -57,7 +55,5 @@ spec:
     kind: Issuer
     name: selfsigned-issuer
   secretName: metrics-server-cert
-  privateKey:
-    rotationPolicy: Never
 {{- end }}
 {{- end }}

@@ -83,7 +83,7 @@ var _ = Describe("Namespace Webhook", func() {
 			fakeClient := fake.NewClientBuilder().WithObjects(crq).Build()
 			validator = NamespaceCustomValidator{
 				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
+				crqClient: quota.NewCRQClient(fakeClient),
 			}
 			warnings, err := validator.ValidateCreate(ctx, ns)
 			Expect(err).NotTo(HaveOccurred())
@@ -116,7 +116,7 @@ var _ = Describe("Namespace Webhook", func() {
 			fakeClient := fake.NewClientBuilder().WithObjects(crq1, crq2).Build()
 			validator = NamespaceCustomValidator{
 				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
+				crqClient: quota.NewCRQClient(fakeClient),
 			}
 			warnings, err := validator.ValidateCreate(ctx, ns)
 			Expect(err).To(HaveOccurred())
@@ -150,7 +150,7 @@ var _ = Describe("Namespace Webhook", func() {
 			fakeClient := fake.NewClientBuilder().WithObjects(crq1, crq2).Build()
 			validator = NamespaceCustomValidator{
 				Client:    fakeClient,
-				crqClient: kubernetes.NewCRQClient(fakeClient),
+				crqClient: quota.NewCRQClient(fakeClient),
 			}
 			warnings, err := validator.ValidateCreate(ctx, ns)
 			Expect(err).To(HaveOccurred())
