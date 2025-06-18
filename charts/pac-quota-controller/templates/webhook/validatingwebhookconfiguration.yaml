@@ -1,5 +1,4 @@
 {{- if .Values.webhook.enable }}
-# This file deploys the ValidatingWebhookConfiguration for ClusterResourceQuota
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
@@ -40,11 +39,14 @@ webhooks:
       service:
         name: pac-quota-controller-webhook-service
         namespace: {{ .Release.Namespace }}
+        # Super annoying but kubebuilder router creates the path
+        # using the group and version, namespace doesn't contain a group
+        # so we have to double dashes
         path: /validate--v1-namespace
     rules:
       - apiGroups: [""]
         apiVersions: ["v1"]
-        operations: ["UPDATE"]
+        operations: ["CREATE", "UPDATE"]
         resources: ["namespaces"]
     namespaceSelector: {}
 {{- end }}

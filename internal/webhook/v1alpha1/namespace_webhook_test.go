@@ -41,7 +41,7 @@ var _ = Describe("Namespace Webhook", func() {
 	})
 
 	Describe("ValidateCreate", func() {
-		It("should always allow namespace creation", func() {
+		It("should allow creation when no CRQs exist", func() {
 			ns := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "test-namespace",
@@ -57,6 +57,99 @@ var _ = Describe("Namespace Webhook", func() {
 
 			warnings, err := validator.ValidateCreate(ctx, ns)
 			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(BeNil())
+		})
+
+		It("should allow creation when only one CRQ matches", func() {
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-crq"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"quota": "limited"},
+					},
+				},
+			}
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-namespace",
+					Labels: map[string]string{"quota": "limited"},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithObjects(crq).Build()
+			validator = NamespaceCustomValidator{
+				Client:    fakeClient,
+				crqClient: kubernetes.NewCRQClient(fakeClient),
+			}
+			warnings, err := validator.ValidateCreate(ctx, ns)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(warnings).To(BeNil())
+		})
+
+		It("should deny creation when multiple CRQs with different selectors match", func() {
+			crq1 := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-crq-app"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "my-app"},
+					},
+				},
+			}
+			crq2 := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-crq-env"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"env": "production"},
+					},
+				},
+			}
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-namespace",
+					Labels: map[string]string{"app": "my-app", "env": "production"},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithObjects(crq1, crq2).Build()
+			validator = NamespaceCustomValidator{
+				Client:    fakeClient,
+				crqClient: kubernetes.NewCRQClient(fakeClient),
+			}
+			warnings, err := validator.ValidateCreate(ctx, ns)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("would be selected by multiple ClusterResourceQuotas"))
+			Expect(warnings).To(BeNil())
+		})
+
+		It("should deny creation when multiple CRQs match", func() {
+			crq1 := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-crq-1"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"quota": "limited"},
+					},
+				},
+			}
+			crq2 := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-crq-2"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"quota": "limited"},
+					},
+				},
+			}
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-namespace",
+					Labels: map[string]string{"quota": "limited"},
+				},
+			}
+			fakeClient := fake.NewClientBuilder().WithObjects(crq1, crq2).Build()
+			validator = NamespaceCustomValidator{
+				Client:    fakeClient,
+				crqClient: kubernetes.NewCRQClient(fakeClient),
+			}
+			warnings, err := validator.ValidateCreate(ctx, ns)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("would be selected by multiple ClusterResourceQuotas"))
 			Expect(warnings).To(BeNil())
 		})
 

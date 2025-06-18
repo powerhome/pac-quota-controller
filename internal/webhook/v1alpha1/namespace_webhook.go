@@ -56,12 +56,26 @@ type NamespaceCustomValidator struct {
 var _ webhook.CustomValidator = &NamespaceCustomValidator{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Namespace.
-func (v *NamespaceCustomValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (v *NamespaceCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	namespace, ok := obj.(*corev1.Namespace)
 	if !ok {
 		return nil, fmt.Errorf("expected a Namespace object but got %T", obj)
 	}
 	namespacelog.Info("Validation for Namespace upon creation", "name", namespace.GetName())
+
+	// Block creation if the namespace would be selected by multiple CRQs
+	matching, err := v.crqClient.ListCRQsForNamespace(namespace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list ClusterResourceQuotas for namespace %s: %w", namespace.Name, err)
+	}
+	if len(matching) > 1 {
+		var names []string
+		for _, crq := range matching {
+			names = append(names, crq.Name)
+		}
+		return nil, fmt.Errorf("namespace '%s' would be selected by multiple ClusterResourceQuotas: %v", namespace.Name, names)
+	}
+
 	return nil, nil
 }
 

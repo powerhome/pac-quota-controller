@@ -43,7 +43,7 @@ The `pac-quota-controller` is a Kubernetes controller that extends Kubernetes wi
     - Code must pass lint checks: `make lint`.
     - Code must be formatted: `make fmt`.
     - Follow Go best practices and the Kubernetes Go project structure where it doesn't conflict with Kubebuilder's structure.
-
+      - Go code lines should not be longer than 120 characters.
 8. **Performance:**
     - Be mindful of performance implications, especially in the controller's reconciliation loop and webhook handlers.
     - Optimize API calls and resource usage.
