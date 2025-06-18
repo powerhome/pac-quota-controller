@@ -1,5 +1,8 @@
 controllerManager:
   replicas: 1
+  # The label key used to exclude namespaces from reconciliation.
+  # Namespaces with this label (set to any value) will be ignored by the controller.
+  excludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude"
   container:
     image:
       repository: ghcr.io/powerhome/pac-quota-controller

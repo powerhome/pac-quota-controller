@@ -352,6 +352,59 @@ var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
 		Consistently(func() []string { return getCRQStatusNamespaces(crq1Name) }, "5s", "1s").Should(BeEmpty())
 	})
 
+	It("Should not add a namespace with the exclude label to the CRQ status", func() {
+		excludedNsName := "test-ns-excluded-" + suffix
+
+		ensureNamespaceDeleted(excludedNsName)
+		ensureCRQDeleted(crq1Name)
+
+		// This namespace matches the selector but has the exclude label
+		excludedNs := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: excludedNsName,
+				Labels: map[string]string{
+					"quota": "test-" + suffix,
+					// The default exclude label key
+					"pac-quota-controller.powerapp.cloud/exclude": "true",
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, excludedNs)).To(Succeed())
+
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: crq1Name,
+			},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"quota": "test-" + suffix},
+				},
+				Hard: quotav1alpha1.ResourceList{},
+			},
+		}
+		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, excludedNs)
+			_ = k8sClient.Delete(ctx, crq)
+		})
+
+		By("Ensuring the excluded namespace is not in the CRQ status")
+		Consistently(func() []string {
+			return getCRQStatusNamespaces(crq1Name)
+		}, "5s", "1s").ShouldNot(ContainElement(excludedNsName))
+
+		By("Removing the exclude label from the namespace")
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: excludedNsName}, excludedNs)).To(Succeed())
+		delete(excludedNs.Labels, "pac-quota-controller.powerapp.cloud/exclude")
+		Expect(k8sClient.Update(ctx, excludedNs)).To(Succeed())
+
+		By("Waiting for the namespace to appear in CRQ status after label removal")
+		Eventually(func() []string {
+			return getCRQStatusNamespaces(crq1Name)
+		}, "10s", "1s").Should(ContainElement(excludedNsName))
+	})
+
 	It("Should support matchExpressions in NamespaceSelector", func() {
 		ns1 := "test-ns1-" + suffix
 		ns2 := "test-ns2-" + suffix

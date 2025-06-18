@@ -18,28 +18,93 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"sort"
 
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
 
 var log = logf.Log.WithName("clusterresourcequota-controller")
 
+// isTerminal checks if a pod is in a terminal phase (Succeeded or Failed).
+func isTerminal(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
+}
+
+// resourceUpdatePredicate implements a custom predicate function to filter resource updates.
+// It's designed to trigger reconciliation only on meaningful changes, such as spec updates
+// or pod phase changes to/from terminal states, while ignoring noisy status-only updates.
+// Pods going from pending to running or from running to pending
+// are not considered terminal and do not trigger reconciliation.
+// AKA should be accounted for the resource usage
+
+type resourceUpdatePredicate struct {
+	predicate.Funcs
+}
+
+// Update implements the update event filter.
+func (resourceUpdatePredicate) Update(e event.UpdateEvent) bool {
+	if e.ObjectOld == nil || e.ObjectNew == nil {
+		// Invalid event, ignore
+		return false
+	}
+
+	// Always reconcile if the object's generation changes (i.e., spec was updated).
+	if e.ObjectNew.GetGeneration() != e.ObjectOld.GetGeneration() {
+		return true
+	}
+
+	// Special handling for Pods: reconcile if the pod transitions to or from a terminal state.
+	// This is important for releasing quota resources when a pod completes.
+	if podOld, ok := e.ObjectOld.(*corev1.Pod); ok {
+		if podNew, ok := e.ObjectNew.(*corev1.Pod); ok {
+			if isTerminal(podOld) != isTerminal(podNew) {
+				return true
+			}
+		}
+	}
+
+	// For all other cases, if the generation hasn't changed, ignore the update event.
+	// This prevents reconciliation loops caused by the controller's own status updates on the CRQ
+	// or other insignificant status changes on watched resources.
+	return false
+}
+
 // ClusterResourceQuotaReconciler reconciles a ClusterResourceQuota object
 type ClusterResourceQuotaReconciler struct {
 	client.Client
-	Scheme    *runtime.Scheme
-	crqClient *quota.CRQClient
+	Scheme                   *runtime.Scheme
+	crqClient                *quota.CRQClient
+	OwnNamespace             string
+	ExcludeNamespaceLabelKey string
+}
+
+// isNamespaceExcluded checks if a namespace should be ignored by the controller.
+// It checks if the namespace is the controller's own namespace or if it has the exclusion label.
+func (r *ClusterResourceQuotaReconciler) isNamespaceExcluded(ns *corev1.Namespace) bool {
+	if ns.Name == r.OwnNamespace {
+		return true
+	}
+	if r.ExcludeNamespaceLabelKey == "" {
+		return false
+	}
+	_, hasLabel := ns.Labels[r.ExcludeNamespaceLabelKey]
+	return hasLabel
 }
 
 // +kubebuilder:rbac:groups=quota.powerapp.cloud,resources=clusterresourcequotas,verbs=get;list;watch;create;update;patch;delete
@@ -51,11 +116,10 @@ type ClusterResourceQuotaReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
-
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// It implements the logic to select namespaces, create/update ResourceQuotas in those
-// namespaces, and keep track of aggregate usage.
+// It implements the logic to select namespaces, calculate aggregate usage,
+// and update the ClusterResourceQuota status.
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
@@ -76,100 +140,268 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	// Use CRQClient for namespace selection
-	if r.crqClient == nil {
-		r.crqClient = quota.NewCRQClient(r.Client)
-	}
-	selectedNamespaces, err := namespace.GetSelectedNamespaces(ctx, r.Client, crq)
-	if err != nil {
-		log.Error(err, "Failed to get selected namespaces")
-		return ctrl.Result{}, err
+	// Get the list of selected namespaces, filtering out excluded ones.
+	var selectedNamespaces []string
+	if crq.Spec.NamespaceSelector != nil {
+		selector, err := metav1.LabelSelectorAsSelector(crq.Spec.NamespaceSelector)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create selector from CRQ spec: %w", err)
+		}
+
+		namespaceList := &corev1.NamespaceList{}
+		if err := r.List(ctx, namespaceList); err != nil {
+			log.Error(err, "Failed to list namespaces")
+			return ctrl.Result{}, err
+		}
+
+		for _, ns := range namespaceList.Items {
+			if r.isNamespaceExcluded(&ns) {
+				continue
+			}
+			if selector.Matches(labels.Set(ns.Labels)) {
+				selectedNamespaces = append(selectedNamespaces, ns.Name)
+			}
+		}
+		sort.Strings(selectedNamespaces)
 	}
 
 	log.Info("Found namespaces matching selection criteria", "count", len(selectedNamespaces), "namespaces", selectedNamespaces)
 
-	// Use CRQClient for extracting previous namespaces from status
-	previousNamespaces := r.crqClient.GetNamespacesFromStatus(crq)
+	// Calculate aggregated resource usage across all selected namespaces
+	totalUsage, usageByNamespace := r.calculateAndAggregateUsage(ctx, crq, selectedNamespaces)
 
-	// Determine what changed (which namespaces were added or removed)
-	addedNamespaces, removedNamespaces := namespace.DetermineNamespaceChanges(previousNamespaces, selectedNamespaces)
-
-	if len(addedNamespaces) > 0 {
-		log.Info("Namespaces added to selection", "namespaces", addedNamespaces)
-	}
-
-	if len(removedNamespaces) > 0 {
-		log.Info("Namespaces removed from selection", "namespaces", removedNamespaces)
-	}
-
-	// Store current namespaces in status for future comparisons
-	if err := r.updateNamespaceStatus(ctx, crq, selectedNamespaces); err != nil {
-		log.Error(err, "Failed to update namespace status")
+	// Update the status of the ClusterResourceQuota
+	if err := r.updateStatus(ctx, crq, totalUsage, usageByNamespace); err != nil {
+		log.Error(err, "Failed to update ClusterResourceQuota status")
 		return ctrl.Result{}, err
 	}
-
-	// TODO: Further implementation to apply quotas to each namespace
-	// and aggregate usage will be implemented in follow-up PRs
 
 	log.Info("Finished reconciliation")
 	return ctrl.Result{}, nil
 }
 
+// calculateAndAggregateUsage calculates the current resource usage for the given CRQ.
+func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
+	ctx context.Context,
+	crq *quotav1alpha1.ClusterResourceQuota,
+	namespaces []string,
+) (quotav1alpha1.ResourceList, []quotav1alpha1.ResourceQuotaStatusByNamespace) {
+	log.Info("Calculating resource usage...", "crq", crq.Name)
+
+	totalUsage := make(quotav1alpha1.ResourceList)
+	usageByNamespace := make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))
+	nsIndexMap := make(map[string]int)
+
+	// Initialize maps for efficient lookup
+	for i, nsName := range namespaces {
+		usageByNamespace[i] = quotav1alpha1.ResourceQuotaStatusByNamespace{
+			Namespace: nsName,
+			Status: quotav1alpha1.ResourceQuotaStatus{
+				Used: make(quotav1alpha1.ResourceList),
+			},
+		}
+		nsIndexMap[nsName] = i
+	}
+
+	// Iterate over each resource defined in the CRQ spec
+	for resourceName := range crq.Spec.Hard {
+		// Initialize total usage for this resource
+		totalUsage[resourceName] = resource.Quantity{}
+
+		for _, nsName := range namespaces {
+			var currentUsage resource.Quantity
+
+			// Dispatch to the correct calculation function based on the resource type
+			switch resourceName {
+			case corev1.ResourcePods, corev1.ResourceServices, corev1.ResourceConfigMaps, corev1.ResourceSecrets, corev1.ResourcePersistentVolumeClaims:
+				currentUsage = r.calculateObjectCount(ctx, nsName, resourceName)
+			case corev1.ResourceRequestsCPU, corev1.ResourceRequestsMemory, corev1.ResourceLimitsCPU, corev1.ResourceLimitsMemory:
+				currentUsage = r.calculateComputeResources(ctx, nsName, resourceName)
+			case corev1.ResourceRequestsStorage:
+				currentUsage = r.calculateStorageResources(ctx, nsName)
+			default:
+				log.Info("Unsupported resource type for quota calculation", "resource", resourceName)
+				continue
+			}
+
+			// Update usage for the specific namespace
+			nsIndex := nsIndexMap[nsName]
+			usageByNamespace[nsIndex].Status.Used[resourceName] = currentUsage
+
+			// Aggregate total usage
+			total := totalUsage[resourceName]
+			total.Add(currentUsage)
+			totalUsage[resourceName] = total
+		}
+	}
+
+	log.Info("Usage calculation finished.")
+	return totalUsage, usageByNamespace
+}
+
+// calculateObjectCount calculates the usage for object count quotas.
+func (r *ClusterResourceQuotaReconciler) calculateObjectCount(_ context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+	// TODO: Implement listing and counting for the specific object type (e.g., Pods, Services).
+	// This will involve creating a client.ObjectList for the correct type and listing
+	// it with a namespace filter.
+	log.Info("Placeholder: Calculating object count", "resource", resourceName, "namespace", ns)
+	return resource.MustParse("0")
+}
+
+// calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
+// TODO: remove the unparam linter directive when parameters are used
+//
+//nolint:unparam // placeholder implementation, will use parameters in future
+func (r *ClusterResourceQuotaReconciler) calculateComputeResources(_ context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+	// TODO: Implement pod listing, iterating through containers, and summing up
+	// the specified resource requests or limits.
+	log.Info("Placeholder: Calculating compute resources", "resource", resourceName, "namespace", ns)
+	return resource.MustParse("0")
+}
+
+// calculateStorageResources calculates the usage for storage resource quotas.
+// TODO: remove the unparam linter directive when parameters are used
+//
+//nolint:unparam // placeholder implementation, will use parameters in future
+func (r *ClusterResourceQuotaReconciler) calculateStorageResources(_ context.Context, ns string) resource.Quantity {
+	// TODO: Implement PVC listing and summing up the storage requests.
+	log.Info("Placeholder: Calculating storage resources", "namespace", ns)
+	return resource.MustParse("0")
+}
+
+// updateStatus updates the status of the ClusterResourceQuota object.
+func (r *ClusterResourceQuotaReconciler) updateStatus(
+	ctx context.Context,
+	crq *quotav1alpha1.ClusterResourceQuota,
+	totalUsage quotav1alpha1.ResourceList,
+	usageByNamespace []quotav1alpha1.ResourceQuotaStatusByNamespace,
+) error {
+	crqCopy := crq.DeepCopy()
+	crqCopy.Status.Total.Hard = crq.Spec.Hard
+	crqCopy.Status.Total.Used = totalUsage
+	crqCopy.Status.Namespaces = usageByNamespace
+
+	// Use Patch instead of Update to avoid conflicts
+	return r.Status().Patch(ctx, crqCopy, client.MergeFrom(crq))
+}
+
 // findQuotasForNamespace maps Namespace objects to ClusterResourceQuota requests
 // that should be reconciled based on namespace selection criteria
 func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
-	ns, ok := obj.(*corev1.Namespace)
-	if !ok {
-		return nil
+	ns, _ := obj.(*corev1.Namespace)
+
+	if r.isNamespaceExcluded(ns) {
+		return nil // Ignore events from excluded namespaces
 	}
-	log := log.WithValues("clusterresourcequota", ns.ObjectMeta.Name)
+
+	log := log.WithValues("namespace", ns.Name)
 	log.Info("Processing namespace event")
+
 	quotaList, err := r.crqClient.ListCRQsForNamespace(ns)
 	if err != nil {
-		log.Error(err, "Failed to list ClusterResourceQuotas")
+		log.Error(err, "Failed to list ClusterResourceQuotas for namespace")
 		return nil
 	}
-	var requests []reconcile.Request
+
+	requests := make([]reconcile.Request, 0, len(quotaList))
 	for i := range quotaList {
-		quota := quotaList[i]
+		q := quotaList[i]
 		log.Info("Enqueueing ClusterResourceQuota for reconciliation due to namespace change",
-			"quota", quota.Name)
+			"quota", q.Name)
 		requests = append(requests, reconcile.Request{
 			NamespacedName: types.NamespacedName{
-				Name: quota.Name,
+				Name: q.Name,
 			},
 		})
 	}
 	return requests
 }
 
-// updateNamespaceAnnotation stores the list of namespaces in an annotation on the ClusterResourceQuota
-func (r *ClusterResourceQuotaReconciler) updateNamespaceStatus(ctx context.Context, crq *quotav1alpha1.ClusterResourceQuota, namespaces []string) error {
-	// Create a copy to avoid updating the object in the cache
-	crqCopy := crq.DeepCopy()
-
-	// Initialize annotations if needed
-	crqCopy.Status.Namespaces = make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))
-	for i, ns := range namespaces {
-		crqCopy.Status.Namespaces[i] = quotav1alpha1.ResourceQuotaStatusByNamespace{
-			Namespace: ns,
-			// Resource Usage will be populated later
-		}
+// findQuotasForObject maps a namespaced object to ClusterResourceQuota requests.
+func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context, obj client.Object) []reconcile.Request {
+	ns := &corev1.Namespace{}
+	if err := r.Get(ctx, types.NamespacedName{Name: obj.GetNamespace()}, ns); err != nil {
+		log.Error(err, "Failed to get namespace for object to check for exclusion", "object", client.ObjectKeyFromObject(obj))
+		return nil
 	}
 
-	return r.Status().Update(ctx, crqCopy)
+	if r.isNamespaceExcluded(ns) {
+		return nil // Ignore events from excluded namespaces
+	}
+
+	// The GVK is often not set on objects from the cache, so we need to use the scheme to get it.
+	// GVK = GroupVersionKind
+	gvks, _, err := r.Scheme.ObjectKinds(obj)
+	var kind string
+	if err == nil && len(gvks) > 0 {
+		kind = gvks[0].Kind
+	}
+
+	log := log.WithValues(
+		"objectKind", kind,
+		"object", client.ObjectKeyFromObject(obj),
+	)
+	log.Info("Processing object event, finding relevant CRQs")
+
+	// Find which CRQs select this namespace.
+	quotaList, err := r.crqClient.ListCRQsForNamespace(ns)
+	if err != nil {
+		log.Error(err, "Failed to list ClusterResourceQuotas for namespace")
+		return nil
+	}
+
+	requests := make([]reconcile.Request, 0, len(quotaList))
+	for i := range quotaList {
+		q := quotaList[i]
+		log.Info("Enqueueing ClusterResourceQuota for reconciliation due to object change",
+			"quota", q.Name)
+		requests = append(requests, reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name: q.Name,
+			},
+		})
+	}
+	return requests
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Watch for changes to ClusterResourceQuota objects
-	// Also watch for changes to Namespaces, as namespace label changes may affect quota application
-	return ctrl.NewControllerManagedBy(mgr).
+	if r.crqClient == nil {
+		r.crqClient = quota.NewCRQClient(r.Client)
+	}
+
+	// Predicate to filter out updates to status subresource
+	// This prevents reconcile loops caused by status updates
+	// Not sure about this one, but seems to reduce noise
+	// Couldn't find much examples of this in the wild
+	resourcePredicate := resourceUpdatePredicate{}
+
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&quotav1alpha1.ClusterResourceQuota{}).
+		// Watch for changes to Namespaces and trigger reconciliation for associated CRQs.
 		Watches(
 			&corev1.Namespace{},
 			handler.EnqueueRequestsFromMapFunc(r.findQuotasForNamespace),
-		).
-		Named("clusterresourcequota").
+		)
+
+	// Watch for changes to tracked resources and trigger reconciliation for associated CRQs.
+	// TODO: Add more resources as needed.
+	watchedObjectTypes := []client.Object{
+		&corev1.Pod{},
+		&corev1.Service{},
+		&corev1.PersistentVolumeClaim{},
+		&corev1.Secret{},
+		&corev1.ConfigMap{},
+	}
+
+	for _, objType := range watchedObjectTypes {
+		b = b.Watches(
+			objType,
+			handler.EnqueueRequestsFromMapFunc(r.findQuotasForObject),
+			builder.WithPredicates(resourcePredicate),
+		)
+	}
+
+	return b.Named("clusterresourcequota").
 		Complete(r)
 }

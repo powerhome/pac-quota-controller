@@ -21,16 +21,16 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"slices"
-
-	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
 var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
@@ -283,6 +283,114 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			// Since our controller doesn't modify the resource,
 			// we'll just check that it exists and has the correct name
 			Expect(fetchedResource.Name).To(Equal("test-scope-selector"))
+		})
+	})
+
+	Context("Namespace Exclusion", func() {
+		var reconciler *ClusterResourceQuotaReconciler
+
+		BeforeEach(func() {
+			reconciler = &ClusterResourceQuotaReconciler{
+				Client:                   k8sClient,
+				Scheme:                   k8sClient.Scheme(),
+				OwnNamespace:             "controller-ns",
+				ExcludeNamespaceLabelKey: "exclude-from-quota",
+			}
+		})
+
+		It("should identify its own namespace as excluded", func() {
+			ownNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "controller-ns"}}
+			Expect(reconciler.isNamespaceExcluded(ownNs)).To(BeTrue())
+		})
+
+		It("should identify a namespace with the exclusion label", func() {
+			labeledNs := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "labeled-ns",
+					Labels: map[string]string{"exclude-from-quota": "true"},
+				},
+			}
+			Expect(reconciler.isNamespaceExcluded(labeledNs)).To(BeTrue())
+		})
+
+		It("should not exclude a regular namespace", func() {
+			appNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "app-ns"}}
+			Expect(reconciler.isNamespaceExcluded(appNs)).To(BeFalse())
+		})
+
+		It("should return no requests for an excluded namespace", func() {
+			excludedNs := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "another-excluded-ns",
+					Labels: map[string]string{"exclude-from-quota": "true"},
+				},
+			}
+			// We don't need to create this in the API server, just pass the object
+			requests := reconciler.findQuotasForNamespace(ctx, excludedNs)
+			Expect(requests).To(BeEmpty())
+		})
+
+		It("should return no requests for an object in an excluded namespace", func() {
+			// The reconciler's isNamespaceExcluded checks the label on the namespace.
+			// For this test to work, we need to simulate that the namespace exists and has the label.
+			excludedNs := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "special-ns",
+					Labels: map[string]string{"exclude-from-quota": "true"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, excludedNs)).To(Succeed())
+			defer func() {
+				_ = k8sClient.Delete(ctx, excludedNs)
+			}()
+
+			podInExcludedNs := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "special-ns",
+				},
+			}
+			requests := reconciler.findQuotasForObject(ctx, podInExcludedNs)
+			Expect(requests).To(BeEmpty())
+		})
+	})
+
+	Context("Predicate Filtering", func() {
+		var predicate resourceUpdatePredicate
+		var oldPod, newPod *corev1.Pod
+
+		BeforeEach(func() {
+			predicate = resourceUpdatePredicate{}
+			oldPod = &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			newPod = oldPod.DeepCopy()
+		})
+
+		It("should reconcile when generation changes", func() {
+			newPod.Generation = 2
+			event := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should not reconcile for status updates without phase change", func() {
+			newPod.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "test", Ready: true}}
+			event := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+			Expect(predicate.Update(event)).To(BeFalse())
+		})
+
+		It("should reconcile when pod becomes terminal", func() {
+			newPod.Status.Phase = corev1.PodSucceeded
+			event := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should not reconcile for non-terminal phase changes", func() {
+			oldPod.Status.Phase = corev1.PodPending
+			newPod.Status.Phase = corev1.PodRunning
+			event := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
+			Expect(predicate.Update(event)).To(BeFalse())
 		})
 	})
 })

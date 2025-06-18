@@ -13,20 +13,22 @@ var setupLog = logf.Log.WithName("setup.config")
 
 // Config holds the controller configuration
 type Config struct {
-	MetricsAddr          string
-	MetricsCertPath      string
-	MetricsCertName      string
-	MetricsCertKey       string
-	WebhookCertPath      string
-	WebhookCertName      string
-	WebhookCertKey       string
-	WebhookPort          int
-	EnableLeaderElection bool
-	ProbeAddr            string
-	SecureMetrics        bool
-	EnableHTTP2          bool
-	LogLevel             string
-	LogFormat            string
+	MetricsAddr              string
+	MetricsCertPath          string
+	MetricsCertName          string
+	MetricsCertKey           string
+	WebhookCertPath          string
+	WebhookCertName          string
+	WebhookCertKey           string
+	WebhookPort              int
+	EnableLeaderElection     bool
+	ProbeAddr                string
+	SecureMetrics            bool
+	EnableHTTP2              bool
+	LogLevel                 string
+	LogFormat                string
+	ExcludeNamespaceLabelKey string
+	OwnNamespace             string
 }
 
 // setDefaults configures the default values for configuration parameters
@@ -43,6 +45,7 @@ func setDefaults() {
 	viper.SetDefault("enable-http2", false)
 	viper.SetDefault("log-level", "info")
 	viper.SetDefault("log-format", "json")
+	viper.SetDefault("exclude-namespace-label-key", "pac-quota-controller.powerapp.cloud/exclude")
 }
 
 // InitConfig initializes viper configuration with environment variables support
@@ -54,20 +57,21 @@ func InitConfig() *Config {
 	setDefaults()
 
 	return &Config{
-		MetricsAddr:          viper.GetString("metrics-bind-address"),
-		ProbeAddr:            viper.GetString("health-probe-bind-address"),
-		EnableLeaderElection: viper.GetBool("leader-elect"),
-		SecureMetrics:        viper.GetBool("metrics-secure"),
-		WebhookCertPath:      viper.GetString("webhook-cert-path"),
-		WebhookCertName:      viper.GetString("webhook-cert-name"),
-		WebhookCertKey:       viper.GetString("webhook-cert-key"),
-		MetricsCertPath:      viper.GetString("metrics-cert-path"),
-		MetricsCertName:      viper.GetString("metrics-cert-name"),
-		MetricsCertKey:       viper.GetString("metrics-cert-key"),
-		EnableHTTP2:          viper.GetBool("enable-http2"),
-		LogLevel:             viper.GetString("log-level"),
-		LogFormat:            viper.GetString("log-format"),
-		WebhookPort:          viper.GetInt("webhook-port"),
+		MetricsAddr:              viper.GetString("metrics-bind-address"),
+		ProbeAddr:                viper.GetString("health-probe-bind-address"),
+		EnableLeaderElection:     viper.GetBool("leader-elect"),
+		SecureMetrics:            viper.GetBool("metrics-secure"),
+		WebhookCertPath:          viper.GetString("webhook-cert-path"),
+		WebhookCertName:          viper.GetString("webhook-cert-name"),
+		WebhookCertKey:           viper.GetString("webhook-cert-key"),
+		MetricsCertPath:          viper.GetString("metrics-cert-path"),
+		MetricsCertName:          viper.GetString("metrics-cert-name"),
+		MetricsCertKey:           viper.GetString("metrics-cert-key"),
+		EnableHTTP2:              viper.GetBool("enable-http2"),
+		LogLevel:                 viper.GetString("log-level"),
+		LogFormat:                viper.GetString("log-format"),
+		WebhookPort:              viper.GetInt("webhook-port"),
+		ExcludeNamespaceLabelKey: viper.GetString("exclude-namespace-label-key"),
 	}
 }
 
@@ -93,6 +97,11 @@ func SetupFlags(cmd *cobra.Command) {
 	cmd.Flags().String("log-level", "info", "Log level (debug, info, warn, error)")
 	cmd.Flags().String("log-format", "json", "Log format (json or console)")
 	cmd.Flags().Int("webhook-port", 9443, "The port the webhook server listens on.")
+	cmd.Flags().String(
+		"exclude-namespace-label-key",
+		"pac-quota-controller.powerapp.cloud/exclude",
+		"The label key used to mark namespaces for exclusion. Any namespace with this label will be ignored.",
+	)
 
 	// Bind flags to viper
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {

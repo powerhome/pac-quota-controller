@@ -61,10 +61,12 @@ func SetupManager(
 }
 
 // SetupControllers sets up all controllers with the manager
-func SetupControllers(mgr ctrl.Manager) error {
+func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
 	if err := (&controller.ClusterResourceQuotaReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:                   mgr.GetClient(),
+		Scheme:                   mgr.GetScheme(),
+		ExcludeNamespaceLabelKey: cfg.ExcludeNamespaceLabelKey,
+		OwnNamespace:             cfg.OwnNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClusterResourceQuota")
 		return err
