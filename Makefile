@@ -138,7 +138,7 @@ kind-build: docker-build ## Build and load the controller image into Kind cluste
 	@echo "Image loaded successfully!"
 
 .PHONY: kind-deploy
-kind-deploy: kind-up kind-build ## Deploy controller to local Kind cluster
+kind-deploy: kind-up kind-build install-cert-manager ## Deploy controller to local Kind cluster
 	@echo "Deploying controller to local Kind cluster with Helm..."
 	make helm-deploy IMG=$(IMG)
 
