@@ -33,19 +33,25 @@ You can configure which registry to use by modifying the `controllerManager.cont
 ## Prerequisites
 
 - Kubernetes 1.19+
-- Helm 3.2.0+
+- Helm 3.8.0+
 
-## Installing the Chart
+## Installation
+
+This chart is the single source of truth for deploying PAC Quota Controller. All manifests (CRDs, RBAC, webhooks, cert-manager, etc.) are managed here. Do not use Kustomize or Kubebuilder-generated manifests for deployment or testing.
 
 To install the chart with the release name `pac-quota-controller`:
 
-```console
+```sh
 helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
-The command deploys PAC Quota Controller on the Kubernetes cluster in the default configuration.
+## Upgrading
 
-> **Tip**: List all releases using `helm list -A`
+To upgrade the chart:
+
+```sh
+helm upgrade pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system
+```
 
 ## Uninstalling the Chart
 
@@ -77,3 +83,45 @@ spec:
     limits.cpu: "20"
     limits.memory: 40Gi
 ```
+
+## Certificates
+
+### Certmanager
+
+This chart supports integration with [cert-manager](https://cert-manager.io/) for automatic provisioning and management of TLS certificates for webhooks and metrics endpoints. It is **strongly recommended** to use cert-manager.
+
+If `certmanager.enable` is `true` (default), the chart will create `Certificate` resources, and cert-manager will be responsible for issuing and injecting the CA bundle and server certificates.
+
+```sh
+helm repo add jetstack https://charts.jetstack.io
+helm repo update
+helm install \
+  cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --version <CERT_MANAGER_VERSION> \
+  --set crds.enabled=true
+```
+
+Replace `<CERT_MANAGER_VERSION>` with a compatible version (e.g., v1.18.0 or later).
+
+### Manual Certificate Provisioning (Not Recommended)
+
+If you choose not to use cert-manager (`certmanager.enable: false`), you must provide your own TLS certificates. This involves:
+
+1. Creating Kubernetes `Secret` resources containing `tls.crt`, `tls.key`, and `ca.crt`.
+2. Configure the following values in your `values.yaml` file:
+    - `certmanager.enable`: Set to `false` to disable cert-manager integration.
+    - `webhook.customTLS`:
+        - `secretName`: Name of the Secret for the webhook server (must contain `tls.crt`, `tls.key`, `ca.crt`).
+        - `caBundle`: Base64 encoded CA bundle (content of `ca.crt`) that the Kubernetes API server will use to trust your webhook.
+    - `metrics.customTLS.secretName`: Name of the Secret for the metrics server (must contain `tls.crt`, `tls.key`).
+
+| Name                        | Description                                                                                                                              | Type    | Default |
+|-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------|---------|---------|
+| `certmanager.enable`        | Enable support for cert-manager. If `false`, manual certificate provisioning is required via `webhook.customTLS` and `metrics.customTLS`. | `bool`  | `true`  |
+| `webhook.customTLS.secretName` | Secret name for webhook TLS certs if `certmanager.enable` is `false`.                                                                      | `string`| `""`    |
+| `webhook.customTLS.caBundle`   | Base64 CA bundle for webhook if `certmanager.enable` is `false`.                                                                           | `string`| `""`    |
+| `metrics.customTLS.secretName` | Secret name for metrics TLS certs if `certmanager.enable` is `false` and metrics are HTTPS.                                                | `string`| `""`    |
+
+{{ template "chart.valuesSection" . }}

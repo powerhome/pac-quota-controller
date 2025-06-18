@@ -3,5 +3,5 @@ target-branch: main
 chart-dirs:
   - charts
 chart-repos:
-  - powerhome=https://powerhome.github.io/pac-quota-controller
+  - powerhome=oci://ghcr.io/powerhome/pac-quota-controller-chart
 helm-extra-args: --timeout 600s

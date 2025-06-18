@@ -7,16 +7,18 @@ import (
 	"github.com/powerhome/pac-quota-controller/internal/controller"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/powerhome/pac-quota-controller/pkg/health"
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
-	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var setupLog = ctrl.Log.WithName("setup.manager")
+var setupLog = logf.Log.WithName("setup.manager")
 
 // InitScheme initializes the runtime scheme
 func InitScheme() *k8sruntime.Scheme {

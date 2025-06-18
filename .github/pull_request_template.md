@@ -12,7 +12,7 @@ Before submitting your PR, please:
   - `make lint` (fix all lint issues)
   - `make manifests` (commit CRD changes)
   - `make generate` (commit generated code)
-  - `make test` and/or `make test-e2e` (ensure all tests pass)
+  - `make test test-e2e` (ensure all tests pass)
   - `make helm-docs` (update Helm chart docs if needed)
   - `make helm-lint` (ensure Helm chart is valid)
   - `make helm-test` (ensure Helm chart installs in Kind)

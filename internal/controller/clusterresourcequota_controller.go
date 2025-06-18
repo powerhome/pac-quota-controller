@@ -18,11 +18,8 @@ package controller
 
 import (
 	"context"
-	"sort"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -32,13 +29,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/internal/controller/namespaceselection"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes"
 )
+
+var log = logf.Log.WithName("clusterresourcequota-controller")
 
 // ClusterResourceQuotaReconciler reconciles a ClusterResourceQuota object
 type ClusterResourceQuotaReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme    *runtime.Scheme
+	crqClient *kubernetes.CRQClient
 }
 
 // +kubebuilder:rbac:groups=quota.powerapp.cloud,resources=clusterresourcequotas,verbs=get;list;watch;create;update;patch;delete
@@ -59,7 +59,7 @@ type ClusterResourceQuotaReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logf.FromContext(ctx).WithValues("clusterresourcequota", req.NamespacedName)
+	log := log.WithValues("clusterresourcequota", req.NamespacedName)
 	log.Info("Reconciling ClusterResourceQuota")
 
 	// Fetch the ClusterResourceQuota instance
@@ -75,8 +75,11 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	// Get currently selected namespaces
-	selectedNamespaces, err := r.getSelectedNamespaces(ctx, crq)
+	// Use CRQClient for namespace selection
+	if r.crqClient == nil {
+		r.crqClient = kubernetes.NewCRQClient(r.Client)
+	}
+	selectedNamespaces, err := kubernetes.GetSelectedNamespaces(ctx, r.Client, crq)
 	if err != nil {
 		log.Error(err, "Failed to get selected namespaces")
 		return ctrl.Result{}, err
@@ -84,11 +87,11 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 
 	log.Info("Found namespaces matching selection criteria", "count", len(selectedNamespaces), "namespaces", selectedNamespaces)
 
-	// Get previous namespaces from annotation (if it exists)
-	previousNamespaces := r.getNamespacesFromStatus(crq)
+	// Use CRQClient for extracting previous namespaces from status
+	previousNamespaces := r.crqClient.GetNamespacesFromStatus(crq)
 
 	// Determine what changed (which namespaces were added or removed)
-	addedNamespaces, removedNamespaces := determineNamespaceChanges(previousNamespaces, selectedNamespaces)
+	addedNamespaces, removedNamespaces := kubernetes.DetermineNamespaceChanges(previousNamespaces, selectedNamespaces)
 
 	if len(addedNamespaces) > 0 {
 		log.Info("Namespaces added to selection", "namespaces", addedNamespaces)
@@ -98,9 +101,9 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		log.Info("Namespaces removed from selection", "namespaces", removedNamespaces)
 	}
 
-	// Store current namespaces in annotation for future comparisons
+	// Store current namespaces in status for future comparisons
 	if err := r.updateNamespaceStatus(ctx, crq, selectedNamespaces); err != nil {
-		log.Error(err, "Failed to update namespace annotation")
+		log.Error(err, "Failed to update namespace status")
 		return ctrl.Result{}, err
 	}
 
@@ -111,69 +114,47 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{}, nil
 }
 
-// getSelectedNamespaces returns a list of namespaces that match the selection criteria
-func (r *ClusterResourceQuotaReconciler) getSelectedNamespaces(ctx context.Context, crq *quotav1alpha1.ClusterResourceQuota) ([]string, error) {
-	nsSelector, err := r.createNamespaceSelector(crq)
-	if err != nil {
-		return nil, err
-	}
-
-	return nsSelector.GetSelectedNamespaces(ctx)
-}
-
-// getNamespacesFromStatus extracts the list of namespaces from the ClusterResourceQuota's status
-func (r *ClusterResourceQuotaReconciler) getNamespacesFromStatus(crq *quotav1alpha1.ClusterResourceQuota) []string {
-	if crq.Status.Namespaces == nil {
+// findQuotasForNamespace maps Namespace objects to ClusterResourceQuota requests
+// that should be reconciled based on namespace selection criteria
+func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
+	ns, ok := obj.(*corev1.Namespace)
+	if !ok {
 		return nil
 	}
-	namespaces := make([]string, len(crq.Status.Namespaces))
-	for i, nsStatus := range crq.Status.Namespaces {
-		namespaces[i] = nsStatus.Namespace
-	}
-	return namespaces
-}
 
-// createNamespaceSelector creates a namespace selector from the ClusterResourceQuota's spec
-func (r *ClusterResourceQuotaReconciler) createNamespaceSelector(crq *quotav1alpha1.ClusterResourceQuota) (*namespaceselection.LabelBasedNamespaceSelector, error) {
-	selector, err := namespaceselection.NewLabelBasedNamespaceSelector(r.Client, crq.Spec.NamespaceSelector)
-	if err != nil {
-		return nil, err
-	}
+	logger := log
+	logger = logger.WithValues("namespace", ns.Name)
 
-	return selector, nil
-}
+	logger.Info("Processing namespace event")
 
-// determineNamespaceChanges finds which namespaces have been added or removed
-func determineNamespaceChanges(previous, current []string) (added, removed []string) {
-	// Create maps for faster lookup
-	prevMap := make(map[string]struct{}, len(previous))
-	currMap := make(map[string]struct{}, len(current))
-
-	for _, ns := range previous {
-		prevMap[ns] = struct{}{}
-	}
-	for _, ns := range current {
-		currMap[ns] = struct{}{}
+	// List all ClusterResourceQuotas
+	quotaList := &quotav1alpha1.ClusterResourceQuotaList{}
+	if err := r.List(ctx, quotaList); err != nil {
+		logger.Error(err, "Failed to list ClusterResourceQuotas")
+		return nil
 	}
 
-	// Find added namespaces
-	for _, ns := range current {
-		if _, exists := prevMap[ns]; !exists {
-			added = append(added, ns)
+	// For each ClusterResourceQuota, check if the namespace matches any of its selection criteria
+	var requests []reconcile.Request
+	for i := range quotaList.Items {
+		quota := &quotaList.Items[i]
+		shouldEnqueue, err := r.crqClient.NamespaceMatchesCRQ(ns, quota)
+		if err != nil {
+			logger.Error(err, "Failed to check namespace match", "quota", quota.Name)
+			continue
+		}
+		if shouldEnqueue {
+			logger.Info("Enqueueing ClusterResourceQuota for reconciliation due to namespace change",
+				"quota", quota.Name)
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name: quota.Name,
+				},
+			})
 		}
 	}
 
-	// Find removed namespaces
-	for _, ns := range previous {
-		if _, exists := currMap[ns]; !exists {
-			removed = append(removed, ns)
-		}
-	}
-	// Sort the results for consistency across reconciliations
-	sort.Strings(added)
-	sort.Strings(removed)
-
-	return added, removed
+	return requests
 }
 
 // updateNamespaceAnnotation stores the list of namespaces in an annotation on the ClusterResourceQuota
@@ -191,57 +172,6 @@ func (r *ClusterResourceQuotaReconciler) updateNamespaceStatus(ctx context.Conte
 	}
 
 	return r.Status().Update(ctx, crqCopy)
-}
-
-// findQuotasForNamespace maps Namespace objects to ClusterResourceQuota requests
-// that should be reconciled based on namespace selection criteria
-func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
-	ns, ok := obj.(*corev1.Namespace)
-	if !ok {
-		return nil
-	}
-
-	logger := logf.FromContext(ctx)
-	logger.V(1).Info("Processing namespace event", "namespace", ns.Name)
-
-	// List all ClusterResourceQuotas
-	quotaList := &quotav1alpha1.ClusterResourceQuotaList{}
-	if err := r.List(ctx, quotaList); err != nil {
-		logger.Error(err, "Failed to list ClusterResourceQuotas")
-		return nil
-	}
-
-	// For each ClusterResourceQuota, check if the namespace matches any of its selection criteria
-	var requests []reconcile.Request
-	for i := range quotaList.Items {
-		quota := &quotaList.Items[i]
-		shouldEnqueue := false
-
-		// Check for namespace labels if the quota uses label selector
-		if quota.Spec.NamespaceSelector != nil {
-			selector, err := metav1.LabelSelectorAsSelector(quota.Spec.NamespaceSelector)
-			if err != nil {
-				logger.Error(err, "Failed to parse label selector", "quota", quota.Name)
-				continue
-			}
-
-			if selector.Matches(labels.Set(ns.Labels)) {
-				shouldEnqueue = true
-			}
-		}
-
-		if shouldEnqueue {
-			logger.V(1).Info("Enqueueing ClusterResourceQuota for reconciliation due to namespace change",
-				"namespace", ns.Name, "quota", quota.Name)
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Name: quota.Name,
-				},
-			})
-		}
-	}
-
-	return requests
 }
 
 // SetupWithManager sets up the controller with the Manager.

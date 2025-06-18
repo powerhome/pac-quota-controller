@@ -1,5 +1,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/powerhome/pac-quota-controller:latest
+HELM_RELEASE_NAME ?= pac-quota-controller
+HELM_NAMESPACE ?= pac-quota-controller-system
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -71,35 +73,33 @@ KIND_CLUSTER ?= pac-quota-controller-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER) || true
 
-.PHONY: cleanup-resources
-cleanup-resources: ## Clean up resources in the existing cluster
-	@echo "Cleaning up ClusterResourceQuota resources..."
-	-kubectl delete clusterresourcequota --all --ignore-not-found=true --timeout=30s
-	@echo "Cleaning up test namespaces..."
-	-kubectl delete ns test-quota-namespace --ignore-not-found=true --timeout=30s
-	-kubectl delete ns pac-quota-controller-system --ignore-not-found=true --timeout=30s
-	@echo "Cleaning up ClusterRoleBindings..."
-	-kubectl delete clusterrolebinding pac-quota-controller-metrics-binding --ignore-not-found=true
-	-kubectl delete clusterrolebinding pac-quota-controller-manager-rolebinding --ignore-not-found=true
-	@echo "Cleaning up controller-specific resources..."
-	-kubectl delete deployment -l control-plane=controller-manager -n pac-quota-controller-system --ignore-not-found=true
-	-kubectl delete service pac-quota-controller-controller-manager-metrics-service -n pac-quota-controller-system --ignore-not-found=true
-	-kubectl delete pod curl-metrics -n pac-quota-controller-system --ignore-not-found=true
-	@echo "Uninstalling CRDs..."
-	-$(KUSTOMIZE) build config/crd | kubectl delete --ignore-not-found=true -f - || true
-	@echo "Cleanup completed successfully"
+.PHONY: test-e2e-setup
+test-e2e-setup:
+	@echo "[test-e2e-setup] Building manager image..."
+	make docker-build IMG=$(IMG)
+	@echo "[test-e2e-setup] Ensuring Kind cluster exists..."
+	$(eval KIND_CLUSTER ?= pac-quota-controller-test-e2e)
+	@if ! kind get clusters | grep -q "^$(KIND_CLUSTER)$$" ; then \
+		kind create cluster --name $(KIND_CLUSTER); \
+	fi
+	@echo "[test-e2e-setup] Loading image to Kind..."
+	kind load docker-image $(IMG) --name $(KIND_CLUSTER)
+	make install-cert-manager
+	@echo "[test-e2e-setup] Deploying Helm chart..."
+	make helm-deploy IMG=$(IMG)
+	@echo "[test-e2e-setup] Helm chart deployed and controller is available."
 
-.PHONY: setup-test-e2e
-setup-test-e2e: cleanup-test-e2e ## Set up a Kind cluster for e2e tests
-	@command -v $(KIND) >/dev/null 2>&1 || { \
-		echo "Kind is not installed. Please install Kind manually."; \
-		exit 1; \
-	}
-	$(KIND) create cluster --name $(KIND_CLUSTER)
+.PHONY: test-e2e-cleanup
+# Clean up Kind cluster before/after e2e tests for a fully clean environment
+test-e2e-cleanup:
+	@echo "[test-e2e-cleanup] Deleting Kind cluster..."
+	$(KIND) delete cluster --name $(KIND_CLUSTER) || true
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
+# Run e2e tests with setup/cleanup
+test-e2e: test-e2e-cleanup test-e2e-setup
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v; \
+	make test-e2e-cleanup
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -138,22 +138,9 @@ kind-build: docker-build ## Build and load the controller image into Kind cluste
 	@echo "Image loaded successfully!"
 
 .PHONY: kind-deploy
-kind-deploy: kind-up kind-build ## Deploy controller to local Kind cluster
+kind-deploy: kind-up kind-build install-cert-manager ## Deploy controller to local Kind cluster
 	@echo "Deploying controller to local Kind cluster with Helm..."
-	helm upgrade --install pac-quota-controller ./charts/pac-quota-controller \
-			--namespace pac-quota-controller-system --create-namespace \
-			--set image.repository=$(IMG) \
-			--set image.tag=latest \
-			--set image.pullPolicy=Never
-	@echo "Waiting for controller to be ready..."
-	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=available --timeout=120s deployment/pac-quota-controller-controller-manager || true
-	@echo "Controller deploy finished."
-
-.PHONY: kind-sample
-kind-sample: ## Deploy a sample ClusterResourceQuota to test the controller
-	@echo "Deploying sample ClusterResourceQuota..."
-	@$(KUSTOMIZE) build config/samples | $(KUBECTL) apply -f -
-	@echo "Sample deployed. To see the status, run: kubectl get clusterresourcequota -o yaml"
+	make helm-deploy IMG=$(IMG)
 
 .PHONY: kind-logs
 kind-logs: ## Get logs from the controller
@@ -161,9 +148,9 @@ kind-logs: ## Get logs from the controller
 
 .PHONY: kind-restart
 kind-restart: ## Restart the controller deployment
-	@$(KUBECTL) -n pac-quota-controller-system rollout restart deployment pac-quota-controller-controller-manager
+	@$(KUBECTL) -n pac-quota-controller-system rollout restart deployment pac-quota-controller-manager
 	@echo "Controller restarting..."
-	@$(KUBECTL) -n pac-quota-controller-system rollout status deployment pac-quota-controller-controller-manager
+	@$(KUBECTL) -n pac-quota-controller-system rollout status deployment pac-quota-controller-manager
 
 .PHONY: kind-down
 kind-down: ## Delete the local Kind cluster
@@ -171,6 +158,31 @@ kind-down: ## Delete the local Kind cluster
 	@echo "Kind cluster $(KIND_DEV_CLUSTER) deleted"
 
 ##@ Build
+
+# CERT_MANAGER_INSTALL controls whether cert-manager is installed as part of the Helm deployment.
+# Default is true. Set to false if cert-manager is already installed or managed externally.
+CERT_MANAGER_INSTALL ?= true
+
+.PHONY: install-cert-manager
+install-cert-manager: ## Install cert-manager using Helm for e2e tests or local dev
+	@echo "Installing cert-manager..."
+	helm repo add jetstack https://charts.jetstack.io || true
+	helm repo update
+	helm upgrade --install cert-manager jetstack/cert-manager \
+	  --namespace cert-manager \
+	  --create-namespace \
+	  --set crds.enabled=true \
+	  --wait --timeout 10m0s
+	@echo "Waiting for cert-manager webhook to be ready..."
+	@$(KUBECTL) -n cert-manager wait --for=condition=Available deployment/cert-manager-webhook --timeout=2m
+	@echo "Cert-manager installed and webhook is ready."
+
+.PHONY: uninstall-cert-manager
+uninstall-cert-manager: ## Uninstall cert-manager
+	@echo "Uninstalling cert-manager..."
+	helm uninstall cert-manager --namespace cert-manager || echo "Cert-manager not found or uninstall failed."
+	kubectl delete namespace cert-manager --ignore-not-found=true || echo "Namespace cert-manager not found."
+	@echo "Cert-manager uninstalled."
 
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
@@ -208,34 +220,11 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	- $(CONTAINER_TOOL) buildx rm pac-quota-controller-builder
 	rm Dockerfile.cross
 
-.PHONY: build-installer
-build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
-	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
-
 ##@ Deployment
 
 ifndef ignore-not-found
   ignore-not-found = false
 endif
-
-.PHONY: install
-install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
-
-.PHONY: uninstall
-uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
-
-.PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default | $(KUBECTL) apply -f -
-
-.PHONY: undeploy
-undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	$(KUSTOMIZE) build config/default | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 ##@ Dependencies
 
@@ -338,32 +327,26 @@ helm-lint: ## Lint Helm chart
 .PHONY: helm-package
 helm-package: helm-docs helm-lint ## Package Helm chart
 	@echo "Packaging Helm chart..."
-	@mkdir -p .cr-release-packages
-	helm package charts/pac-quota-controller -d .cr-release-packages
+	@mkdir -p dist/chart
+	helm package charts/pac-quota-controller -d dist/chart
 
-.PHONY: helm-test
-helm-test: helm-package ## Test Helm chart installation in a Kind cluster
-	@echo "Creating temporary Kind cluster for Helm chart testing..."
-	@if ! command -v kind > /dev/null 2>&1; then \
-		echo "kind is not installed. Please install kind first."; \
-		exit 1; \
-	fi
-	@kind create cluster --name helm-test --wait 60s || true
-	@echo "Installing Helm chart in the test cluster..."
-	@helm upgrade --install pac-quota-controller .cr-release-packages/pac-quota-controller-*.tgz --namespace pac-quota-controller-system --create-namespace
-	@echo "Waiting for deployment to become ready..."
-	@kubectl -n pac-quota-controller-system wait --for=condition=available --timeout=60s deployment pac-quota-controller-controller-manager || true
-	@echo "Helm installation test completed."
-	@kind delete cluster --name helm-test
+.PHONY: helm-deploy
+helm-deploy: helm-lint ## Deploy the Helm chart
+	@echo "Deploying Helm chart $(HELM_RELEASE_NAME) to namespace $(HELM_NAMESPACE)..."
+	helm upgrade --install $(HELM_RELEASE_NAME) ./charts/pac-quota-controller \
+		--namespace $(HELM_NAMESPACE) \
+		--create-namespace \
+		--set controllerManager.container.image.repository=$(shell echo $(IMG) | cut -d: -f1) \
+		--set controllerManager.container.image.tag=$(shell echo $(IMG) | cut -d: -f2) \
+		--set controllerManager.container.image.pullPolicy=Never \
+		--wait --timeout 10m0s
+	@echo "Helm chart deployed."
 
-.PHONY: helm-index
-helm-index: ## Generate Helm chart index
-	@echo "Generating Helm chart index..."
-	@if ! command -v cr > /dev/null 2>&1; then \
-		echo "chart-releaser is not installed. Installing..."; \
-		go install github.com/helm/chart-releaser/cmd/cr@latest; \
-	fi
-	@cr index -c .cr-release-packages -o powerhome -r pac-quota-controller --push=false
+.PHONY: helm-uninstall
+helm-uninstall: ## Uninstall the Helm release
+	@echo "Uninstalling Helm release..."
+	helm uninstall $(HELM_RELEASE_NAME) --namespace $(HELM_NAMESPACE) || echo "Helm release not found or uninstall failed."
+	@echo "Helm release uninstalled."
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

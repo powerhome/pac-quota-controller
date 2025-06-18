@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -103,23 +102,4 @@ func (s *LabelBasedNamespaceSelector) DetermineNamespaceChanges(ctx context.Cont
 	}
 
 	return added, removed, nil
-}
-
-// GetNamespacesFromAnnotation extracts namespace list from the ClusterResourceQuota annotation
-func GetNamespacesFromAnnotation(annotations map[string]string) []string {
-	if annotations == nil {
-		return nil
-	}
-
-	nsString, exists := annotations["quota.powerapp.cloud/namespaces"]
-	if !exists || nsString == "" {
-		return nil
-	}
-
-	namespaces := strings.Split(nsString, ",")
-	for i, ns := range namespaces {
-		namespaces[i] = strings.TrimSpace(ns)
-	}
-
-	return namespaces
 }

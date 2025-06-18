@@ -1,4 +1,3 @@
-# [MANAGER]: Manager Deployment Configurations
 controllerManager:
   replicas: 1
   container:
@@ -10,6 +9,7 @@ controllerManager:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
       - "--health-probe-bind-address=:8081"
+    webhookCertPath: "/tmp/k8s-webhook-server/serving-certs"
     resources:
       limits:
         cpu: 500m
@@ -39,39 +39,33 @@ controllerManager:
     seccompProfile:
       type: RuntimeDefault
   terminationGracePeriodSeconds: 10
-  serviceAccountName: pac-quota-controller-controller-manager
+  serviceAccount: 
+    name: pac-quota-controller-manager
+    annotations: {}
 
-# [RBAC]: To enable RBAC (Permissions) configurations
 rbac:
   enable: true
 
-# [CRDs]: To enable the CRDs
 crd:
-  # This option determines whether the CRDs are included
-  # in the installation process.
   enable: true
-
-  # Enabling this option adds the "helm.sh/resource-policy": keep
-  # annotation to the CRD, ensuring it remains installed even when
-  # the Helm release is uninstalled.
-  # NOTE: Removing the CRDs will also remove all cert-manager CR(s)
-  # (Certificates, Issuers, ...) due to garbage collection.
   keep: true
 
-# [METRICS]: Set to true to generate manifests for exporting metrics.
-# To disable metrics export set false, and ensure that the
-# ControllerManager argument "--metrics-bind-address=:8443" is removed.
 metrics:
   enable: true
 
-# [PROMETHEUS]: To enable a ServiceMonitor to export metrics to Prometheus set true
 prometheus:
   enable: false
 
-# [CERT-MANAGER]: To enable cert-manager injection to webhooks set true
 certmanager:
-  enable: false
+  # If true, the chart will create Certificate resources for cert-manager to issue certificates for webhooks and metrics.
+  # If false, you must provide your own certificates via webhook.customTLS.secretName and metrics.customTLS.secretName.
+  enable: true
+  # The installation of cert-manager itself is no longer handled by this chart.
+  # Please install cert-manager separately in your cluster. See README for details.
 
-# [NETWORK POLICIES]: To enable NetworkPolicies set true
 networkPolicy:
-  enable: false
+  enable: enable
+
+webhook:
+  enable: true
+  dryRunOnly: false

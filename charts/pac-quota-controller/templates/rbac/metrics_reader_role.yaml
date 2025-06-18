@@ -1,4 +1,5 @@
-{{- if and .Values.rbac.enable .Values.metrics.enable }}
+{{- if .Values.rbac.enable }}
+{{- if .Values.metrics.enable }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -10,4 +11,5 @@ rules:
   - "/metrics"
   verbs:
   - get
+{{- end -}}
 {{- end -}}

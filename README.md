@@ -19,18 +19,31 @@ The ClusterResourceQuota controller mimics the Kubernetes ResourceQuota mechanis
 
 ### Installation
 
-You can install the ClusterResourceQuota operator using the following methods:
+> **Note:** The Helm chart is the single source of truth for all manifests (CRDs, RBAC, webhooks, cert-manager, etc.). The `config/` folder and Kubebuilder-generated manifests are not used for deployment or testing. Kubebuilder markers in the Go code are for documentation only.
 
-#### Using Helm
+Install the controller using Helm:
 
-```bash
+```sh
 helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
-#### Using kubectl
+To upgrade:
 
-```bash
-kubectl apply -f https://github.com/powerhome/pac-quota-controller/releases/latest/download/install.yaml
+```sh
+helm upgrade pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system
+```
+
+## End-to-End (e2e) Testing
+
+All e2e tests use Helm for deployment. The `config/` folder is ignored and not used for testing or production. To run e2e tests:
+
+```sh
+# Install chart for testing
+helm install pac-quota-controller ./charts/pac-quota-controller -n pac-quota-controller-system --create-namespace
+# Run tests
+make test-e2e
+# Uninstall after tests
+helm uninstall pac-quota-controller -n pac-quota-controller-system
 ```
 
 ## Example Usage
@@ -54,16 +67,6 @@ spec:
     limits.memory: 40Gi
 ```
 
-## How it works
+## Contributing
 
-```mermaid
-graph TD
-  A[ClusterResourceQuota CRD] -- selects --> B[Namespaces (label selector)]
-  B -- aggregates --> C[ResourceQuota usage]
-  C -- reports --> D[ClusterResourceQuota Status]
-```
-
-- The controller watches `ClusterResourceQuota` resources.
-- It selects namespaces using the `namespaceSelector` field.
-- It aggregates resource usage across those namespaces.
-- The status of the `ClusterResourceQuota` is updated with the total usage and enforcement.
+See [CONTRIBUTING.md](CONTRIBUTING.md).

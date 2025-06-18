@@ -6,10 +6,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	ctrl "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var setupLog = ctrl.Log.WithName("setup.config")
+var setupLog = logf.Log.WithName("setup.config")
 
 // Config holds the controller configuration
 type Config struct {
@@ -20,6 +20,7 @@ type Config struct {
 	WebhookCertPath      string
 	WebhookCertName      string
 	WebhookCertKey       string
+	WebhookPort          int
 	EnableLeaderElection bool
 	ProbeAddr            string
 	SecureMetrics        bool
@@ -30,12 +31,13 @@ type Config struct {
 
 // setDefaults configures the default values for configuration parameters
 func setDefaults() {
-	viper.SetDefault("metrics-bind-address", "0")
+	viper.SetDefault("metrics-bind-address", ":8443")
 	viper.SetDefault("health-probe-bind-address", ":8081")
 	viper.SetDefault("leader-elect", false)
 	viper.SetDefault("metrics-secure", true)
 	viper.SetDefault("webhook-cert-name", "tls.crt")
 	viper.SetDefault("webhook-cert-key", "tls.key")
+	viper.SetDefault("webhook-port", 9443)
 	viper.SetDefault("metrics-cert-name", "tls.crt")
 	viper.SetDefault("metrics-cert-key", "tls.key")
 	viper.SetDefault("enable-http2", false)
@@ -65,6 +67,7 @@ func InitConfig() *Config {
 		EnableHTTP2:          viper.GetBool("enable-http2"),
 		LogLevel:             viper.GetString("log-level"),
 		LogFormat:            viper.GetString("log-format"),
+		WebhookPort:          viper.GetInt("webhook-port"),
 	}
 }
 
@@ -89,6 +92,7 @@ func SetupFlags(cmd *cobra.Command) {
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	cmd.Flags().String("log-level", "info", "Log level (debug, info, warn, error)")
 	cmd.Flags().String("log-format", "json", "Log format (json or console)")
+	cmd.Flags().Int("webhook-port", 9443, "The port the webhook server listens on.")
 
 	// Bind flags to viper
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {

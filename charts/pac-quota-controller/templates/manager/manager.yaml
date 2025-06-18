@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: pac-quota-controller-controller-manager
+  name: pac-quota-controller-manager
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "chart.labels" . | nindent 4 }}
@@ -19,9 +19,11 @@ spec:
       labels:
         {{- include "chart.labels" . | nindent 8 }}
         control-plane: controller-manager
-        {{- if and .Values.controllerManager.pod .Values.controllerManager.pod.labels }}
-        {{- range $key, $value := .Values.controllerManager.pod.labels }}
+        {{- with .Values.controllerManager.pod }}
+        {{- with .labels }}
+        {{- range $key, $value := . }}
         {{ $key }}: {{ $value }}
+        {{- end }}
         {{- end }}
         {{- end }}
     spec:
@@ -31,6 +33,19 @@ spec:
             {{- range .Values.controllerManager.container.args }}
             - {{ . }}
             {{- end }}
+            {{- if .Values.webhook.dryRunOnly }}
+            - --webhook-dry-run-only=true
+            {{- end }}
+            - --webhook-cert-path={{ .Values.controllerManager.container.webhookCertPath }}
+          ports:
+          - containerPort: 9443
+            name: webhook-server
+            protocol: TCP
+          {{- if .Values.metrics.enable }}
+          - containerPort: 8443
+            name: metrics-server
+            protocol: TCP
+          {{- end }}
           command:
             - /manager
           image: {{ .Values.controllerManager.container.image.repository }}:{{ .Values.controllerManager.container.image.tag }}
@@ -50,23 +65,41 @@ spec:
             {{- toYaml .Values.controllerManager.container.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.controllerManager.container.securityContext | nindent 12 }}
-          {{- if and .Values.certmanager.enable .Values.metrics.enable }}
           volumeMounts:
-            {{- if and .Values.metrics.enable .Values.certmanager.enable }}
+            {{- if .Values.metrics.enable }}
             - name: metrics-certs
               mountPath: /tmp/k8s-metrics-server/metrics-certs
               readOnly: true
             {{- end }}
-          {{- end }}
+            {{- if .Values.webhook.enable }}
+            - name: webhook-certs
+              mountPath: {{ .Values.controllerManager.container.webhookCertPath | default "/tmp/k8s-webhook-server/serving-certs" }}
+              readOnly: true
+            {{- end }}
       securityContext:
         {{- toYaml .Values.controllerManager.securityContext | nindent 8 }}
-      serviceAccountName: {{ .Values.controllerManager.serviceAccountName }}
+      serviceAccountName: {{ .Values.controllerManager.serviceAccount.name }}
       terminationGracePeriodSeconds: {{ .Values.controllerManager.terminationGracePeriodSeconds }}
-      {{- if and .Values.certmanager.enable .Values.metrics.enable }}
       volumes:
-        {{- if and .Values.metrics.enable .Values.certmanager.enable }}
+        {{- if .Values.metrics.enable }}
+        {{- if .Values.certmanager.enable }}
         - name: metrics-certs
           secret:
-            secretName: metrics-server-cert
+            secretName: metrics-server-cert # Default secret name for cert-manager managed metrics certs
+        {{- else if .Values.metrics.customTLS.secretName }}
+        - name: metrics-certs
+          secret:
+            secretName: {{ .Values.metrics.customTLS.secretName }}
         {{- end }}
-      {{- end }}
+        {{- end }}
+        {{- if .Values.webhook.enable }}
+        {{- if .Values.certmanager.enable }}
+        - name: webhook-certs
+          secret:
+            secretName: webhook-server-cert # Default secret name for cert-manager managed webhook certs
+        {{- else if  .Values.webhook.customTLS.secretName }}
+        - name: webhook-certs
+          secret:
+            secretName: {{ .Values.webhook.customTLS.secretName }}
+        {{- end }}
+        {{- end }}

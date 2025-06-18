@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 30
     env:
       KIND_CLUSTER: pac-quota-controller-test-e2e
-      IMG: pac-quota-controller:e2e
+      IMG: ghcr.io/powerhome/pac-quota-controller:e2e
     steps:
       - name: Checkout code
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
@@ -26,6 +26,7 @@ jobs:
         uses: helm/kind-action@a1b0e391336a6ee6713a0583f8c6240d70863de3 # v1.12.0
         with:
           cluster_name: ${{ env.KIND_CLUSTER }}
+          wait: 60s # Add wait for Kind cluster to be ready
 
       - name: Install kustomize
         run: |
@@ -45,4 +46,19 @@ jobs:
       - name: Dump logs on failure
         if: failure()
         run: |
-          kubectl logs -l control-plane=controller-manager -n pac-quota-controller-system || true
+          echo "Dumping cluster state after potential e2e test failure..."
+          kubectl get all -n pac-quota-controller-system
+          kubectl describe pods -n pac-quota-controller-system
+          kubectl logs -l control-plane=controller-manager -n pac-quota-controller-system --tail=100 || true
+          echo "Dumping cert-manager state..."
+          kubectl get all -n cert-manager
+          kubectl describe pods -n cert-manager
+          kubectl logs -l app=cert-manager -n cert-manager --tail=100 || true
+          kubectl logs -l app.kubernetes.io/instance=cert-manager -n cert-manager --tail=100 || true
+          echo "Describing CRDs..."
+          kubectl get crds
+          kubectl describe crd clusterresourcequotas.quota.powerapp.cloud
+          echo "Describing MutatingWebhookConfigurations..."
+          kubectl get mutatingwebhookconfigurations -oyaml
+          echo "Describing ValidatingWebhookConfigurations..."
+          kubectl get validatingwebhookconfigurations -oyaml

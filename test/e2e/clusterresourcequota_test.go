@@ -17,63 +17,44 @@ limitations under the License.
 package e2e
 
 import (
-	"os/exec"
-	"path/filepath"
-	"time"
+	"context"
+	"math/rand"
+	"strconv"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/powerhome/pac-quota-controller/test/utils"
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var _ = Describe("ClusterResourceQuota", Ordered, func() {
-	const testNamespace = "test-clusterresourcequota-ns"
-	const quotaName = "test-clusterresourcequota-quota"
-
-	AfterAll(func() {
-		cmd := exec.Command("kubectl", "delete", "clusterresourcequota", quotaName, "--ignore-not-found")
-		_, _ = utils.Run(cmd)
-
-		// Clean up the test namespace
-		cmd = exec.Command("kubectl", "delete", "ns", testNamespace, "--ignore-not-found", "--wait=false")
-		_, _ = utils.Run(cmd)
-
-		// Add a timeout to ensure proper cleanup
-		time.Sleep(2 * time.Second)
+var _ = Describe("ClusterResourceQuota", func() {
+	var (
+		ctx     = context.Background()
+		suffix  string
+		crqName string
+	)
+	BeforeEach(func() {
+		suffix = strconv.Itoa(rand.Intn(1000000))
+		crqName = "test-crq-" + suffix
 	})
-
-	Context("Basic functionality", func() {
-		It("should create a ClusterResourceQuota and update its status with matching namespaces", func() {
-			By("Creating the test manifests")
-			projectDir, err := utils.GetProjectDir()
-			Expect(err).NotTo(HaveOccurred(), "Failed to get project directory")
-
-			cmd := exec.Command(
-				"kubectl", "apply", "-f",
-				filepath.Join(
-					projectDir,
-					"test/fixtures/clusterresourcequota/",
-				),
-			)
-			_, err = utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred(), "Failed to create test manifests")
-
-			By("Verifying that the ClusterResourceQuota exists")
-			cmd = exec.Command("kubectl", "get", "clusterresourcequota", quotaName)
-			output, err := utils.Run(cmd)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(output).To(ContainSubstring(quotaName))
-
-			By("Verifying that the status field is updated with matching namespaces")
-			Eventually(func() string {
-				cmd = exec.Command(
-					"kubectl", "get", "clusterresourcequota", quotaName,
-					"-o", "jsonpath={.status.namespaces[*].namespace}",
-				)
-				out, _ := utils.Run(cmd)
-				return out
-			}, "10s", "1s").Should(ContainSubstring(testNamespace))
-		})
+	It("should create a ClusterResourceQuota with valid spec", func() {
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: crqName,
+			},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				Hard: quotav1alpha1.ResourceList{
+					corev1.ResourcePods:   resource.MustParse("10"),
+					corev1.ResourceCPU:    resource.MustParse("2"),
+					corev1.ResourceMemory: resource.MustParse("4Gi"),
+				},
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"quota": "limited-" + suffix},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
 	})
 })

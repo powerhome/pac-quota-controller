@@ -1,4 +1,5 @@
-{{- if and .Values.rbac.enable .Values.metrics.enable }}
+{{- if .Values.rbac.enable }} 
+{{- if .Values.metrics.enable }}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -11,6 +12,7 @@ roleRef:
   name: pac-quota-controller-metrics-auth-role
 subjects:
 - kind: ServiceAccount
-  name: {{ .Values.controllerManager.serviceAccountName }}
+  name: {{ .Values.controllerManager.serviceAccount.name  }}
   namespace: {{ .Release.Namespace }}
+{{- end -}}
 {{- end -}}
