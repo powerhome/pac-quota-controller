@@ -249,9 +249,6 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(_ context.Context,
 }
 
 // calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
-// TODO: remove the unparam linter directive when parameters are used
-//
-//nolint:unparam // placeholder implementation, will use parameters in future
 func (r *ClusterResourceQuotaReconciler) calculateComputeResources(_ context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
 	// TODO: Implement pod listing, iterating through containers, and summing up
 	// the specified resource requests or limits.
@@ -260,9 +257,6 @@ func (r *ClusterResourceQuotaReconciler) calculateComputeResources(_ context.Con
 }
 
 // calculateStorageResources calculates the usage for storage resource quotas.
-// TODO: remove the unparam linter directive when parameters are used
-//
-//nolint:unparam // placeholder implementation, will use parameters in future
 func (r *ClusterResourceQuotaReconciler) calculateStorageResources(_ context.Context, ns string) resource.Quantity {
 	// TODO: Implement PVC listing and summing up the storage requests.
 	log.Info("Placeholder: Calculating storage resources", "namespace", ns)
