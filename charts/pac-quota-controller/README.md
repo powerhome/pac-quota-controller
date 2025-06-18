@@ -31,7 +31,7 @@ You can configure which registry to use by modifying the `controllerManager.cont
 ## Prerequisites
 
 - Kubernetes 1.19+
-- Helm 3.2.0+
+- Helm 3.8.0+
 
 ## Installation
 
