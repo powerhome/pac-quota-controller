@@ -17,6 +17,10 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
+	"math/rand"
+	"strconv"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
@@ -26,10 +30,19 @@ import (
 )
 
 var _ = Describe("ClusterResourceQuota", func() {
+	var (
+		ctx     = context.Background()
+		suffix  string
+		crqName string
+	)
+	BeforeEach(func() {
+		suffix = strconv.Itoa(rand.Intn(1000000))
+		crqName = "test-crq-" + suffix
+	})
 	It("should create a ClusterResourceQuota with valid spec", func() {
 		crq := &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-crq-valid",
+				Name: crqName,
 			},
 			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 				Hard: quotav1alpha1.ResourceList{
@@ -38,7 +51,7 @@ var _ = Describe("ClusterResourceQuota", func() {
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				},
 				NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"quota": "limited"},
+					MatchLabels: map[string]string{"quota": "limited-" + suffix},
 				},
 			},
 		}

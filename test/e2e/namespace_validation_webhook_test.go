@@ -34,28 +34,24 @@ import (
 var _ = Describe("NamespaceValidationWebhook", func() {
 	var (
 		ctx context.Context
+
+		baseLabels map[string]string
+		suffix     string
+		testNsName string
+		crq1Name   string
+		crq2Name   string
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
+		suffix = rand.String(5)
+		testNsName = "test-ns-webhook-" + suffix
+		crq1Name = "crq1-" + suffix
+		crq2Name = "crq2-" + suffix
+		baseLabels = map[string]string{"e2e-test": "namespace-validation-" + suffix}
 	})
 
 	Context("When updating a Namespace", func() {
-		var (
-			baseLabels map[string]string
-			suffix     string
-			testNsName string
-			crq1Name   string
-			crq2Name   string
-		)
-
-		BeforeEach(func() {
-			suffix = rand.String(5)
-			testNsName = "test-ns-webhook-" + suffix
-			crq1Name = "crq1-" + suffix
-			crq2Name = "crq2-" + suffix
-			baseLabels = map[string]string{"e2e-test": "namespace-validation-" + suffix}
-		})
 
 		It("should allow update if labels do not change", func() {
 			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, baseLabels)
@@ -82,7 +78,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
-							"app": "backend",
+							"app": "backend-" + suffix,
 						}},
 					Hard: quotav1alpha1.ResourceList{},
 				},
@@ -110,7 +106,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
-							"app": "backend",
+							"app": "backend-" + suffix,
 						}},
 					Hard: quotav1alpha1.ResourceList{},
 				},
@@ -123,7 +119,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
-							"env": "prod",
+							"env": "prod-" + suffix,
 						}},
 					Hard: quotav1alpha1.ResourceList{},
 				},
@@ -131,7 +127,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq2)).To(Succeed())
 			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq2)
 
-			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "frontend"})
+			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "frontend-" + suffix})
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(testutils.DeleteNamespace, ctx, k8sClient, testNsName)
 
@@ -140,7 +136,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 				if getErr != nil {
 					return getErr
 				}
-				updatedNs.Labels = map[string]string{"app": "backend"} // Matches crq1 only
+				updatedNs.Labels = map[string]string{"app": "backend-" + suffix} // Matches crq1 only
 				return k8sClient.Update(ctx, updatedNs)
 			}, time.Minute, 5*time.Second).Should(Succeed())
 		})
@@ -151,7 +147,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
-							"app": "backend",
+							"app": "backend-" + suffix,
 						}},
 					Hard: quotav1alpha1.ResourceList{},
 				},
@@ -164,7 +160,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
-							"env": "prod",
+							"env": "prod-" + suffix,
 						}},
 					Hard: quotav1alpha1.ResourceList{},
 				},
@@ -182,7 +178,10 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 				if getErr != nil {
 					return false // retry
 				}
-				updatedNs.Labels = map[string]string{"app": "backend", "env": "prod"} // Matches crq1 and crq2
+				updatedNs.Labels = map[string]string{
+					"app": "backend-" + suffix,
+					"env": "prod-" + suffix,
+				} // Matches crq1 and crq2
 				updateErr = k8sClient.Update(ctx, updatedNs)
 				return updateErr != nil
 			}, time.Minute, 5*time.Second).Should(BeTrue(), "Update should eventually fail")
@@ -200,41 +199,46 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 		It("should allow creation when no CRQs match", func() {
 			suffix := rand.String(5)
 			testNsName := "ns-create-" + suffix
-			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "foo", "env": "bar"})
+			err := testutils.CreateNamespace(
+				ctx,
+				k8sClient,
+				testNsName,
+				map[string]string{
+					"app": "foo-" + suffix,
+					"env": "bar-" + suffix,
+				},
+			)
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(testutils.DeleteNamespace, ctx, k8sClient, testNsName)
 		})
 
 		It("should allow creation when only one CRQ matches", func() {
-			suffix := rand.String(5)
-			testNsName := "ns-create-" + suffix
-			crqName := "crq-create-" + suffix
 			crq := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{Name: crqName},
+				ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "foo"}},
-					Hard:              quotav1alpha1.ResourceList{},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": "foo-" + suffix,
+						},
+					},
+					Hard: quotav1alpha1.ResourceList{},
 				},
 			}
 			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq)).To(Succeed())
 			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq)
-			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "foo"})
+			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "foo-" + suffix})
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(testutils.DeleteNamespace, ctx, k8sClient, testNsName)
 		})
 
 		It("should deny creation when multiple CRQs with different selectors match", func() {
-			suffix := rand.String(5)
-			testNsName := "ns-create-multi-selector-" + suffix
-			crq1Name := "crq-multi-selector-1-" + suffix
-			crq2Name := "crq-multi-selector-2-" + suffix
-
 			// Create two CRQs with different label selectors
 			crq1 := &quotav1alpha1.ClusterResourceQuota{
 				ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "multi-selector-test"}},
-					Hard:              quotav1alpha1.ResourceList{},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "multi-selector-test"}},
+					Hard: quotav1alpha1.ResourceList{},
 				},
 			}
 			crq2 := &quotav1alpha1.ClusterResourceQuota{
@@ -266,27 +270,34 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 		})
 
 		It("should deny creation when multiple CRQs match", func() {
-			suffix := rand.String(5)
-			testNsName := "ns-create-" + suffix
 			crq1 := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{Name: "crq1-" + suffix},
+				ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "foo"}},
-					Hard:              quotav1alpha1.ResourceList{},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": "foo-" + suffix,
+						},
+					},
+					Hard: quotav1alpha1.ResourceList{},
 				},
 			}
 			crq2 := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{Name: "crq2-" + suffix},
+				ObjectMeta: metav1.ObjectMeta{Name: crq2Name},
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "foo"}},
-					Hard:              quotav1alpha1.ResourceList{},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+
+							"app": "foo-" + suffix,
+						},
+					},
+					Hard: quotav1alpha1.ResourceList{},
 				},
 			}
 			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq1)).To(Succeed())
 			Expect(testutils.CreateClusterResourceQuota(ctx, k8sClient, crq2)).To(Succeed())
 			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq1)
 			DeferCleanup(testutils.DeleteClusterResourceQuota, ctx, k8sClient, crq2)
-			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "foo"})
+			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "foo-" + suffix})
 			Expect(err).To(HaveOccurred())
 			Expect(errors.IsForbidden(err)).To(BeTrue())
 			Expect(err.Error()).To(ContainSubstring("would be selected by multiple ClusterResourceQuotas"))
@@ -295,7 +306,6 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 
 	Context("Namespace Delete Validation", func() {
 		It("should always allow deletion (webhook doesn't validate deletes for this rule)", func() {
-			testNsName := "ns-delete-" + rand.String(5)
 			err := testutils.CreateNamespace(
 				ctx,
 				k8sClient,

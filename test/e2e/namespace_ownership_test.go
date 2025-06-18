@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"context"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -14,16 +16,24 @@ import (
 )
 
 var _ = Describe("ClusterResourceQuota Namespace Ownership Webhook", func() {
+	var (
+		ctx      = context.Background()
+		suffix   string
+		crq1Name string
+		crq2Name string
+		nsName   string
+	)
+	BeforeEach(func() {
+		suffix = strconv.Itoa(rand.Intn(1000000))
+		crq1Name = "crq1-" + suffix
+		crq2Name = "crq2-" + suffix
+		nsName = "test-ownership-ns-" + suffix
+	})
 	It("should deny creation of a CRQ if a namespace is already owned by another CRQ", func() {
-		suffix := strconv.Itoa(rand.Intn(1000000))
-		crq1Name := "test-ownership-crq1-" + suffix
-		crq2Name := "test-ownership-crq2-" + suffix
-		nsName := "test-ownership-ns-" + suffix
-
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   nsName,
-				Labels: map[string]string{"quota": "limited"},
+				Labels: map[string]string{"quota": "limited-" + suffix},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
@@ -31,8 +41,12 @@ var _ = Describe("ClusterResourceQuota Namespace Ownership Webhook", func() {
 		crq1 := &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
 			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"quota": "limited"}},
-				Hard:              quotav1alpha1.ResourceList{},
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"quota": "limited-" + suffix,
+					},
+				},
+				Hard: quotav1alpha1.ResourceList{},
 			},
 		}
 		Expect(k8sClient.Create(ctx, crq1)).To(Succeed())
@@ -53,8 +67,12 @@ var _ = Describe("ClusterResourceQuota Namespace Ownership Webhook", func() {
 		crq2 := &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{Name: crq2Name},
 			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"quota": "limited"}},
-				Hard:              quotav1alpha1.ResourceList{},
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"quota": "limited-" + suffix,
+					},
+				},
+				Hard: quotav1alpha1.ResourceList{},
 			},
 		}
 		// Should be denied by webhook
@@ -70,23 +88,23 @@ var _ = Describe("ClusterResourceQuota Namespace Ownership Webhook", func() {
 	})
 
 	It("should allow creation of a CRQ if no namespace is owned by another CRQ", func() {
-		suffix := strconv.Itoa(rand.Intn(1000000))
-		crqName := "test-ownership-crq-" + suffix
-		nsName := "test-ownership-ns-" + suffix
-
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:   nsName,
-				Labels: map[string]string{"quota": "unique"},
+				Labels: map[string]string{"quota": "unique-" + suffix},
 			},
 		}
 		Expect(k8sClient.Create(ctx, ns)).To(Succeed())
 
 		crq := &quotav1alpha1.ClusterResourceQuota{
-			ObjectMeta: metav1.ObjectMeta{Name: crqName},
+			ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
 			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"quota": "unique"}},
-				Hard:              quotav1alpha1.ResourceList{},
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"quota": "unique-" + suffix,
+					},
+				},
+				Hard: quotav1alpha1.ResourceList{},
 			},
 		}
 		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
