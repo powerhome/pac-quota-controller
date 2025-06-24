@@ -282,7 +282,11 @@ func (r *ClusterResourceQuotaReconciler) updateStatus(
 // findQuotasForNamespace maps Namespace objects to ClusterResourceQuota requests
 // that should be reconciled based on namespace selection criteria
 func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
-	ns, _ := obj.(*corev1.Namespace)
+	ns, ok := obj.(*corev1.Namespace)
+	if !ok {
+		log.Error(fmt.Errorf("unexpected object type"), "Failed to cast object to Namespace", "object", obj)
+		return nil
+	}
 
 	if r.isNamespaceExcluded(ns) {
 		return nil // Ignore events from excluded namespaces
