@@ -241,6 +241,85 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}, "5s", "1s").Should(BeTrue())
 		})
 
+		It("should exclude the controller's own namespace and namespaces with the exclusion label", func() {
+			By("Creating namespaces for exclusion test")
+			crqName := "test-exclusion-crq"
+			exclusionLabel := "exclude-this-ns"
+			controllerNsName := "controller-namespace"
+
+			exclusionTestCRQ := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: crqName},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{"pods": resource.MustParse("1")},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"env": "test-exclusion"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, exclusionTestCRQ)).To(Succeed())
+
+			// This namespace should be selected
+			selectedNs := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "selected-ns-for-exclusion-test",
+					Labels: map[string]string{"env": "test-exclusion"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, selectedNs)).To(Succeed())
+
+			// This namespace should be excluded by label
+			excludedLabelNs := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "excluded-ns-by-label",
+					Labels: map[string]string{"env": "test-exclusion", exclusionLabel: "true"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, excludedLabelNs)).To(Succeed())
+
+			// This namespace should be excluded because it's the controller's own
+			controllerNs := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   controllerNsName,
+					Labels: map[string]string{"env": "test-exclusion"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, controllerNs)).To(Succeed())
+
+			defer func() {
+				By("Cleaning up exclusion test resources")
+				_ = k8sClient.Delete(ctx, exclusionTestCRQ)
+				_ = k8sClient.Delete(ctx, selectedNs)
+				_ = k8sClient.Delete(ctx, excludedLabelNs)
+				_ = k8sClient.Delete(ctx, controllerNs)
+			}()
+
+			By("Reconciling with exclusion settings")
+			controllerReconciler := &ClusterResourceQuotaReconciler{
+				Client:                   k8sClient,
+				Scheme:                   k8sClient.Scheme(),
+				OwnNamespace:             controllerNsName,
+				ExcludeNamespaceLabelKey: exclusionLabel,
+			}
+
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: crqName},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Checking that only the correct namespace is in the status")
+			updatedQuota := &quotav1alpha1.ClusterResourceQuota{}
+			Eventually(func(g Gomega) {
+				err := k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, updatedQuota)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				namespaces := getNamespaceNamesFromStatus(updatedQuota.Status.Namespaces)
+				g.Expect(namespaces).To(HaveLen(1), "Should only contain one namespace")
+				g.Expect(namespaces).To(ContainElement("selected-ns-for-exclusion-test"), "Should contain the selected namespace")
+				g.Expect(namespaces).NotTo(ContainElement("excluded-ns-by-label"), "Should not contain the label-excluded namespace")
+				g.Expect(namespaces).NotTo(ContainElement(controllerNsName), "Should not contain the controller's own namespace")
+			}, "10s", "250ms").Should(Succeed())
+		})
+
 		It("should handle ScopeSelector field", func() {
 			By("Creating a ClusterResourceQuota with ScopeSelector")
 			resourceWithSelector := &quotav1alpha1.ClusterResourceQuota{
@@ -352,6 +431,17 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 			requests := reconciler.findQuotasForObject(ctx, podInExcludedNs)
 			Expect(requests).To(BeEmpty())
+		})
+
+		It("should identify its own namespace as excluded, even if it matches the selector and has no exclusion label", func() {
+			ownNs := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "controller-ns",
+					Labels: map[string]string{"quota": "should-match"},
+				},
+			}
+			// Exclusion should be true even if the label matches
+			Expect(reconciler.isNamespaceExcluded(ownNs)).To(BeTrue())
 		})
 	})
 

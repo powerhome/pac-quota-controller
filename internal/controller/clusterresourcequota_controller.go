@@ -149,7 +149,11 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 
 		namespaceList := &corev1.NamespaceList{}
-		if err := r.List(ctx, namespaceList); err != nil {
+		listOpts := &client.ListOptions{
+			LabelSelector: selector,
+		}
+
+		if err := r.List(ctx, namespaceList, listOpts); err != nil {
 			log.Error(err, "Failed to list namespaces")
 			return ctrl.Result{}, err
 		}

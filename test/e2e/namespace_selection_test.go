@@ -29,19 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func getCRQStatusNamespaces(crqName string) []string {
-	crq := &quotav1alpha1.ClusterResourceQuota{}
-	err := k8sClient.Get(ctx, client.ObjectKey{Name: crqName}, crq)
-	if err != nil || crq.Status.Namespaces == nil {
-		return nil
-	}
-	nsList := make([]string, 0, len(crq.Status.Namespaces))
-	for _, ns := range crq.Status.Namespaces {
-		nsList = append(nsList, ns.Namespace)
-	}
-	return nsList
-}
-
 func testNonMatchingNamespaceNotInStatusWithLabels(
 	crqName, nsName string,
 	nsLabels map[string]string,
@@ -83,26 +70,6 @@ func testNonMatchingNamespaceNotInStatusWithLabels(
 			return getCRQStatusNamespaces(crqName)
 		}, "5s", "1s").ShouldNot(ContainElement(nsName))
 	}
-}
-
-func ensureNamespaceDeleted(name string) {
-	ns := &corev1.Namespace{}
-	_ = k8sClient.Get(ctx, client.ObjectKey{Name: name}, ns)
-	_ = k8sClient.Delete(ctx, ns)
-	// Wait for namespace to be deleted
-	Eventually(func() error {
-		return k8sClient.Get(ctx, client.ObjectKey{Name: name}, ns)
-	}, "10s", "250ms").ShouldNot(Succeed())
-}
-
-func ensureCRQDeleted(name string) {
-	crq := &quotav1alpha1.ClusterResourceQuota{}
-	_ = k8sClient.Get(ctx, client.ObjectKey{Name: name}, crq)
-	_ = k8sClient.Delete(ctx, crq)
-	// Wait for CRQ to be deleted
-	Eventually(func() error {
-		return k8sClient.Get(ctx, client.ObjectKey{Name: name}, crq)
-	}, "10s", "250ms").ShouldNot(Succeed())
 }
 
 var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
@@ -446,5 +413,45 @@ var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
 			_ = k8sClient.Delete(ctx, crq)
 		})
 		Eventually(func() []string { return getCRQStatusNamespaces(crq1Name) }, "10s", "1s").Should(ContainElements(ns1, ns2))
+	})
+
+	It("should never select the controller's own namespace, even if it matches the selector", func() {
+		ownNamespace := "pac-quota-controller-system"
+		// Fetch the namespace, patch labels, and restore after test
+		ns := &corev1.Namespace{}
+		err := k8sClient.Get(ctx, client.ObjectKey{Name: ownNamespace}, ns)
+		Expect(err).To(Succeed())
+		originalLabels := map[string]string{}
+		for k, v := range ns.Labels {
+			originalLabels[k] = v
+		}
+		// Patch labels to match selector
+		ns.Labels["quota"] = "should-match"
+		Expect(k8sClient.Update(ctx, ns)).To(Succeed())
+		DeferCleanup(func() {
+			ns := &corev1.Namespace{}
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: ownNamespace}, ns); err == nil {
+				ns.Labels = originalLabels
+				_ = k8sClient.Update(ctx, ns)
+			}
+		})
+		crqName := "crq-own-ns-exclusion"
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{Name: crqName},
+			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"quota": "should-match"},
+				},
+				Hard: quotav1alpha1.ResourceList{},
+			},
+		}
+		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, crq)
+		})
+		By("Ensuring the controller's own namespace is not in the CRQ status")
+		Consistently(func() []string {
+			return getCRQStatusNamespaces(crqName)
+		}, "5s", "1s").ShouldNot(ContainElement(ownNamespace))
 	})
 })
