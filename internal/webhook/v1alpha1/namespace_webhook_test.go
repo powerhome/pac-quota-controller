@@ -120,7 +120,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 			warnings, err := validator.ValidateCreate(ctx, ns)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("would be selected by multiple ClusterResourceQuotas"))
+			Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
 			Expect(warnings).To(BeNil())
 		})
 
@@ -154,7 +154,7 @@ var _ = Describe("Namespace Webhook", func() {
 			}
 			warnings, err := validator.ValidateCreate(ctx, ns)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("would be selected by multiple ClusterResourceQuotas"))
+			Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
 			Expect(warnings).To(BeNil())
 		})
 
@@ -287,7 +287,7 @@ var _ = Describe("Namespace Webhook", func() {
 
 			warnings, err := validator.ValidateUpdate(ctx, oldNS, newNS)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("would be selected by multiple ClusterResourceQuotas"))
+			Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
 			Expect(err.Error()).To(ContainSubstring("test-namespace"))
 			Expect(warnings).To(BeNil())
 		})
@@ -332,7 +332,7 @@ var _ = Describe("Namespace Webhook", func() {
 
 			warnings, err := validator.ValidateUpdate(ctx, oldNS, newNS)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("would be selected by multiple ClusterResourceQuotas"))
+			Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
 			Expect(warnings).To(BeNil())
 		})
 

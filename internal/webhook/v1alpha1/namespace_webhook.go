@@ -64,16 +64,10 @@ func (v *NamespaceCustomValidator) ValidateCreate(ctx context.Context, obj runti
 	namespacelog.Info("Validation for Namespace upon creation", "name", namespace.GetName())
 
 	// Block creation if the namespace would be selected by multiple CRQs
-	matching, err := v.crqClient.ListCRQsForNamespace(namespace)
+	_, err := v.crqClient.GetCRQByNamespace(context.Background(), namespace)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list ClusterResourceQuotas for namespace %s: %w", namespace.Name, err)
-	}
-	if len(matching) > 1 {
-		var names []string
-		for _, crq := range matching {
-			names = append(names, crq.Name)
-		}
-		return nil, fmt.Errorf("namespace '%s' would be selected by multiple ClusterResourceQuotas: %v", namespace.Name, names)
+		// GetCRQByNamespace returns an error if multiple CRQs match
+		return nil, fmt.Errorf("failed to validate ClusterResourceQuotas for namespace %s: %w", namespace.Name, err)
 	}
 
 	return nil, nil
@@ -93,16 +87,10 @@ func (v *NamespaceCustomValidator) ValidateUpdate(ctx context.Context, oldObj, n
 
 	// Only validate if labels changed
 	if !utils.EqualStringMap(namespace.Labels, oldNamespace.Labels) {
-		matching, err := v.crqClient.ListCRQsForNamespace(namespace)
+		_, err := v.crqClient.GetCRQByNamespace(context.Background(), namespace)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list ClusterResourceQuotas for namespace %s: %w", namespace.Name, err)
-		}
-		if len(matching) > 1 {
-			var names []string
-			for _, crq := range matching {
-				names = append(names, crq.Name)
-			}
-			return nil, fmt.Errorf("namespace '%s' would be selected by multiple ClusterResourceQuotas: %v", namespace.Name, names)
+			// GetCRQByNamespace returns an error if multiple CRQs match
+			return nil, fmt.Errorf("failed to validate ClusterResourceQuotas for namespace %s: %w", namespace.Name, err)
 		}
 	}
 

@@ -24,6 +24,7 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -89,7 +90,7 @@ func (resourceUpdatePredicate) Update(e event.UpdateEvent) bool {
 type ClusterResourceQuotaReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
-	crqClient                *quota.CRQClient
+	crqClient                quota.CRQClientInterface
 	OwnNamespace             string
 	ExcludeNamespaceLabelKey string
 }
@@ -130,7 +131,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	// Fetch the ClusterResourceQuota instance
 	crq := &quotav1alpha1.ClusterResourceQuota{}
 	if err := r.Get(ctx, req.NamespacedName, crq); err != nil {
-		if client.IgnoreNotFound(err) == nil {
+		if errors.IsNotFound(err) {
 			// Object not found, likely deleted, return without error
 			log.Info("ClusterResourceQuota resource not found. Ignoring since object must have been deleted")
 			return ctrl.Result{}, nil
@@ -283,87 +284,51 @@ func (r *ClusterResourceQuotaReconciler) updateStatus(
 	return r.Status().Patch(ctx, crqCopy, client.MergeFrom(crq))
 }
 
-// findQuotasForNamespace maps Namespace objects to ClusterResourceQuota requests
-// that should be reconciled based on namespace selection criteria
-func (r *ClusterResourceQuotaReconciler) findQuotasForNamespace(ctx context.Context, obj client.Object) []reconcile.Request {
-	ns, ok := obj.(*corev1.Namespace)
-	if !ok {
-		log.Error(fmt.Errorf("unexpected object type"), "Failed to cast object to Namespace", "object", obj)
-		return nil
-	}
-
-	if r.isNamespaceExcluded(ns) {
-		return nil // Ignore events from excluded namespaces
-	}
-
-	log := log.WithValues("namespace", ns.Name)
-	log.Info("Processing namespace event")
-
-	quotaList, err := r.crqClient.ListCRQsForNamespace(ns)
-	if err != nil {
-		log.Error(err, "Failed to list ClusterResourceQuotas for namespace")
-		return nil
-	}
-
-	requests := make([]reconcile.Request, 0, len(quotaList))
-	for i := range quotaList {
-		q := quotaList[i]
-		log.Info("Enqueueing ClusterResourceQuota for reconciliation due to namespace change",
-			"quota", q.Name)
-		requests = append(requests, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name: q.Name,
-			},
-		})
-	}
-	return requests
-}
-
-// findQuotasForObject maps a namespaced object to ClusterResourceQuota requests.
+// findQuotasForObject maps objects (including Namespaces and other namespaced resources) to ClusterResourceQuota requests
+// that should be reconciled based on namespace selection criteria. This unified function handles both:
+// - Namespace objects directly (when namespaces are created, updated, or deleted)
+// - Other namespaced objects (Pods, Services, etc.) by first retrieving their namespace
+// It excludes the controller's own namespace and any namespaces marked with the exclusion label.
 func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context, obj client.Object) []reconcile.Request {
-	ns := &corev1.Namespace{}
-	if err := r.Get(ctx, types.NamespacedName{Name: obj.GetNamespace()}, ns); err != nil {
-		log.Error(err, "Failed to get namespace for object to check for exclusion", "object", client.ObjectKeyFromObject(obj))
-		return nil
+	var ns *corev1.Namespace
+	var err error
+
+	// Handle Namespace objects directly
+	if namespace, ok := obj.(*corev1.Namespace); ok {
+		ns = namespace
+	} else {
+		// For other objects, get the namespace they belong to
+		ns = &corev1.Namespace{}
+		if err = r.Get(ctx, types.NamespacedName{Name: obj.GetNamespace()}, ns); err != nil {
+			log.Error(err, "Failed to get namespace for object to check for exclusion", "object", client.ObjectKeyFromObject(obj))
+			return nil
+		}
 	}
 
 	if r.isNamespaceExcluded(ns) {
 		return nil // Ignore events from excluded namespaces
 	}
 
-	// The GVK is often not set on objects from the cache, so we need to use the scheme to get it.
-	// GVK = GroupVersionKind
-	gvks, _, err := r.Scheme.ObjectKinds(obj)
-	var kind string
-	if err == nil && len(gvks) > 0 {
-		kind = gvks[0].Kind
-	}
-
-	log := log.WithValues(
-		"objectKind", kind,
-		"object", client.ObjectKeyFromObject(obj),
-	)
 	log.Info("Processing object event, finding relevant CRQs")
 
-	// Find which CRQs select this namespace.
-	quotaList, err := r.crqClient.ListCRQsForNamespace(ns)
+	// Find which CRQ selects this namespace.
+	crq, err := r.crqClient.GetCRQByNamespace(ctx, ns)
 	if err != nil {
-		log.Error(err, "Failed to list ClusterResourceQuotas for namespace")
+		log.Error(err, "Failed to get ClusterResourceQuota for namespace")
 		return nil
 	}
 
-	requests := make([]reconcile.Request, 0, len(quotaList))
-	for i := range quotaList {
-		q := quotaList[i]
-		log.Info("Enqueueing ClusterResourceQuota for reconciliation due to object change",
-			"quota", q.Name)
-		requests = append(requests, reconcile.Request{
-			NamespacedName: types.NamespacedName{
-				Name: q.Name,
+	if crq != nil {
+		return []reconcile.Request{
+			{
+				NamespacedName: types.NamespacedName{
+					Name: crq.Name,
+				},
 			},
-		})
+		}
 	}
-	return requests
+
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -380,13 +345,13 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&quotav1alpha1.ClusterResourceQuota{}).
-		// Watch for changes to Namespaces and trigger reconciliation for associated CRQs.
+		// Watch for changes to Namespaces and trigger reconciliation for associated CRQs using the unified handler.
 		Watches(
 			&corev1.Namespace{},
-			handler.EnqueueRequestsFromMapFunc(r.findQuotasForNamespace),
+			handler.EnqueueRequestsFromMapFunc(r.findQuotasForObject),
 		)
 
-	// Watch for changes to tracked resources and trigger reconciliation for associated CRQs.
+	// Watch for changes to tracked resources and trigger reconciliation for associated CRQs using the unified handler.
 	// TODO: Add more resources as needed.
 	watchedObjectTypes := []client.Object{
 		&corev1.Pod{},

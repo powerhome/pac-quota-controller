@@ -17,6 +17,8 @@ limitations under the License.
 package e2e
 
 import (
+	"maps"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -417,24 +419,14 @@ var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
 
 	It("should never select the controller's own namespace, even if it matches the selector", func() {
 		ownNamespace := "pac-quota-controller-system"
-		// Fetch the namespace, patch labels, and restore after test
+		// Ensure the namespace exists and matches the selector
+		// Patch the controller's own namespace to match the selector, then restore
 		ns := &corev1.Namespace{}
-		err := k8sClient.Get(ctx, client.ObjectKey{Name: ownNamespace}, ns)
-		Expect(err).To(Succeed())
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: ownNamespace}, ns)).To(Succeed())
 		originalLabels := map[string]string{}
-		for k, v := range ns.Labels {
-			originalLabels[k] = v
-		}
-		// Patch labels to match selector
+		maps.Copy(originalLabels, ns.Labels)
 		ns.Labels["quota"] = "should-match"
 		Expect(k8sClient.Update(ctx, ns)).To(Succeed())
-		DeferCleanup(func() {
-			ns := &corev1.Namespace{}
-			if err := k8sClient.Get(ctx, client.ObjectKey{Name: ownNamespace}, ns); err == nil {
-				ns.Labels = originalLabels
-				_ = k8sClient.Update(ctx, ns)
-			}
-		})
 		crqName := "crq-own-ns-exclusion"
 		crq := &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{Name: crqName},
@@ -448,6 +440,10 @@ var _ = Describe("ClusterResourceQuota Namespace Selection", func() {
 		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
 		DeferCleanup(func() {
 			_ = k8sClient.Delete(ctx, crq)
+			// Restore original labels
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: ownNamespace}, ns)).To(Succeed())
+			ns.Labels = originalLabels
+			_ = k8sClient.Update(ctx, ns)
 		})
 		By("Ensuring the controller's own namespace is not in the CRQ status")
 		Consistently(func() []string {

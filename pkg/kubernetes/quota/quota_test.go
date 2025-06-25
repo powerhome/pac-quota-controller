@@ -164,8 +164,20 @@ var _ = Describe("CRQClient", func() {
 		})
 	})
 
-	Describe("ListCRQsForNamespace", func() {
-		Context("when namespace matches some CRQs", func() {
+	Describe("GetCRQByNamespace", func() {
+		Context("when namespace matches exactly one CRQ", func() {
+			BeforeEach(func() {
+				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, nsDev, nsProd).Build()
+			})
+			It("should return the matching CRQ", func() {
+				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(crq).NotTo(BeNil())
+				Expect(crq.Name).To(Equal("crq-dev"))
+			})
+		})
+
+		Context("when namespace matches multiple CRQs", func() {
 			BeforeEach(func() {
 				crqBoth := &quotav1alpha1.ClusterResourceQuota{
 					ObjectMeta: metav1.ObjectMeta{Name: "crq-both"},
@@ -177,16 +189,13 @@ var _ = Describe("CRQClient", func() {
 				}
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, crqBoth, nsDev, nsProd).Build()
 			})
-			It("should return all matching CRQs", func() {
-				matchedCRQs, err := crqClient.ListCRQsForNamespace(nsDev)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(matchedCRQs).To(HaveLen(2))
-				// Check names because comparing full objects with fake client can be tricky
-				var names []string
-				for _, crq := range matchedCRQs {
-					names = append(names, crq.Name)
-				}
-				Expect(names).To(ConsistOf("crq-dev", "crq-both"))
+			It("should return an error", func() {
+				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				Expect(err).To(HaveOccurred())
+				Expect(crq).To(BeNil())
+				Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
+				Expect(err.Error()).To(ContainSubstring("crq-dev"))
+				Expect(err.Error()).To(ContainSubstring("crq-both"))
 			})
 		})
 
@@ -194,10 +203,10 @@ var _ = Describe("CRQClient", func() {
 			BeforeEach(func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, nsTest).Build()
 			})
-			It("should return an empty list", func() {
-				matchedCRQs, err := crqClient.ListCRQsForNamespace(nsTest)
+			It("should return nil without error", func() {
+				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsTest)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(matchedCRQs).To(BeEmpty())
+				Expect(crq).To(BeNil())
 			})
 		})
 
@@ -205,10 +214,10 @@ var _ = Describe("CRQClient", func() {
 			BeforeEach(func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsDev).Build()
 			})
-			It("should return an empty list", func() {
-				matchedCRQs, err := crqClient.ListCRQsForNamespace(nsDev)
+			It("should return nil without error", func() {
+				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(matchedCRQs).To(BeEmpty())
+				Expect(crq).To(BeNil())
 			})
 		})
 
@@ -224,7 +233,7 @@ var _ = Describe("CRQClient", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crqInvalidSelector, nsDev).Build()
 			})
 			It("should propagate the error", func() {
-				_, err := crqClient.ListCRQsForNamespace(nsDev)
+				_, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
 				Expect(err).To(HaveOccurred())
 			})
 		})

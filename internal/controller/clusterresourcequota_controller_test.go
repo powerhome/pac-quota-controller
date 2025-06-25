@@ -18,20 +18,81 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"slices"
 )
+
+type mockCRQClient struct {
+	GetCRQByNamespaceFunc func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error)
+}
+
+func (m *mockCRQClient) ListAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterResourceQuota, error) {
+	panic("not implemented")
+}
+func (m *mockCRQClient) GetCRQByNamespace(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+	return m.GetCRQByNamespaceFunc(ctx, ns)
+}
+func (m *mockCRQClient) NamespaceMatchesCRQ(ns *corev1.Namespace, crq *quotav1alpha1.ClusterResourceQuota) (bool, error) {
+	panic("not implemented")
+}
+func (m *mockCRQClient) GetNamespacesFromStatus(crq *quotav1alpha1.ClusterResourceQuota) []string {
+	panic("not implemented")
+}
+
+// --- Fakes for error path testing ---
+// Only for forcing errors in the kubeclient
+type fakeStatusWriter struct{}
+
+func (f *fakeStatusWriter) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+	return fmt.Errorf("patch error")
+}
+func (f *fakeStatusWriter) Update(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+	return nil
+}
+func (f *fakeStatusWriter) Create(ctx context.Context, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+	return nil
+}
+
+type fakeClient struct {
+	client.Client
+	getFunc      func(context.Context, client.ObjectKey, client.Object) error
+	listFunc     func(context.Context, client.ObjectList, ...client.ListOption) error
+	statusWriter client.StatusWriter
+}
+
+func (f *fakeClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if f.getFunc != nil {
+		return f.getFunc(ctx, key, obj)
+	}
+	return nil
+}
+func (f *fakeClient) List(ctx context.Context, obj client.ObjectList, opts ...client.ListOption) error {
+	if f.listFunc != nil {
+		return f.listFunc(ctx, obj, opts...)
+	}
+	return nil
+}
+func (f *fakeClient) Status() client.StatusWriter {
+	if f.statusWriter != nil {
+		return f.statusWriter
+	}
+	return &fakeStatusWriter{}
+}
 
 var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 	var testQuota *quotav1alpha1.ClusterResourceQuota
@@ -74,7 +135,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind ClusterResourceQuota")
 			err := k8sClient.Get(ctx, typeNamespacedName, clusterresourcequota)
-			if err != nil && errors.IsNotFound(err) {
+			if err != nil && apierrors.IsNotFound(err) {
 				resource := &quotav1alpha1.ClusterResourceQuota{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: resourceName,
@@ -405,7 +466,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				},
 			}
 			// We don't need to create this in the API server, just pass the object
-			requests := reconciler.findQuotasForNamespace(ctx, excludedNs)
+			requests := reconciler.findQuotasForObject(ctx, excludedNs)
 			Expect(requests).To(BeEmpty())
 		})
 
@@ -481,6 +542,300 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			newPod.Status.Phase = corev1.PodRunning
 			event := event.UpdateEvent{ObjectOld: oldPod, ObjectNew: newPod}
 			Expect(predicate.Update(event)).To(BeFalse())
+		})
+	})
+
+	Describe("calculateComputeResources", func() {
+		It("should return 0 as a placeholder (TODO: implement real logic)", func() {
+			reconciler := &ClusterResourceQuotaReconciler{}
+			result := reconciler.calculateComputeResources(context.Background(), "test-ns", corev1.ResourceRequestsCPU)
+			Expect(result.String()).To(Equal("0"))
+			// TODO: When real resource usage logic is implemented, update this test to check actual usage
+		})
+	})
+
+	Describe("calculateStorageResources", func() {
+		It("should return 0 as a placeholder (TODO: implement real logic)", func() {
+			reconciler := &ClusterResourceQuotaReconciler{}
+			result := reconciler.calculateStorageResources(context.Background(), "test-ns")
+			Expect(result.String()).To(Equal("0"))
+			// TODO: When real resource usage logic is implemented, update this test to check actual usage
+		})
+	})
+
+	Describe("findQuotasForObject (with Namespace objects)", func() {
+		var (
+			reconciler *ClusterResourceQuotaReconciler
+			ns         *corev1.Namespace
+		)
+
+		BeforeEach(func() {
+			reconciler = &ClusterResourceQuotaReconciler{
+				OwnNamespace:             "controller-ns",
+				ExcludeNamespaceLabelKey: "exclude-from-quota",
+			}
+		})
+
+		It("returns empty if namespace is excluded (by name)", func() {
+			ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "controller-ns"}}
+			reconciler.crqClient = &mockCRQClient{
+				GetCRQByNamespaceFunc: func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+					return nil, nil
+				},
+			}
+			result := reconciler.findQuotasForObject(context.Background(), ns)
+			Expect(result).To(BeEmpty())
+		})
+
+		It("returns empty if namespace is excluded (by label)", func() {
+			ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"exclude-from-quota": "true"}}}
+			reconciler.crqClient = &mockCRQClient{
+				GetCRQByNamespaceFunc: func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+					return nil, nil
+				},
+			}
+			result := reconciler.findQuotasForObject(context.Background(), ns)
+			Expect(result).To(BeEmpty())
+		})
+
+		It("returns quotas that match the namespace selector", func() {
+			ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"team": "dev"}}}
+			crq := quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "crq1"},
+			}
+			reconciler.crqClient = &mockCRQClient{
+				GetCRQByNamespaceFunc: func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+					return &crq, nil
+				},
+			}
+			result := reconciler.findQuotasForObject(context.Background(), ns)
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].Name).To(Equal("crq1"))
+		})
+
+		It("returns empty if no quotas match the namespace selector", func() {
+			ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"team": "dev"}}}
+			reconciler.crqClient = &mockCRQClient{
+				GetCRQByNamespaceFunc: func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+					return nil, nil
+				},
+			}
+			result := reconciler.findQuotasForObject(context.Background(), ns)
+			Expect(result).To(BeEmpty())
+		})
+
+		It("returns quotas with nil NamespaceSelector (selects all)", func() {
+			ns = &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "foo"}}
+			crq := quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "crq1"},
+			}
+			reconciler.crqClient = &mockCRQClient{
+				GetCRQByNamespaceFunc: func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+					return &crq, nil
+				},
+			}
+			result := reconciler.findQuotasForObject(context.Background(), ns)
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].Name).To(Equal("crq1"))
+		})
+	})
+
+	Describe("findQuotasForObject", func() {
+		var (
+			reconciler *ClusterResourceQuotaReconciler
+			pod        *corev1.Pod
+		)
+
+		BeforeEach(func() {
+			reconciler = &ClusterResourceQuotaReconciler{
+				OwnNamespace:             "controller-ns",
+				ExcludeNamespaceLabelKey: "exclude-from-quota",
+				Client:                   k8sClient, // Use the test env client for namespace lookup
+				Scheme:                   k8sClient.Scheme(),
+			}
+		})
+
+		It("returns empty if namespace is excluded", func() {
+			// Create the excluded namespace in the test env
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "controller-ns"}}
+			_ = k8sClient.Create(context.Background(), ns)
+			defer func() { _ = k8sClient.Delete(context.Background(), ns) }()
+			pod = &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "controller-ns"}}
+			reconciler.crqClient = &mockCRQClient{
+				GetCRQByNamespaceFunc: func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+					return nil, nil
+				},
+			}
+			result := reconciler.findQuotasForObject(context.Background(), pod)
+			Expect(result).To(BeEmpty())
+		})
+
+		It("returns quotas that match the object's namespace selector", func() {
+			// Create the namespace in the test env
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "foo", Labels: map[string]string{"team": "dev"}}}
+			_ = k8sClient.Create(context.Background(), ns)
+			defer func() { _ = k8sClient.Delete(context.Background(), ns) }()
+			pod = &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "foo"}}
+			crq := quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "crq1"},
+			}
+			reconciler.crqClient = &mockCRQClient{
+				GetCRQByNamespaceFunc: func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+					return &crq, nil
+				},
+			}
+			result := reconciler.findQuotasForObject(context.Background(), pod)
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].Name).To(Equal("crq1"))
+		})
+
+		It("returns empty if namespace not found in cluster", func() {
+			pod = &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "bar"}}
+			reconciler.crqClient = &mockCRQClient{
+				GetCRQByNamespaceFunc: func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+					return nil, nil
+				},
+			}
+			result := reconciler.findQuotasForObject(context.Background(), pod)
+			Expect(result).To(BeEmpty())
+		})
+
+		It("returns quotas with nil NamespaceSelector (selects all)", func() {
+			// Create the namespace in the test env
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "foo"}}
+			_ = k8sClient.Create(context.Background(), ns)
+			defer func() { _ = k8sClient.Delete(context.Background(), ns) }()
+			pod = &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p1", Namespace: "foo"}}
+			crq := quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "crq1"},
+			}
+			reconciler.crqClient = &mockCRQClient{
+				GetCRQByNamespaceFunc: func(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
+					return &crq, nil
+				},
+			}
+			result := reconciler.findQuotasForObject(context.Background(), pod)
+			Expect(result).To(HaveLen(1))
+			Expect(result[0].Name).To(Equal("crq1"))
+		})
+	})
+
+	var _ = Describe("ClusterResourceQuotaReconciler.Reconcile error paths", func() {
+		var (
+			reconciler *ClusterResourceQuotaReconciler
+			ctx        context.Context
+		)
+
+		BeforeEach(func() {
+			ctx = context.Background()
+		})
+
+		It("returns nil if CRQ is not found (deleted)", func() {
+			fakeClient := &fakeClient{
+				getFunc: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
+					return apierrors.NewNotFound(schema.GroupResource{Group: "quota.powerapp.cloud", Resource: "clusterresourcequotas"}, key.Name)
+				},
+			}
+			reconciler = &ClusterResourceQuotaReconciler{
+				Client:    fakeClient,
+				Scheme:    nil,
+				crqClient: &mockCRQClient{},
+			}
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo"}})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal(ctrl.Result{}))
+		})
+
+		It("returns error if Get returns error (not NotFound)", func() {
+			fakeClient := &fakeClient{
+				getFunc: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
+					return fmt.Errorf("some error")
+				},
+			}
+			reconciler = &ClusterResourceQuotaReconciler{
+				Client:    fakeClient,
+				Scheme:    nil,
+				crqClient: &mockCRQClient{},
+			}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo"}})
+			Expect(err).To(MatchError("some error"))
+		})
+
+		It("returns error if label selector is invalid", func() {
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "foo"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"bad[": "label"}},
+				},
+			}
+			fakeClient := &fakeClient{
+				getFunc: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
+					crq.DeepCopyInto(obj.(*quotav1alpha1.ClusterResourceQuota))
+					return nil
+				},
+			}
+			reconciler = &ClusterResourceQuotaReconciler{
+				Client:    fakeClient,
+				Scheme:    nil,
+				crqClient: &mockCRQClient{},
+			}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo"}})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to create selector"))
+		})
+
+		It("returns error if List namespaces fails", func() {
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "foo"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "dev"}},
+				},
+			}
+			fakeClient := &fakeClient{
+				getFunc: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
+					crq.DeepCopyInto(obj.(*quotav1alpha1.ClusterResourceQuota))
+					return nil
+				},
+				listFunc: func(_ context.Context, obj client.ObjectList, opts ...client.ListOption) error {
+					return fmt.Errorf("list error")
+				},
+			}
+			reconciler = &ClusterResourceQuotaReconciler{
+				Client:    fakeClient,
+				Scheme:    nil,
+				crqClient: &mockCRQClient{},
+			}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo"}})
+			Expect(err).To(MatchError("list error"))
+		})
+
+		It("returns error if updateStatus fails", func() {
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "foo"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "dev"}},
+					Hard:              quotav1alpha1.ResourceList{"pods": resource.MustParse("1")},
+				},
+			}
+			nsList := &corev1.NamespaceList{Items: []corev1.Namespace{{ObjectMeta: metav1.ObjectMeta{Name: "ns1", Labels: map[string]string{"team": "dev"}}}}}
+			fakeClient := &fakeClient{
+				getFunc: func(_ context.Context, key client.ObjectKey, obj client.Object) error {
+					crq.DeepCopyInto(obj.(*quotav1alpha1.ClusterResourceQuota))
+					return nil
+				},
+				listFunc: func(_ context.Context, obj client.ObjectList, opts ...client.ListOption) error {
+					nsList.DeepCopyInto(obj.(*corev1.NamespaceList))
+					return nil
+				},
+				statusWriter: &fakeStatusWriter{},
+			}
+			reconciler = &ClusterResourceQuotaReconciler{
+				Client:    fakeClient,
+				Scheme:    nil,
+				crqClient: &mockCRQClient{},
+			}
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: "foo"}})
+			Expect(err).To(MatchError("patch error"))
 		})
 	})
 })

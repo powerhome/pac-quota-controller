@@ -62,30 +62,22 @@ graph TD
     end
 
     subgraph Event Handlers
-        H1[findQuotasForNamespace]
-        H2[findQuotasForObject]
+        H1[findQuotasForObject]
     end
 
     W1 --> R[Enqueue CRQ for Reconciliation]
     W2 --> H1
-    W3 --> H2
+    W3 --> H1
 
     H1 --> R
-    H2 --> R
 
     R --> Q(Reconciliation Work Queue)
 ```
 
 ### Handler Logic Explained
 
-- **`findQuotasForNamespace`**:
-  - **Triggered by**: Changes to `Namespace` objects.
-  - **Logic**: When a namespace is created, updated, or deleted, this handler checks if the namespace's labels match any `ClusterResourceQuota`'s `namespaceSelector`. If a match is found, it enqueues that CRQ for reconciliation. This ensures that the controller reacts to namespaces being added to or removed from a quota's scope.
-  - **Logging**: Logs a "Processing namespace event" message.
-
 - **`findQuotasForObject`**:
-  - **Triggered by**: Changes to tracked resources like `Pods`, `Services`, `ConfigMaps`, etc.
-  - **Logic**: When a tracked resource is changed, this handler first gets the namespace of that resource. It then finds all `ClusterResourceQuota` objects that select that namespace and enqueues them for reconciliation.
-  - **Logging**: Logs a "Processing object event" message, including the kind and name of the object that triggered the event, making it clear why the reconciliation is happening.
-
-This dual-handler approach ensures that the controller remains responsive to all relevant changes in the cluster, keeping the `ClusterResourceQuota` status up-to-date.
+  - **Triggered by**: Changes to `Namespace` objects and tracked resources like `Pods`, `Services`, `ConfigMaps`, etc.
+  - **Logic**: This unified handler processes both namespace events and tracked resource events. For Namespace objects, it processes them directly. For other objects, it first retrieves the namespace they belong to. It then checks if the namespace's labels match any `ClusterResourceQuota`'s `namespaceSelector`. If a match is found, it enqueues that CRQ for reconciliation. This ensures that the controller reacts to namespaces being added to or removed from a quota's scope, as well as changes to tracked resources within those namespaces.
+  - **Exclusion Logic**: The handler automatically excludes the controller's own namespace and any namespaces marked with the exclusion label to prevent unnecessary reconciliation loops.
+  - **Logging**: Logs a "Processing object event, finding relevant CRQs" message, including contextual information about the object that triggered the event.
