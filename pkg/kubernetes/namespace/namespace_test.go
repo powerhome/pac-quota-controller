@@ -1,4 +1,4 @@
-package kubernetes_test
+package namespace
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -30,7 +29,7 @@ var _ = Describe("Namespace Utils", func() {
 		Expect(corev1.AddToScheme(sch)).To(Succeed())
 	})
 
-	Describe("ValidateNamespaceOwnershipWithAPI", func() {
+	Describe("ValidateNamespaceOwnership", func() {
 		var (
 			crq   *quotav1alpha1.ClusterResourceQuota
 			nsOne *corev1.Namespace
@@ -65,7 +64,7 @@ var _ = Describe("Namespace Utils", func() {
 			It("should return no warnings and no error", func() {
 				crq.Spec.NamespaceSelector = nil
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).Build()
-				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
+				warnings, err := ValidateNamespaceOwnership(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(warnings).To(BeEmpty())
 			})
@@ -77,7 +76,7 @@ var _ = Describe("Namespace Utils", func() {
 					MatchLabels: map[string]string{"labelkey1": "nonexistentvalue"},
 				}
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne).Build()
-				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
+				warnings, err := ValidateNamespaceOwnership(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(warnings).To(BeEmpty())
 			})
@@ -86,7 +85,7 @@ var _ = Describe("Namespace Utils", func() {
 		Context("when namespaces are selected and no other CRQs exist", func() {
 			It("should return no warnings and no error", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne).Build()
-				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
+				warnings, err := ValidateNamespaceOwnership(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(warnings).To(BeEmpty())
 			})
@@ -109,7 +108,7 @@ var _ = Describe("Namespace Utils", func() {
 					},
 				}
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne, nsTwo, otherCRQ).Build()
-				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
+				warnings, err := ValidateNamespaceOwnership(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(warnings).To(BeEmpty())
 			})
@@ -134,7 +133,7 @@ var _ = Describe("Namespace Utils", func() {
 					},
 				}
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne, otherCRQ).Build()
-				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq) // crq wants ns-one
+				warnings, err := ValidateNamespaceOwnership(ctx, k8sClient, crq) // crq wants ns-one
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(
 					"namespace 'ns-one' is already owned by another ClusterResourceQuota 'other-crq'",
@@ -172,7 +171,7 @@ var _ = Describe("Namespace Utils", func() {
 					},
 				}
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne, nsOneExtra, otherCRQ).Build()
-				warnings, err := kubernetes.ValidateNamespaceOwnershipWithAPI(ctx, k8sClient, crq)
+				warnings, err := ValidateNamespaceOwnership(ctx, k8sClient, crq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(
 					"namespace 'ns-one' is already owned by another ClusterResourceQuota 'other-crq'",
@@ -226,7 +225,7 @@ var _ = Describe("Namespace Utils", func() {
 			It("should return nil and no error", func() {
 				crq.Spec.NamespaceSelector = nil
 				// k8sClient already initialized with no specific objects needed for this case beyond scheme
-				selected, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
+				selected, err := GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(selected).To(BeNil())
 			})
@@ -238,7 +237,7 @@ var _ = Describe("Namespace Utils", func() {
 				crq.Spec.NamespaceSelector = &metav1.LabelSelector{MatchLabels: map[string]string{"app": "my-app"}}
 				// k8sClient already initialized with nsA, nsB, nsC
 
-				selected, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
+				selected, err := GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(selected).To(ConsistOf("ns-a", "ns-b"))
 				Expect(selected).To(Equal([]string{"ns-a", "ns-b"})) // Sorted alphabetically
@@ -264,7 +263,7 @@ var _ = Describe("Namespace Utils", func() {
 						{Key: "env", Operator: metav1.LabelSelectorOpNotIn, Values: []string{"prod"}},
 					},
 				} // Should match ns-b (env:staging) and ns-d (env:dev), but not ns-a (env:prod)
-				selected, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
+				selected, err := GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(selected).To(ConsistOf("ns-b", "ns-d"))
 				Expect(selected).To(Equal([]string{"ns-b", "ns-d"})) // Sorted
@@ -275,7 +274,7 @@ var _ = Describe("Namespace Utils", func() {
 			It("should return an empty slice and no error", func() {
 				crq.Spec.NamespaceSelector = &metav1.LabelSelector{MatchLabels: map[string]string{"app": "nonexistent-app"}}
 				// k8sClient already initialized with nsA, nsB, nsC
-				selected, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
+				selected, err := GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(selected).To(BeEmpty())
 			})
@@ -289,7 +288,7 @@ var _ = Describe("Namespace Utils", func() {
 					},
 				}
 				// k8sClient already initialized
-				_, err := kubernetes.GetSelectedNamespaces(ctx, k8sClient, crq)
+				_, err := GetSelectedNamespaces(ctx, k8sClient, crq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("failed to create namespace selector"))
 			})
@@ -366,7 +365,7 @@ var _ = Describe("Namespace Utils", func() {
 
 		for _, tc := range testCases {
 			It(fmt.Sprintf("should correctly determine changes when %s", tc.description), func() {
-				added, removed := kubernetes.DetermineNamespaceChanges(tc.previous, tc.current)
+				added, removed := DetermineNamespaceChanges(tc.previous, tc.current)
 				if len(tc.expectedAdded) == 0 {
 					Expect(added).To(BeEmpty())
 				} else {

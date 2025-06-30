@@ -51,6 +51,14 @@ func main() {
 			// Initialize configuration
 			cfg := config.InitConfig()
 
+			// Get the namespace the controller is running in
+			podNamespace, found := os.LookupEnv("POD_NAMESPACE")
+			if !found {
+				setupLog.Error(fmt.Errorf("POD_NAMESPACE environment variable not set"), "unable to determine controller namespace")
+				os.Exit(1)
+			}
+			cfg.OwnNamespace = podNamespace
+
 			// Set up logging
 			zapLogger := logger.SetupLogger(cfg)
 			defer func() {
@@ -86,7 +94,7 @@ func main() {
 			}
 
 			// Set up controllers
-			if err := manager.SetupControllers(mgr); err != nil {
+			if err := manager.SetupControllers(mgr, cfg); err != nil {
 				setupLog.Error(err, "unable to set up controllers")
 				os.Exit(1)
 			}

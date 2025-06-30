@@ -1,10 +1,8 @@
-// pkg/kubernetes/quota.go
-// Provides a CRQClient for ClusterResourceQuota operations shared by controller and webhook.
-
-package kubernetes
+package quota
 
 import (
 	"context"
+	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,7 +14,7 @@ import (
 
 type CRQClientInterface interface {
 	ListAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterResourceQuota, error)
-	ListCRQsForNamespace(ns *corev1.Namespace) ([]quotav1alpha1.ClusterResourceQuota, error)
+	GetCRQByNamespace(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error)
 	NamespaceMatchesCRQ(ns *corev1.Namespace, crq *quotav1alpha1.ClusterResourceQuota) (bool, error)
 	GetNamespacesFromStatus(crq *quotav1alpha1.ClusterResourceQuota) []string
 }
@@ -42,9 +40,11 @@ func (c *CRQClient) ListAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterRes
 	return crqList.Items, nil
 }
 
-// ListCRQsForNamespace returns all ClusterResourceQuotas that select the given Namespace.
-func (c *CRQClient) ListCRQsForNamespace(ns *corev1.Namespace) ([]quotav1alpha1.ClusterResourceQuota, error) {
-	ctx := context.Background()
+// GetCRQByNamespace returns the ClusterResourceQuota that selects the given Namespace.
+// If more than one CRQ matches, it returns an error listing the matching CRQs.
+func (c *CRQClient) GetCRQByNamespace(
+	ctx context.Context, ns *corev1.Namespace,
+) (*quotav1alpha1.ClusterResourceQuota, error) {
 	crqs, err := c.ListAllCRQs(ctx)
 	if err != nil {
 		return nil, err
@@ -60,7 +60,18 @@ func (c *CRQClient) ListCRQsForNamespace(ns *corev1.Namespace) ([]quotav1alpha1.
 			matches = append(matches, crq)
 		}
 	}
-	return matches, nil
+
+	if len(matches) == 0 {
+		return nil, nil // No matching CRQ found
+	}
+	if len(matches) > 1 {
+		names := make([]string, len(matches))
+		for i, crq := range matches {
+			names[i] = crq.Name
+		}
+		return nil, fmt.Errorf("multiple ClusterResourceQuotas select namespace %q: %v", ns.Name, names)
+	}
+	return &matches[0], nil
 }
 
 // NamespaceMatchesCRQ returns true if the namespace matches the CRQ's selector.

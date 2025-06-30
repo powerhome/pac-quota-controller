@@ -91,6 +91,18 @@ type ClusterResourceQuotaStatus struct {
 	Namespaces []ResourceQuotaStatusByNamespace `json:"namespaces,omitempty"`
 }
 
+func (crqs *ClusterResourceQuotaStatus) GetNamespaces() []string {
+	if crqs == nil || len(crqs.Namespaces) == 0 {
+		return nil
+	}
+
+	nsList := make([]string, 0, len(crqs.Namespaces))
+	for _, nsStatus := range crqs.Namespaces {
+		nsList = append(nsList, nsStatus.Namespace)
+	}
+	return nsList
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,shortName=crq

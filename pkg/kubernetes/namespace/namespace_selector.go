@@ -1,4 +1,4 @@
-package namespaceselection
+package namespace
 
 import (
 	"context"
@@ -16,7 +16,10 @@ type NamespaceSelector interface {
 	// GetSelectedNamespaces returns the list of namespaces that match the selector
 	GetSelectedNamespaces(ctx context.Context) ([]string, error)
 	// DetermineNamespaceChanges checks what namespaces have been added or removed since last reconciliation
-	DetermineNamespaceChanges(ctx context.Context, previousNamespaces []string) (added []string, removed []string, err error)
+	DetermineNamespaceChanges(
+		ctx context.Context,
+		previousNamespaces []string,
+	) (added []string, removed []string, err error)
 }
 
 // LabelBasedNamespaceSelector selects namespaces based on label selectors
@@ -27,7 +30,10 @@ type LabelBasedNamespaceSelector struct {
 }
 
 // NewLabelBasedNamespaceSelector creates a new namespace selector based on label selector
-func NewLabelBasedNamespaceSelector(k8sClient client.Client, labelSelector *metav1.LabelSelector) (*LabelBasedNamespaceSelector, error) {
+func NewLabelBasedNamespaceSelector(
+	k8sClient client.Client,
+	labelSelector *metav1.LabelSelector,
+) (*LabelBasedNamespaceSelector, error) {
 	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert label selector to selector: %w", err)
@@ -70,7 +76,10 @@ func (s *LabelBasedNamespaceSelector) GetSelectedNamespaces(ctx context.Context)
 }
 
 // DetermineNamespaceChanges checks what namespaces have been added or removed since last reconciliation
-func (s *LabelBasedNamespaceSelector) DetermineNamespaceChanges(ctx context.Context, previousNamespaces []string) (added []string, removed []string, err error) {
+func (s *LabelBasedNamespaceSelector) DetermineNamespaceChanges(
+	ctx context.Context,
+	previousNamespaces []string,
+) (added []string, removed []string, err error) {
 	currentNamespaces, err := s.GetSelectedNamespaces(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get currently selected namespaces: %w", err)

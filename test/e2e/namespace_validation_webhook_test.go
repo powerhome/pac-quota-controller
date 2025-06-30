@@ -189,7 +189,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 			Expect(updateErr).To(HaveOccurred())
 			Expect(errors.IsForbidden(updateErr)).To(BeTrue(), "error should be a forbidden error")
 			Expect(updateErr.Error()).To(SatisfyAll(
-				ContainSubstring(fmt.Sprintf("namespace '%s' would be selected by multiple ClusterResourceQuotas", testNsName)),
+				ContainSubstring(fmt.Sprintf("multiple ClusterResourceQuotas select namespace \"%s\"", testNsName)),
 				ContainSubstring(crq1Name),
 				ContainSubstring(crq2Name),
 			))
@@ -263,7 +263,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(errors.IsForbidden(err)).To(BeTrue())
 			Expect(err.Error()).To(SatisfyAll(
-				ContainSubstring(fmt.Sprintf("namespace '%s' would be selected by multiple ClusterResourceQuotas", testNsName)),
+				ContainSubstring(fmt.Sprintf("multiple ClusterResourceQuotas select namespace \"%s\"", testNsName)),
 				ContainSubstring(crq1Name),
 				ContainSubstring(crq2Name),
 			))
@@ -300,7 +300,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{"app": "foo-" + suffix})
 			Expect(err).To(HaveOccurred())
 			Expect(errors.IsForbidden(err)).To(BeTrue())
-			Expect(err.Error()).To(ContainSubstring("would be selected by multiple ClusterResourceQuotas"))
+			Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
 		})
 	})
 
