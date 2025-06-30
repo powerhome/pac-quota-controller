@@ -2,6 +2,7 @@ package quota
 
 import (
 	"context"
+	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -12,6 +13,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+func TestQuota(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Quota Package Suite")
+}
 
 var _ = Describe("CRQClient", func() {
 	var (

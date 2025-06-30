@@ -1,0 +1,80 @@
+# Extended Resources Example
+# This example demonstrates how pac-quota-controller supports Kubernetes extended resources
+# like GPU quotas as per: https://kubernetes.io/docs/concepts/policy/resource-quotas/#resource-quota-for-extended-resources
+#
+# Key points:
+# 1. Extended resources are specified with the "requests." prefix in ClusterResourceQuota
+# 2. The controller sums all extended resources from init and regular containers
+# 3. Both integer and fractional quantities are supported
+# 4. Extended resources follow the same namespace selection rules as standard resources
+#
+# Expected resource usage with these pods:
+# - GPU: 2 (first pod) + 1 (init) + 1 (main) = 4 total (hitting the quota limit)
+# - CPU: 500m + 100m + 400m = 1000m = 1 CPU
+# - Memory: 1Gi + 128Mi + 1Gi = ~2.12Gi
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-team
+  labels:
+    team: gpu-users
+---
+apiVersion: quota.powerapp.cloud/v1alpha1
+kind: ClusterResourceQuota
+metadata:
+  name: gpu-quota
+spec:
+  namespaceSelector:
+    matchLabels:
+      team: gpu-users
+  hard:
+    requests.nvidia.com/gpu: "4"
+    requests.cpu: "2"
+    requests.memory: "4Gi"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-workload
+  namespace: gpu-team
+spec:
+  containers:
+  - name: gpu-container
+    image: nvidia/cuda:11.0-base
+    resources:
+      requests:
+        nvidia.com/gpu: "2"
+        cpu: "500m"
+        memory: "1Gi"
+      limits:
+        nvidia.com/gpu: "2"
+        cpu: "1"
+        memory: "2Gi"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gpu-workload-with-init
+  namespace: gpu-team
+spec:
+  initContainers:
+  - name: init-setup
+    image: busybox
+    resources:
+      requests:
+        nvidia.com/gpu: "1"
+        cpu: "100m"
+        memory: "128Mi"
+  containers:
+  - name: main-gpu-container
+    image: nvidia/cuda:11.0-base
+    resources:
+      requests:
+        nvidia.com/gpu: "1"
+        cpu: "400m"
+        memory: "1Gi"
+      limits:
+        nvidia.com/gpu: "1"
+        cpu: "800m"
+        memory: "2Gi"
