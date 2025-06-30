@@ -22,6 +22,7 @@ import (
 	"sort"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -41,11 +42,6 @@ import (
 )
 
 var log = logf.Log.WithName("clusterresourcequota-controller")
-
-// isTerminal checks if a pod is in a terminal phase (Succeeded or Failed).
-func isTerminal(pod *corev1.Pod) bool {
-	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
-}
 
 // resourceUpdatePredicate implements a custom predicate function to filter resource updates.
 // It's designed to trigger reconciliation only on meaningful changes, such as spec updates
@@ -74,7 +70,7 @@ func (resourceUpdatePredicate) Update(e event.UpdateEvent) bool {
 	// This is important for releasing quota resources when a pod completes.
 	if podOld, ok := e.ObjectOld.(*corev1.Pod); ok {
 		if podNew, ok := e.ObjectNew.(*corev1.Pod); ok {
-			if isTerminal(podOld) != isTerminal(podNew) {
+			if pod.IsTerminal(podOld) != pod.IsTerminal(podNew) {
 				return true
 			}
 		}
@@ -91,6 +87,7 @@ type ClusterResourceQuotaReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
 	crqClient                quota.CRQClientInterface
+	ComputeCalculator        *pod.ComputeResourceCalculator
 	OwnNamespace             string
 	ExcludeNamespaceLabelKey string
 }
@@ -254,11 +251,13 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(_ context.Context,
 }
 
 // calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
-func (r *ClusterResourceQuotaReconciler) calculateComputeResources(_ context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
-	// TODO: Implement pod listing, iterating through containers, and summing up
-	// the specified resource requests or limits.
-	log.Info("Placeholder: Calculating compute resources", "resource", resourceName, "namespace", ns)
-	return resource.MustParse("0")
+func (r *ClusterResourceQuotaReconciler) calculateComputeResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+	usage, err := r.ComputeCalculator.CalculateComputeUsage(ctx, ns, resourceName)
+	if err != nil {
+		log.Error(err, "Failed to calculate compute resources", "resource", resourceName, "namespace", ns)
+		return resource.MustParse("0")
+	}
+	return usage
 }
 
 // calculateStorageResources calculates the usage for storage resource quotas.

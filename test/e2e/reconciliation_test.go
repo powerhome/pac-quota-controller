@@ -3,9 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"slices"
-	"strconv"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -32,7 +30,7 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 	)
 
 	BeforeEach(func() {
-		suffix = strconv.Itoa(rand.Intn(1000000))
+		suffix = generateTestSuffix()
 		crqName = "crq-" + suffix
 		nsName = "test-ns-" + suffix
 	})

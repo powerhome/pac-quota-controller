@@ -126,14 +126,14 @@ var _ = Describe("Namespace Utils", func() {
 					Status: quotav1alpha1.ClusterResourceQuotaStatus{
 						Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
 							{
-								Namespace: "ns-one", // otherCRQ claims ns-one
+								Namespace: "ns-one",
 								Status:    quotav1alpha1.ResourceQuotaStatus{},
 							},
 						},
 					},
 				}
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsOne, otherCRQ).Build()
-				warnings, err := ValidateNamespaceOwnership(ctx, k8sClient, crq) // crq wants ns-one
+				warnings, err := ValidateNamespaceOwnership(ctx, k8sClient, crq)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring(
 					"namespace 'ns-one' is already owned by another ClusterResourceQuota 'other-crq'",

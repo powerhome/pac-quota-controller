@@ -25,7 +25,6 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/rand"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	testutils "github.com/powerhome/pac-quota-controller/test/utils"
@@ -44,7 +43,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		suffix = rand.String(5)
+		suffix = generateTestSuffix()
 		testNsName = "test-ns-webhook-" + suffix
 		crq1Name = "crq1-" + suffix
 		crq2Name = "crq2-" + suffix
@@ -197,7 +196,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 	})
 	Context("Namespace Create Validation", func() {
 		It("should allow creation when no CRQs match", func() {
-			suffix := rand.String(5)
+			suffix := generateTestSuffix()
 			testNsName := "ns-create-" + suffix
 			err := testutils.CreateNamespace(
 				ctx,
@@ -311,7 +310,7 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 				k8sClient,
 				testNsName,
 				map[string]string{
-					"e2e-test": "delete-validation-" + rand.String(3),
+					"e2e-test": "delete-validation-" + generateTestSuffix(),
 				},
 			)
 			Expect(err).NotTo(HaveOccurred())

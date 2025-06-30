@@ -4,165 +4,138 @@ import (
 	"os"
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/stretchr/testify/assert"
 )
 
-func TestInitConfig(t *testing.T) {
-	// Reset viper before the test to ensure clean state
-	viper.Reset()
-
-	// Test with default values
-	cfg := InitConfig()
-	assert.Equal(t, ":8443", cfg.MetricsAddr)
-	assert.Equal(t, ":8081", cfg.ProbeAddr)
-	assert.Equal(t, false, cfg.EnableLeaderElection)
-	assert.Equal(t, true, cfg.SecureMetrics)
-	assert.Equal(t, "tls.crt", cfg.WebhookCertName)
-	assert.Equal(t, "tls.key", cfg.WebhookCertKey)
-	assert.Equal(t, "tls.crt", cfg.MetricsCertName)
-	assert.Equal(t, "tls.key", cfg.MetricsCertKey)
-	assert.Equal(t, false, cfg.EnableHTTP2)
-	assert.Equal(t, "info", cfg.LogLevel)
-	assert.Equal(t, "json", cfg.LogFormat)
-
-	// Test with environment variables
-	if err := os.Setenv("METRICS_BIND_ADDRESS", ":8443"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("HEALTH_PROBE_BIND_ADDRESS", ":9090"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("LEADER_ELECT", "true"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("METRICS_SECURE", "false"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("WEBHOOK_CERT_PATH", "/certs/webhook"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("WEBHOOK_CERT_NAME", "cert.pem"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("WEBHOOK_CERT_KEY", "key.pem"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("METRICS_CERT_PATH", "/certs/metrics"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("METRICS_CERT_NAME", "metrics.crt"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("METRICS_CERT_KEY", "metrics.key"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("ENABLE_HTTP2", "true"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("LOG_LEVEL", "debug"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-	if err := os.Setenv("LOG_FORMAT", "console"); err != nil {
-		t.Fatalf("failed to set env: %v", err)
-	}
-
-	// Reset viper to pick up the new environment variables
-	viper.Reset()
-
-	// Initialize again with environment variables
-	cfg = InitConfig()
-	assert.Equal(t, ":8443", cfg.MetricsAddr)
-	assert.Equal(t, ":9090", cfg.ProbeAddr)
-	assert.Equal(t, true, cfg.EnableLeaderElection)
-	assert.Equal(t, false, cfg.SecureMetrics)
-	assert.Equal(t, "/certs/webhook", cfg.WebhookCertPath)
-	assert.Equal(t, "cert.pem", cfg.WebhookCertName)
-	assert.Equal(t, "key.pem", cfg.WebhookCertKey)
-	assert.Equal(t, "/certs/metrics", cfg.MetricsCertPath)
-	assert.Equal(t, "metrics.crt", cfg.MetricsCertName)
-	assert.Equal(t, "metrics.key", cfg.MetricsCertKey)
-	assert.Equal(t, true, cfg.EnableHTTP2)
-	assert.Equal(t, "debug", cfg.LogLevel)
-	assert.Equal(t, "console", cfg.LogFormat)
-
-	// Clean up
-	if err := os.Unsetenv("METRICS_BIND_ADDRESS"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("HEALTH_PROBE_BIND_ADDRESS"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("LEADER_ELECT"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("METRICS_SECURE"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("WEBHOOK_CERT_PATH"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("WEBHOOK_CERT_NAME"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("WEBHOOK_CERT_KEY"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("METRICS_CERT_PATH"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("METRICS_CERT_NAME"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("METRICS_CERT_KEY"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("ENABLE_HTTP2"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("LOG_LEVEL"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
-	if err := os.Unsetenv("LOG_FORMAT"); err != nil {
-		t.Fatalf("failed to unset env: %v", err)
-	}
+func TestConfig(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Config Package Suite")
 }
 
-func TestSetupFlags(t *testing.T) {
-	// Reset viper before the test
-	viper.Reset()
+var _ = Describe("InitConfig", func() {
+	BeforeEach(func() {
+		viper.Reset()
+	})
 
-	// Create a new cobra command
-	cmd := &cobra.Command{
-		Use:   "test",
-		Short: "Test command for SetupFlags",
-		Run:   func(cmd *cobra.Command, args []string) {},
-	}
+	AfterEach(func() {
+		// Clean up any environment variables that might have been set
+		envVars := []string{
+			"METRICS_BIND_ADDRESS",
+			"HEALTH_PROBE_BIND_ADDRESS",
+			"LEADER_ELECT",
+			"METRICS_SECURE",
+			"WEBHOOK_CERT_PATH",
+			"WEBHOOK_CERT_NAME",
+			"WEBHOOK_CERT_KEY",
+			"METRICS_CERT_PATH",
+			"METRICS_CERT_NAME",
+			"METRICS_CERT_KEY",
+			"ENABLE_HTTP2",
+			"LOG_LEVEL",
+			"LOG_FORMAT",
+		}
+		for _, env := range envVars {
+			Expect(os.Unsetenv(env)).To(Succeed())
+		}
+		viper.Reset()
+	})
 
-	// Setup flags
-	SetupFlags(cmd)
+	It("should initialize with default values", func() {
+		cfg := InitConfig()
+		Expect(cfg.MetricsAddr).To(Equal(":8443"))
+		Expect(cfg.ProbeAddr).To(Equal(":8081"))
+		Expect(cfg.EnableLeaderElection).To(BeFalse())
+		Expect(cfg.SecureMetrics).To(BeTrue())
+		Expect(cfg.WebhookCertName).To(Equal("tls.crt"))
+		Expect(cfg.WebhookCertKey).To(Equal("tls.key"))
+		Expect(cfg.MetricsCertName).To(Equal("tls.crt"))
+		Expect(cfg.MetricsCertKey).To(Equal("tls.key"))
+		Expect(cfg.EnableHTTP2).To(BeFalse())
+		Expect(cfg.LogLevel).To(Equal("info"))
+		Expect(cfg.LogFormat).To(Equal("json"))
+	})
 
-	// Check that all flags were registered
-	flags := cmd.Flags()
-	assert.True(t, flags.HasAvailableFlags())
+	It("should read values from environment variables", func() {
+		// Set environment variables
+		envVars := map[string]string{
+			"HEALTH_PROBE_BIND_ADDRESS": ":9090",
+			"LEADER_ELECT":              "true",
+			"METRICS_SECURE":            "false",
+			"WEBHOOK_CERT_PATH":         "/certs/webhook",
+			"WEBHOOK_CERT_NAME":         "cert.pem",
+			"WEBHOOK_CERT_KEY":          "key.pem",
+			"METRICS_CERT_PATH":         "/certs/metrics",
+			"METRICS_CERT_NAME":         "metrics.crt",
+			"METRICS_CERT_KEY":          "metrics.key",
+			"ENABLE_HTTP2":              "true",
+			"LOG_LEVEL":                 "debug",
+			"LOG_FORMAT":                "console",
+		}
 
-	// Check a few specific flags
-	metricsAddr, _ := flags.GetString("metrics-bind-address")
-	assert.Equal(t, "0", metricsAddr)
+		for key, value := range envVars {
+			Expect(os.Setenv(key, value)).To(Succeed())
+		}
 
-	probeAddr, _ := flags.GetString("health-probe-bind-address")
-	assert.Equal(t, ":8081", probeAddr)
+		viper.Reset()
+		cfg := InitConfig()
 
-	leaderElect, _ := flags.GetBool("leader-elect")
-	assert.Equal(t, false, leaderElect)
+		Expect(cfg.ProbeAddr).To(Equal(":9090"))
+		Expect(cfg.EnableLeaderElection).To(BeTrue())
+		Expect(cfg.SecureMetrics).To(BeFalse())
+		Expect(cfg.WebhookCertPath).To(Equal("/certs/webhook"))
+		Expect(cfg.WebhookCertName).To(Equal("cert.pem"))
+		Expect(cfg.WebhookCertKey).To(Equal("key.pem"))
+		Expect(cfg.MetricsCertPath).To(Equal("/certs/metrics"))
+		Expect(cfg.MetricsCertName).To(Equal("metrics.crt"))
+		Expect(cfg.MetricsCertKey).To(Equal("metrics.key"))
+		Expect(cfg.EnableHTTP2).To(BeTrue())
+		Expect(cfg.LogLevel).To(Equal("debug"))
+		Expect(cfg.LogFormat).To(Equal("console"))
+	})
+})
 
-	secureMetrics, _ := flags.GetBool("metrics-secure")
-	assert.Equal(t, true, secureMetrics)
+var _ = Describe("SetupFlags", func() {
+	var cmd *cobra.Command
 
-	logLevel, _ := flags.GetString("log-level")
-	assert.Equal(t, "info", logLevel)
+	BeforeEach(func() {
+		viper.Reset()
+		cmd = &cobra.Command{
+			Use:   "test",
+			Short: "Test command for SetupFlags",
+			Run:   func(cmd *cobra.Command, args []string) {},
+		}
+		SetupFlags(cmd)
+	})
 
-	logFormat, _ := flags.GetString("log-format")
-	assert.Equal(t, "json", logFormat)
-}
+	It("should register all flags with correct defaults", func() {
+		flags := cmd.Flags()
+		Expect(flags.HasAvailableFlags()).To(BeTrue())
+
+		metricsAddr, err := flags.GetString("metrics-bind-address")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(metricsAddr).To(Equal("0"))
+
+		probeAddr, err := flags.GetString("health-probe-bind-address")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(probeAddr).To(Equal(":8081"))
+
+		leaderElect, err := flags.GetBool("leader-elect")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(leaderElect).To(BeFalse())
+
+		secureMetrics, err := flags.GetBool("metrics-secure")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(secureMetrics).To(BeTrue())
+
+		logLevel, err := flags.GetString("log-level")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(logLevel).To(Equal("info"))
+
+		logFormat, err := flags.GetString("log-format")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(logFormat).To(Equal("json"))
+	})
+})

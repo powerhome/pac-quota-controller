@@ -1,11 +1,27 @@
 package e2e
 
 import (
+	"fmt"
+	"math/rand"
+	"strconv"
+
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// generateTestName generates a unique test name with the given prefix.
+// This provides consistent naming across all e2e tests.
+func generateTestName(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, rand.Intn(1000000))
+}
+
+// generateTestSuffix generates a unique suffix for test resources.
+// This is useful when tests need just a suffix for multiple resources.
+func generateTestSuffix() string {
+	return strconv.Itoa(rand.Intn(1000000))
+}
 
 func getCRQStatusNamespaces(crqName string) []string {
 	crq := &quotav1alpha1.ClusterResourceQuota{}

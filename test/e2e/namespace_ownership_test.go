@@ -6,9 +6,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"math/rand"
-	"strconv"
-
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,7 +21,7 @@ var _ = Describe("ClusterResourceQuota Namespace Ownership Webhook", func() {
 		nsName   string
 	)
 	BeforeEach(func() {
-		suffix = strconv.Itoa(rand.Intn(1000000))
+		suffix = generateTestSuffix()
 		crq1Name = "crq1-" + suffix
 		crq2Name = "crq2-" + suffix
 		nsName = "test-ownership-ns-" + suffix
