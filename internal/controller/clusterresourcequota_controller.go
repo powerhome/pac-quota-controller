@@ -43,6 +43,10 @@ import (
 
 var log = logf.Log.WithName("clusterresourcequota-controller")
 
+// isTerminal checks if a pod is in a terminal phase (Succeeded or Failed).
+func isTerminal(pod *corev1.Pod) bool {
+	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
+}
 // resourceUpdatePredicate implements a custom predicate function to filter resource updates.
 // It's designed to trigger reconciliation only on meaningful changes, such as spec updates
 // or pod phase changes to/from terminal states, while ignoring noisy status-only updates.
