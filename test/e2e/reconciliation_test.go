@@ -31,7 +31,6 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 
 	BeforeEach(func() {
 		suffix = generateTestSuffix()
-		suffix = strconv.Itoa(rand.Intn(1000000))
 		crqName = "crq-" + suffix
 		nsName = "test-ns-" + suffix
 	})
