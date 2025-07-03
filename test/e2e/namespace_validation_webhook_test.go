@@ -236,14 +236,14 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"app": "multi-selector-test"}},
+						MatchLabels: map[string]string{"app": "multi-selector-test-" + suffix}},
 					Hard: quotav1alpha1.ResourceList{},
 				},
 			}
 			crq2 := &quotav1alpha1.ClusterResourceQuota{
 				ObjectMeta: metav1.ObjectMeta{Name: crq2Name},
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"env": "e2e"}},
+					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"env": "e2e-" + suffix}},
 					Hard:              quotav1alpha1.ResourceList{},
 				},
 			}
@@ -255,8 +255,8 @@ var _ = Describe("NamespaceValidationWebhook", func() {
 
 			// Attempt to create a namespace that matches both selectors
 			err := testutils.CreateNamespace(ctx, k8sClient, testNsName, map[string]string{
-				"app": "multi-selector-test",
-				"env": "e2e",
+				"app": "multi-selector-test-" + suffix,
+				"env": "e2e-" + suffix,
 			})
 
 			Expect(err).To(HaveOccurred())

@@ -24,15 +24,15 @@ const (
 
 var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 	var (
-		suffix  string
-		crqName string
-		nsName  string
+		crq1Name string
+		suffix   string
+		nsName   string
 	)
 
 	BeforeEach(func() {
 		suffix = generateTestSuffix()
-		crqName = "crq-" + suffix
-		nsName = "test-ns-" + suffix
+		crq1Name = "crq1-" + suffix
+		nsName = "test-namespaceselection-ns-" + suffix
 	})
 
 	It("Should reconcile and update status when a Pod is created in a selected namespace", func() {
@@ -42,7 +42,7 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 		// 1. Create a ClusterResourceQuota to track pods
 		crq := &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: crqName,
+				Name: crq1Name,
 			},
 			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 				NamespaceSelector: &metav1.LabelSelector{
@@ -85,7 +85,7 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 		// 4. Wait and verify that the CRQ status is updated
 		Eventually(func() error {
 			updatedCrq := &quotav1alpha1.ClusterResourceQuota{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, updatedCrq); err != nil {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crq1Name}, updatedCrq); err != nil {
 				return err
 			}
 
@@ -111,7 +111,7 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 		excludedNsName := "test-ns-excluded-" + suffix
 
 		ensureNamespaceDeleted(excludedNsName)
-		ensureCRQDeleted(crqName)
+		ensureCRQDeleted(crq1Name)
 
 		// This namespace matches the selector but has the exclude label
 		excludedNs := &corev1.Namespace{
@@ -128,7 +128,7 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 
 		crq := &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: crqName,
+				Name: crq1Name,
 			},
 			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 				NamespaceSelector: &metav1.LabelSelector{
@@ -146,7 +146,7 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 
 		By("ensuring the excluded namespace is not in the CRQ status")
 		Consistently(func() []string {
-			return getCRQStatusNamespaces(crqName)
+			return getCRQStatusNamespaces(crq1Name)
 		}, "5s", "1s").ShouldNot(ContainElement(excludedNsName))
 
 		By("removing the exclude label from the namespace")
@@ -161,14 +161,14 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 
 		By("waiting for the namespace to appear in CRQ status after label removal")
 		Eventually(func() []string {
-			return getCRQStatusNamespaces(crqName)
+			return getCRQStatusNamespaces(crq1Name)
 		}, "10s", "1s").Should(ContainElement(excludedNsName))
 	})
 
 	It("should remove a namespace from status when the exclude label is added", func() {
 		matchingNsName := "test-ns-to-be-excluded-" + suffix
 		ensureNamespaceDeleted(matchingNsName)
-		ensureCRQDeleted(crqName)
+		ensureCRQDeleted(crq1Name)
 
 		matchingNs := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -179,7 +179,7 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 		Expect(k8sClient.Create(ctx, matchingNs)).To(Succeed())
 
 		crq := &quotav1alpha1.ClusterResourceQuota{
-			ObjectMeta: metav1.ObjectMeta{Name: crqName},
+			ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
 			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 				NamespaceSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{"quota": "test-" + suffix},
@@ -196,7 +196,7 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 
 		By("waiting for the namespace to appear in CRQ status")
 		Eventually(func() []string {
-			return getCRQStatusNamespaces(crqName)
+			return getCRQStatusNamespaces(crq1Name)
 		}, "10s", "1s").Should(ContainElement(matchingNsName))
 
 		By("adding the exclude label to the namespace")
@@ -211,7 +211,146 @@ var _ = Describe("ClusterResourceQuota Reconciliation", func() {
 
 		By("waiting for the namespace to be removed from CRQ status")
 		Eventually(func() []string {
-			return getCRQStatusNamespaces(crqName)
+			return getCRQStatusNamespaces(crq1Name)
 		}, "10s", "1s").ShouldNot(ContainElement(matchingNsName))
+	})
+
+	Context("Reconciliation Edge Cases", func() {
+		It("should exclude namespaces with the exclusion label", func() {
+			excludedNs := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "excluded-ns",
+					Labels: map[string]string{"pac-quota-controller.powerapp.cloud/exclude": "true"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, excludedNs)).To(Succeed())
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"team": "test"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+
+			Eventually(func() []string {
+				return getCRQStatusNamespaces(crq1Name)
+			}, "10s", "1s").ShouldNot(ContainElement("excluded-ns"))
+		})
+
+		It("should update CRQ status when namespace labels change", func() {
+			ns := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "test-ns",
+					Labels: map[string]string{"team": "old"},
+				},
+			}
+			Expect(k8sClient.Create(ctx, ns)).To(Succeed())
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: crq1Name},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"team": "new"},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+
+			Eventually(func() []string {
+				return getCRQStatusNamespaces(crq1Name)
+			}, "10s", "1s").Should(BeEmpty())
+
+			ns.Labels["team"] = "new"
+			Expect(k8sClient.Update(ctx, ns)).To(Succeed())
+
+			Eventually(func() []string {
+				return getCRQStatusNamespaces(crq1Name)
+			}, "10s", "1s").Should(ContainElement("test-ns"))
+		})
+	})
+
+	Context("Namespace Selection and Label Changes", func() {
+		It("Should add a matching namespace to the CRQ status", func() {
+			ensureNamespaceDeleted(nsName)
+			ensureCRQDeleted(crq1Name)
+
+			matching := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   nsName,
+					Labels: map[string]string{"quota": "test-" + suffix},
+				},
+			}
+			Expect(k8sClient.Create(ctx, matching)).To(Succeed())
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: crq1Name,
+				},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"quota": "test-" + suffix},
+					},
+					Hard: quotav1alpha1.ResourceList{},
+				},
+			}
+			Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, matching)
+				_ = k8sClient.Delete(ctx, crq)
+			})
+			By("Waiting for namespace to appear in CRQ status")
+			Eventually(func() []string {
+				return getCRQStatusNamespaces(crq1Name)
+			}, "10s", "1s").Should(ContainElement(nsName))
+		})
+
+		It("Should update CRQ status when a namespace label is changed to match", func() {
+			nonnsName := "test-namespaceselection-ns-wrong-label-" + suffix
+
+			ensureNamespaceDeleted(nsName)
+			ensureNamespaceDeleted(nonnsName)
+			ensureCRQDeleted(crq1Name)
+
+			matching := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   nsName,
+					Labels: map[string]string{"key": "value-" + suffix},
+				},
+			}
+			nonMatching := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   nonnsName,
+					Labels: map[string]string{"key": "other-" + suffix},
+				},
+			}
+			Expect(k8sClient.Create(ctx, matching)).To(Succeed())
+			Expect(k8sClient.Create(ctx, nonMatching)).To(Succeed())
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: crq1Name,
+				},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"key": "value-" + suffix},
+					},
+					Hard: quotav1alpha1.ResourceList{},
+				},
+			}
+			Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, matching)
+				_ = k8sClient.Delete(ctx, nonMatching)
+				_ = k8sClient.Delete(ctx, crq)
+			})
+			// Change label to match
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: nonnsName}, nonMatching)).To(Succeed())
+			nonMatching.Labels["key"] = "value-" + suffix
+			Expect(k8sClient.Update(ctx, nonMatching)).To(Succeed())
+			Eventually(func() []string {
+				return getCRQStatusNamespaces(crq1Name)
+			}, "10s", "1s").Should(ContainElement(nonnsName))
+		})
 	})
 })

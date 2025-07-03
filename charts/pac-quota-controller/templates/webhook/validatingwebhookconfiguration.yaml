@@ -49,4 +49,22 @@ webhooks:
         operations: ["CREATE", "UPDATE"]
         resources: ["namespaces"]
     namespaceSelector: {}
+  - name: vpod-v1alpha1.powerapp.cloud
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    clientConfig:
+      {{- if not .Values.certmanager.enable }}
+      caBundle: {{ .Values.webhook.customTLS.caBundle }}
+      {{- end }}
+      service:
+        name: pac-quota-controller-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /validate--v1-pod
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+    namespaceSelector: {}
 {{- end }}

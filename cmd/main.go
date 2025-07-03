@@ -112,6 +112,10 @@ func main() {
 				setupLog.Error(err, "unable to set up Namespace webhook")
 				os.Exit(1)
 			}
+			if err := v1alpha1.SetupPodWebhookWithManager(mgr); err != nil {
+				setupLog.Error(err, "unable to set up Pod webhook")
+				os.Exit(1)
+			}
 			setupLog.Info("Webhook configured", "port", cfg.WebhookPort)
 			// Start the manager
 			manager.Start(mgr)

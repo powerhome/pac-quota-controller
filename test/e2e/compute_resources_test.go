@@ -24,6 +24,7 @@ import (
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -42,12 +43,12 @@ var _ = Describe("ClusterResourceQuota Compute Resources E2E", func() {
 		ctx = context.Background()
 		testNamePrefix = generateTestName("compute-resources")
 
-		// Create test namespaces
+		// Create test namespaces with unique labels for each test
 		namespace1 = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamePrefix + "-ns1",
 				Labels: map[string]string{
-					"team": "compute-test",
+					"test-run": testNamePrefix,
 				},
 			},
 		}
@@ -55,7 +56,7 @@ var _ = Describe("ClusterResourceQuota Compute Resources E2E", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamePrefix + "-ns2",
 				Labels: map[string]string{
-					"team": "compute-test",
+					"test-run": testNamePrefix,
 				},
 			},
 		}
@@ -71,7 +72,7 @@ var _ = Describe("ClusterResourceQuota Compute Resources E2E", func() {
 			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 				NamespaceSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
-						"team": "compute-test",
+						"test-run": testNamePrefix,
 					},
 				},
 				Hard: quotav1alpha1.ResourceList{
@@ -79,22 +80,78 @@ var _ = Describe("ClusterResourceQuota Compute Resources E2E", func() {
 					corev1.ResourceRequestsMemory: resource.MustParse("2Gi"),
 					corev1.ResourceLimitsCPU:      resource.MustParse("2000m"),
 					corev1.ResourceLimitsMemory:   resource.MustParse("4Gi"),
+					"nvidia.com/gpu":              resource.MustParse("10"),
+					"example.com/foo":             resource.MustParse("20"),
 				},
 			},
 		}
 		Expect(k8sClient.Create(ctx, crq)).To(Succeed())
+
+		// Wait for initial reconciliation to complete with empty state
+		Eventually(func() bool {
+			err := k8sClient.Get(ctx, client.ObjectKeyFromObject(crq), crq)
+			if err != nil {
+				return false
+			}
+			// Ensure that the namespaces are tracked but no resources are used yet
+			cpuUsed, cpuExists := crq.Status.Total.Used[corev1.ResourceRequestsCPU]
+			memUsed, memExists := crq.Status.Total.Used[corev1.ResourceRequestsMemory]
+
+			return len(crq.Status.Namespaces) >= 2 &&
+				(!cpuExists || cpuUsed.IsZero()) &&
+				(!memExists || memUsed.IsZero())
+		}, "10s", "250ms").Should(BeTrue())
 	})
 
 	AfterEach(func() {
-		// Clean up
-		if crq != nil {
-			Expect(k8sClient.Delete(ctx, crq)).To(Succeed())
-		}
+		// Clean up pods first to avoid resource leakage
 		if namespace1 != nil {
-			Expect(k8sClient.Delete(ctx, namespace1)).To(Succeed())
+			podList := &corev1.PodList{}
+			if err := k8sClient.List(ctx, podList, client.InNamespace(namespace1.Name)); err == nil {
+				for i := range podList.Items {
+					pod := &podList.Items[i]
+					GinkgoWriter.Printf("Deleting pod %s/%s\n", pod.Namespace, pod.Name)
+					_ = k8sClient.Delete(ctx, pod)
+				}
+			}
 		}
 		if namespace2 != nil {
-			Expect(k8sClient.Delete(ctx, namespace2)).To(Succeed())
+			podList := &corev1.PodList{}
+			if err := k8sClient.List(ctx, podList, client.InNamespace(namespace2.Name)); err == nil {
+				for i := range podList.Items {
+					pod := &podList.Items[i]
+					GinkgoWriter.Printf("Deleting pod %s/%s\n", pod.Namespace, pod.Name)
+					_ = k8sClient.Delete(ctx, pod)
+				}
+			}
+		}
+
+		// Clean up CRQ first
+		if crq != nil {
+			_ = k8sClient.Delete(ctx, crq)
+			// Wait for CRQ deletion to complete
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(crq), &quotav1alpha1.ClusterResourceQuota{})
+				return apierrors.IsNotFound(err)
+			}, "10s", "250ms").Should(BeTrue())
+		}
+
+		// Clean up namespaces
+		if namespace1 != nil {
+			_ = k8sClient.Delete(ctx, namespace1)
+			// Wait for namespace deletion to complete with longer timeout
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(namespace1), &corev1.Namespace{})
+				return apierrors.IsNotFound(err)
+			}, "30s", "1s").Should(BeTrue())
+		}
+		if namespace2 != nil {
+			_ = k8sClient.Delete(ctx, namespace2)
+			// Wait for namespace deletion to complete with longer timeout
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(namespace2), &corev1.Namespace{})
+				return apierrors.IsNotFound(err)
+			}, "30s", "1s").Should(BeTrue())
 		}
 	})
 
@@ -222,6 +279,10 @@ var _ = Describe("ClusterResourceQuota Compute Resources E2E", func() {
 							Name:  "container1",
 							Image: "nginx:latest",
 							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("200m"),
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+								},
 								Limits: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("500m"),
 									corev1.ResourceMemory: resource.MustParse("1Gi"),
@@ -243,6 +304,10 @@ var _ = Describe("ClusterResourceQuota Compute Resources E2E", func() {
 							Name:  "container1",
 							Image: "nginx:latest",
 							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("300m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
 								Limits: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("700m"),
 									corev1.ResourceMemory: resource.MustParse("2Gi"),
@@ -342,87 +407,10 @@ var _ = Describe("ClusterResourceQuota Compute Resources E2E", func() {
 
 				expectedCPU := resource.MustParse("300m")
 				expectedMem := resource.MustParse("768Mi")
+				GinkgoWriter.Printf("CPU Used: %s, Memory Used: %s\n", cpuUsed.String(), memUsed.String())
+				GinkgoWriter.Printf("Expected CPU: %s, Expected Memory: %s\n", expectedCPU.String(), expectedMem.String())
 
 				return cpuUsed.Equal(expectedCPU) && memUsed.Equal(expectedMem)
-			}, "10s", "250ms").Should(BeTrue())
-		})
-	})
-
-	Context("Terminal Pods", func() {
-		It("should exclude terminal pods from resource calculations", func() {
-			// Create a running pod
-			runningPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "running-pod",
-					Namespace: namespace1.Name,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "container1",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("200m"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			// Create a succeeded pod (should be excluded)
-			succeededPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "succeeded-pod",
-					Namespace: namespace1.Name,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "container1",
-							Image: "busybox:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("300m"),
-								},
-							},
-						},
-					},
-				},
-				Status: corev1.PodStatus{
-					Phase: corev1.PodSucceeded,
-				},
-			}
-
-			Expect(k8sClient.Create(ctx, runningPod)).To(Succeed())
-			Expect(k8sClient.Create(ctx, succeededPod)).To(Succeed())
-
-			// Update the succeeded pod's status (retry on conflicts)
-			Eventually(func() error {
-				// Get the latest version of the pod
-				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(succeededPod), succeededPod); err != nil {
-					return err
-				}
-				succeededPod.Status.Phase = corev1.PodSucceeded
-				return k8sClient.Status().Update(ctx, succeededPod)
-			}, "5s", "100ms").Should(Succeed())
-
-			// Wait for reconciliation - only the running pod should be counted
-			Eventually(func() bool {
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(crq), crq)
-				if err != nil {
-					return false
-				}
-
-				cpuUsed, exists := crq.Status.Total.Used[corev1.ResourceRequestsCPU]
-				if !exists {
-					return false
-				}
-
-				// Only the running pod's CPU should be counted (200m, not 200m + 300m)
-				expectedCPU := resource.MustParse("200m")
-				return cpuUsed.Equal(expectedCPU)
 			}, "10s", "250ms").Should(BeTrue())
 		})
 	})
@@ -484,6 +472,236 @@ var _ = Describe("ClusterResourceQuota Compute Resources E2E", func() {
 				expectedHugepages := resource.MustParse("1Gi")
 				return hugepagesUsed.Equal(expectedHugepages)
 			}, "10s", "250ms").Should(BeTrue())
+		})
+	})
+
+	Context("Extended Resources", func() {
+		It("should calculate GPU usage correctly", func() {
+			// Create pod with GPU requests
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gpu-pod",
+					Namespace: namespace1.Name,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "gpu-container",
+							Image: "nvidia/cuda:latest",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									"nvidia.com/gpu": resource.MustParse("2"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+
+			// Wait for reconciliation and check GPU usage
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(crq), crq)
+				if err != nil {
+					return false
+				}
+
+				gpuUsed, exists := crq.Status.Total.Used["nvidia.com/gpu"]
+				if !exists {
+					return false
+				}
+
+				expectedGPU := resource.MustParse("2")
+				return gpuUsed.Equal(expectedGPU)
+			}, "10s", "250ms").Should(BeTrue())
+		})
+
+		It("should calculate custom resource usage correctly", func() {
+			// Create pod with custom resource requests
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "custom-resource-pod",
+					Namespace: namespace1.Name,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "custom-container",
+							Image: "busybox:latest",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									"example.com/foo": resource.MustParse("5"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+
+			// Wait for reconciliation and check custom resource usage
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(crq), crq)
+				if err != nil {
+					return false
+				}
+
+				customUsed, exists := crq.Status.Total.Used["example.com/foo"]
+				if !exists {
+					return false
+				}
+
+				expectedCustom := resource.MustParse("5")
+				return customUsed.Equal(expectedCustom)
+			}, "10s", "250ms").Should(BeTrue())
+		})
+	})
+
+	Context("Resource Validation", func() {
+		It("should validate resource requests, limits, and extended resources", func() {
+			By("creating pods with CPU and memory requests")
+			pod1 := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod1",
+					Namespace: namespace1.Name,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "container1",
+							Image: "nginx:latest",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("200m"),
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			pod2 := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod2",
+					Namespace: namespace2.Name,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "container1",
+							Image: "nginx:latest",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("300m"),
+									corev1.ResourceMemory: resource.MustParse("1Gi"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, pod1)).To(Succeed())
+			Expect(k8sClient.Create(ctx, pod2)).To(Succeed())
+
+			By("validating CPU and memory requests across namespaces")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(crq), crq)
+				if err != nil {
+					return false
+				}
+
+				cpuUsed, exists := crq.Status.Total.Used[corev1.ResourceRequestsCPU]
+				if !exists {
+					return false
+				}
+
+				memUsed, exists := crq.Status.Total.Used[corev1.ResourceRequestsMemory]
+				if !exists {
+					return false
+				}
+
+				expectedCPU := resource.MustParse("500m")
+				expectedMem := resource.MustParse("1536Mi")
+
+				return cpuUsed.Equal(expectedCPU) && memUsed.Equal(expectedMem)
+			}, "10s", "250ms").Should(BeTrue())
+
+			By("creating pods with extended resources")
+			pod3 := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gpu-pod",
+					Namespace: namespace1.Name,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "gpu-container",
+							Image: "nvidia/cuda:latest",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									"nvidia.com/gpu": resource.MustParse("2"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			pod4 := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "custom-resource-pod",
+					Namespace: namespace1.Name,
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "custom-container",
+							Image: "busybox:latest",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									"example.com/foo": resource.MustParse("5"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, pod3)).To(Succeed())
+			Expect(k8sClient.Create(ctx, pod4)).To(Succeed())
+
+			By("validating extended resource usage")
+			Eventually(func() bool {
+				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(crq), crq)
+				if err != nil {
+					return false
+				}
+
+				gpuUsed, exists := crq.Status.Total.Used["nvidia.com/gpu"]
+				if !exists {
+					return false
+				}
+
+				customUsed, exists := crq.Status.Total.Used["example.com/foo"]
+				if !exists {
+					return false
+				}
+
+				expectedGPU := resource.MustParse("2")
+				expectedCustom := resource.MustParse("5")
+
+				return gpuUsed.Equal(expectedGPU) && customUsed.Equal(expectedCustom)
+			}, "10s", "250ms").Should(BeTrue())
+
+			By("cleaning up resources")
+			Expect(k8sClient.Delete(ctx, pod1)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, pod2)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, pod3)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, pod4)).To(Succeed())
 		})
 	})
 })

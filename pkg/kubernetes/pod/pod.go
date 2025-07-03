@@ -1,6 +1,8 @@
 package pod
 
 import (
+	"reflect"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -62,4 +64,11 @@ func getContainerResourceUsage(container corev1.Container, resourceName corev1.R
 	}
 
 	return resource.Quantity{}
+}
+
+// SpecEqual compares two pod specs to determine if they are equivalent.
+// This is used to detect if a pod update actually changes the resource requirements.
+func SpecEqual(oldPod, newPod *corev1.Pod) bool {
+	// TODO: There is probably a better/more efficient way to compare pod specs
+	return reflect.DeepEqual(oldPod.Spec, newPod.Spec)
 }
