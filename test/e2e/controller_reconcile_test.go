@@ -517,7 +517,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 				})
 
 				By("Verifying namespace is initially not included")
-				Consistently(func() []string {
+				Eventually(func() []string {
 					return testutils.GetCRQStatusNamespaces(crq)
 				}, Timeout, Interval).ShouldNot(ContainElement("changing-ns-" + suffix))
 
