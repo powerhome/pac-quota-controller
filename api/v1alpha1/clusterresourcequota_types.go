@@ -84,7 +84,7 @@ type ClusterResourceQuotaSpec struct {
 type ClusterResourceQuotaStatus struct {
 	// Total defines the actual enforced quota and its current usage across all namespaces
 	// +optional
-	Total ResourceQuotaStatus `json:"total,omitempty"`
+	Total ResourceQuotaStatus `json:"total"`
 
 	// Namespaces slices the usage by namespace
 	// +optional
