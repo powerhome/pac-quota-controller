@@ -354,7 +354,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					nil)
 				Expect(err).NotTo(HaveOccurred())
 				DeferCleanup(func() {
-					_ = k8sClient.Delete(ctx, job)
+					_ = k8sClient.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
 				})
 
 				// Wait longer for job to fail and become terminal
@@ -381,7 +381,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					nil)
 				Expect(err).NotTo(HaveOccurred())
 				DeferCleanup(func() {
-					_ = k8sClient.Delete(ctx, job)
+					_ = k8sClient.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
 				})
 
 				// Wait longer for job to succeed and become terminal
@@ -616,7 +616,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					})
 				Expect(err).NotTo(HaveOccurred())
 				DeferCleanup(func() {
-					_ = k8sClient.Delete(ctx, failedJob)
+					_ = k8sClient.Delete(ctx, failedJob, client.PropagationPolicy(metav1.DeletePropagationBackground))
 				})
 
 				// Succeeded Job: Backup job that completes successfully
@@ -636,7 +636,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					})
 				Expect(err).NotTo(HaveOccurred())
 				DeferCleanup(func() {
-					_ = k8sClient.Delete(ctx, succeededJob)
+					_ = k8sClient.Delete(ctx, succeededJob, client.PropagationPolicy(metav1.DeletePropagationBackground))
 				})
 
 				By("Waiting for jobs to reach terminal state")
@@ -794,7 +794,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					})
 				Expect(err).NotTo(HaveOccurred())
 				DeferCleanup(func() {
-					_ = k8sClient.Delete(ctx, longJob)
+					_ = k8sClient.Delete(ctx, longJob, client.PropagationPolicy(metav1.DeletePropagationBackground))
 				})
 
 				By("Monitoring resource usage increases during job execution")
@@ -875,7 +875,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					})
 				Expect(err).NotTo(HaveOccurred())
 				DeferCleanup(func() {
-					_ = k8sClient.Delete(ctx, shortJob)
+					_ = k8sClient.Delete(ctx, shortJob, client.PropagationPolicy(metav1.DeletePropagationBackground))
 				})
 
 				By("Creating a medium job (6 seconds)")
@@ -895,7 +895,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					})
 				Expect(err).NotTo(HaveOccurred())
 				DeferCleanup(func() {
-					_ = k8sClient.Delete(ctx, mediumJob)
+					_ = k8sClient.Delete(ctx, mediumJob, client.PropagationPolicy(metav1.DeletePropagationBackground))
 				})
 
 				By("Verifying both jobs are initially counted")
@@ -911,7 +911,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 				}, Timeout, Interval).Should(Succeed())
 
 				By("Waiting for short job to complete, medium job still running")
-				time.Sleep(4 * time.Second) // Short job should be done, medium job still running
+				time.Sleep(2 * time.Second) // Short job should be done, medium job still running
 
 				Eventually(func() error {
 					usage := testutils.GetRefreshedCRQStatusUsage(ctx, k8sClient, crq.Name)
