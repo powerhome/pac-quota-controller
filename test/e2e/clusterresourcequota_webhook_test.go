@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -73,6 +74,7 @@ var _ = Describe("ClusterResourceQuota Webhook", func() {
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
 			Expect(err).ToNot(HaveOccurred())
+			time.Sleep(2 * time.Second) // Ensure CRQ is updated by reconciliation
 
 			By("Updating the ClusterResourceQuota spec")
 			latestCRQ := &quotav1alpha1.ClusterResourceQuota{}
