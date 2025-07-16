@@ -45,6 +45,10 @@ func getContainerResourceUsage(container corev1.Container, resourceName corev1.R
 		if memory, ok := container.Resources.Requests[corev1.ResourceMemory]; ok {
 			return memory
 		}
+	case corev1.ResourceRequestsEphemeralStorage:
+		if ephemeralStorage, ok := container.Resources.Requests[corev1.ResourceEphemeralStorage]; ok {
+			return ephemeralStorage
+		}
 	case corev1.ResourceLimitsCPU:
 		if cpu, ok := container.Resources.Limits[corev1.ResourceCPU]; ok {
 			return cpu

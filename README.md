@@ -65,7 +65,18 @@ spec:
     requests.memory: 20Gi
     limits.cpu: "20"
     limits.memory: 40Gi
+    # Storage resources
+    requests.storage: "100Gi"                    # PVC storage requests
+    requests.ephemeral-storage: "20Gi"           # Pod ephemeral storage requests
 ```
+
+This quota will apply to all namespaces with the label `team: frontend` and limit:
+
+- Total pods to 50
+- Total CPU requests to 10 cores and limits to 20 cores  
+- Total memory requests to 20Gi and limits to 40Gi
+- Total storage requests from PVCs to 100Gi
+- Total ephemeral storage requests from Pods to 20Gi
 
 ## Contributing
 

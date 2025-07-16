@@ -7,7 +7,6 @@ import (
 	"io"
 	"math/rand"
 	"slices"
-	"strconv"
 	"time"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -28,10 +27,13 @@ func GenerateResourceName(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, rand.Intn(1000000))
 }
 
-// testutils.GenerateTestSuffix generates a unique suffix for test resources.
+// GenerateTestSuffix generates a unique suffix for test resources.
 // This is useful when tests need just a suffix for multiple resources.
+// Keeps the suffix short to respect Kubernetes 63-character name limits.
 func GenerateTestSuffix() string {
-	return strconv.Itoa(rand.Intn(1000000))
+	// Use Unix timestamp (seconds) + 4-digit random to keep it short but unique
+	// This gives us format like "1642531200-1234" (14 chars max)
+	return fmt.Sprintf("%d-%04d", time.Now().Unix(), rand.Intn(10000))
 }
 
 // ServiceAccountToken returns a token for the specified service account in the given namespace.
