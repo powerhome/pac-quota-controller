@@ -336,8 +336,7 @@ var _ = Describe("Pod Webhook", func() {
 			It("should deny pod creation when limits-only pod exceeds limits quota", func() {
 				testPod.Spec.Containers[0].Resources = corev1.ResourceRequirements{
 					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("3"),   // Would exceed the 4 CPU limit (2 already used)
-						corev1.ResourceMemory: resource.MustParse("5Gi"), // Would exceed the 8Gi limit (4Gi already used)
+						corev1.ResourceCPU: resource.MustParse("3"), // Would exceed the 4 CPU limit (2 already used)
 					},
 				}
 				_, err := validator.ValidateCreate(ctx, testPod)
