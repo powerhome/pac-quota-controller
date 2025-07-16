@@ -129,13 +129,19 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 					Hard: quotav1alpha1.ResourceList{
 						// General quotas
 						corev1.ResourceRequestsStorage:        resource.MustParse("20Gi"),
-						corev1.ResourcePersistentVolumeClaims: resource.MustParse("10"),
-
-						// Storage class specific quotas
-						corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/requests.storage", storageClassFast)):       resource.MustParse("5Gi"),
-						corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassFast)): resource.MustParse("3"),
-						corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/requests.storage", storageClassSlow)):       resource.MustParse("10Gi"),
-						corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassSlow)): resource.MustParse("2"),
+						corev1.ResourcePersistentVolumeClaims: resource.MustParse("10"), // Storage class specific quotas
+						corev1.ResourceName(fmt.Sprintf(
+							"%s.storageclass.storage.k8s.io/requests.storage", storageClassFast,
+						)): resource.MustParse("5Gi"),
+						corev1.ResourceName(fmt.Sprintf(
+							"%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassFast,
+						)): resource.MustParse("3"),
+						corev1.ResourceName(fmt.Sprintf(
+							"%s.storageclass.storage.k8s.io/requests.storage", storageClassSlow,
+						)): resource.MustParse("10Gi"),
+						corev1.ResourceName(fmt.Sprintf(
+							"%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassSlow,
+						)): resource.MustParse("2"),
 					},
 				},
 			}
@@ -207,17 +213,24 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 						MatchLabels: map[string]string{
 							"storage-class-test": "enabled",
 						},
-					},
-					Hard: quotav1alpha1.ResourceList{
+					}, Hard: quotav1alpha1.ResourceList{
 						// Only storage quota for fast SSD (no count limit)
-						corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/requests.storage", storageClassFast)): resource.MustParse("3Gi"),
+						corev1.ResourceName(fmt.Sprintf(
+							"%s.storageclass.storage.k8s.io/requests.storage", storageClassFast,
+						)): resource.MustParse("3Gi"),
 
 						// Only count quota for slow HDD (no storage limit)
-						corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassSlow)): resource.MustParse("2"),
+						corev1.ResourceName(fmt.Sprintf(
+							"%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassSlow,
+						)): resource.MustParse("2"),
 
 						// Both quotas for custom storage class
-						corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/requests.storage", storageClassCustom)):       resource.MustParse("2Gi"),
-						corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassCustom)): resource.MustParse("1"),
+						corev1.ResourceName(fmt.Sprintf(
+							"%s.storageclass.storage.k8s.io/requests.storage", storageClassCustom,
+						)): resource.MustParse("2Gi"),
+						corev1.ResourceName(fmt.Sprintf(
+							"%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassCustom,
+						)): resource.MustParse("1"),
 					},
 				},
 			}
@@ -230,21 +243,26 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			fastPVC2 := createTestPVC("fast-mixed-2", testNamespace, storageClassFast, "1Gi")
 			Expect(k8sClient.Create(ctx, fastPVC2)).To(Succeed())
 
-			fastPVC3 := createTestPVC("fast-mixed-3", testNamespace, storageClassFast, "100Mi") // Many PVCs allowed, only storage matters
+			// Many PVCs allowed, only storage matters
+			fastPVC3 := createTestPVC("fast-mixed-3", testNamespace, storageClassFast, "100Mi")
 			Expect(k8sClient.Create(ctx, fastPVC3)).To(Succeed())
 
-			fastPVC4 := createTestPVC("fast-mixed-4", testNamespace, storageClassFast, "1Gi") // This would exceed 3Gi storage limit
+			// This would exceed 3Gi storage limit
+			fastPVC4 := createTestPVC("fast-mixed-4", testNamespace, storageClassFast, "1Gi")
 			err := k8sClient.Create(ctx, fastPVC4)
 			Expect(err).To(HaveOccurred(), "Should block when fast SSD storage quota exceeded")
 
 			// Test slow HDD - only count quota applies
-			slowPVC1 := createTestPVC("slow-mixed-1", testNamespace, storageClassSlow, "100Gi") // Large storage OK, only count matters
+			// Large storage OK, only count matters
+			slowPVC1 := createTestPVC("slow-mixed-1", testNamespace, storageClassSlow, "100Gi")
 			Expect(k8sClient.Create(ctx, slowPVC1)).To(Succeed())
 
-			slowPVC2 := createTestPVC("slow-mixed-2", testNamespace, storageClassSlow, "200Gi") // Very large but still allowed
+			// Very large but still allowed
+			slowPVC2 := createTestPVC("slow-mixed-2", testNamespace, storageClassSlow, "200Gi")
 			Expect(k8sClient.Create(ctx, slowPVC2)).To(Succeed())
 
-			slowPVC3 := createTestPVC("slow-mixed-3", testNamespace, storageClassSlow, "1Mi") // This would exceed count limit of 2
+			// This would exceed count limit of 2
+			slowPVC3 := createTestPVC("slow-mixed-3", testNamespace, storageClassSlow, "1Mi")
 			err = k8sClient.Create(ctx, slowPVC3)
 			Expect(err).To(HaveOccurred(), "Should block when slow HDD count quota exceeded")
 
@@ -252,7 +270,8 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			customPVC1 := createTestPVC("custom-mixed-1", testNamespace, storageClassCustom, "1Gi")
 			Expect(k8sClient.Create(ctx, customPVC1)).To(Succeed())
 
-			customPVC2 := createTestPVC("custom-mixed-2", testNamespace, storageClassCustom, "500Mi") // Would exceed count limit of 1
+			// Would exceed count limit of 1
+			customPVC2 := createTestPVC("custom-mixed-2", testNamespace, storageClassCustom, "500Mi")
 			err = k8sClient.Create(ctx, customPVC2)
 			Expect(err).To(HaveOccurred(), "Should block when custom storage class count quota exceeded")
 		})

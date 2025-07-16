@@ -35,16 +35,18 @@ type StorageResourceCalculator struct {
 }
 
 // NewStorageResourceCalculator creates a new instance of StorageResourceCalculator.
-func NewStorageResourceCalculator(client client.Client) *StorageResourceCalculator {
+func NewStorageResourceCalculator(c client.Client) *StorageResourceCalculator {
 	return &StorageResourceCalculator{
-		Client: client,
+		Client: c,
 	}
 }
 
 // CalculateStorageUsage calculates the total storage usage for a given namespace.
 // It lists all PersistentVolumeClaims in the namespace and sums their storage requests.
 // This implements the same logic as Kubernetes ResourceQuota for storage resources.
-func (c *StorageResourceCalculator) CalculateStorageUsage(ctx context.Context, namespace string) (resource.Quantity, error) {
+func (c *StorageResourceCalculator) CalculateStorageUsage(
+	ctx context.Context, namespace string,
+) (resource.Quantity, error) {
 	log.Info("Calculating storage usage", "namespace", namespace)
 
 	// List all PVCs in the namespace
@@ -81,7 +83,9 @@ func (c *StorageResourceCalculator) CalculateStorageUsage(ctx context.Context, n
 // CalculateStorageClassUsage calculates storage usage for a specific storage class in a namespace.
 // This implements Kubernetes ResourceQuota storage class specific quotas:
 // <storage-class-name>.storageclass.storage.k8s.io/requests.storage
-func (c *StorageResourceCalculator) CalculateStorageClassUsage(ctx context.Context, namespace, storageClass string) (resource.Quantity, error) {
+func (c *StorageResourceCalculator) CalculateStorageClassUsage(
+	ctx context.Context, namespace, storageClass string,
+) (resource.Quantity, error) {
 	log.Info("Calculating storage class usage", "namespace", namespace, "storageClass", storageClass)
 
 	// List all PVCs in the namespace
@@ -122,7 +126,9 @@ func (c *StorageResourceCalculator) CalculateStorageClassUsage(ctx context.Conte
 // CalculateStorageClassCount calculates the count of PVCs for a specific storage class in a namespace.
 // This implements Kubernetes ResourceQuota storage class specific quotas:
 // <storage-class-name>.storageclass.storage.k8s.io/persistentvolumeclaims
-func (c *StorageResourceCalculator) CalculateStorageClassCount(ctx context.Context, namespace, storageClass string) (int64, error) {
+func (c *StorageResourceCalculator) CalculateStorageClassCount(
+	ctx context.Context, namespace, storageClass string,
+) (int64, error) {
 	log.Info("Calculating storage class PVC count", "namespace", namespace, "storageClass", storageClass)
 
 	// List all PVCs in the namespace

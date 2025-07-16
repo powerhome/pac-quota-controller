@@ -96,10 +96,10 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 	AfterEach(func() {
 		// Clean up test resources
 		if testCRQ != nil {
-			k8sClient.Delete(ctx, testCRQ)
+			_ = k8sClient.Delete(ctx, testCRQ)
 		}
 		if testNSObj != nil {
-			k8sClient.Delete(ctx, testNSObj)
+			_ = k8sClient.Delete(ctx, testNSObj)
 		}
 	})
 
@@ -251,7 +251,9 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, nonQuotaNS)).To(Succeed())
-			defer k8sClient.Delete(ctx, nonQuotaNS)
+			defer func() {
+				_ = k8sClient.Delete(ctx, nonQuotaNS)
+			}()
 
 			// Create a large PVC in the non-quota namespace
 			pvc := &corev1.PersistentVolumeClaim{
