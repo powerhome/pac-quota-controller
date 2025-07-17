@@ -102,20 +102,36 @@ var _ = Describe("ClusterResourceQuota Webhook", func() {
 			Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
 
 			By("Creating the first ClusterResourceQuota")
-			crq1, err := testutils.CreateClusterResourceQuota(ctx, k8sClient, "crq1", &metav1.LabelSelector{
+			crq1, err := testutils.CreateClusterResourceQuota(ctx, k8sClient, "crq1-"+suffix, &metav1.LabelSelector{
 				MatchLabels: map[string]string{"quota": "limited-" + suffix},
 			}, quotav1alpha1.ResourceList{
 				corev1.ResourcePods: resource.MustParse("10"),
 			})
 			Expect(err).ToNot(HaveOccurred())
 
+			By("Waiting for the first CRQ to be reconciled and have status.namespaces populated")
+			Eventually(func() bool {
+				updatedCRQ := &quotav1alpha1.ClusterResourceQuota{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: crq1.Name}, updatedCRQ); err != nil {
+					return false
+				}
+				// Check if the namespace is in the status
+				for _, nsStatus := range updatedCRQ.Status.Namespaces {
+					if nsStatus.Namespace == namespace.Name {
+						return true
+					}
+				}
+				return false
+			}, time.Second*30, time.Second*1).Should(BeTrue(), "First CRQ should have the namespace in its status")
+
 			By("Attempting to create a second ClusterResourceQuota with overlapping namespace selector")
-			_, err = testutils.CreateClusterResourceQuota(ctx, k8sClient, "crq2", &metav1.LabelSelector{
+			_, err = testutils.CreateClusterResourceQuota(ctx, k8sClient, "crq2-"+suffix, &metav1.LabelSelector{
 				MatchLabels: map[string]string{"quota": "limited-" + suffix},
 			}, quotav1alpha1.ResourceList{
 				corev1.ResourcePods: resource.MustParse("20"),
 			})
 			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("namespace ownership conflict"))
 
 			By("Cleaning up resources")
 			Expect(k8sClient.Delete(ctx, crq1)).To(Succeed())
