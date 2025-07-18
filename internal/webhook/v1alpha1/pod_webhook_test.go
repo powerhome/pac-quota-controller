@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -96,8 +97,9 @@ var _ = Describe("Pod Webhook", func() {
 		mockCRQ = newMockCRQClient()
 
 		validator = &PodCustomValidator{
-			Client:    fakeClient,
-			crqClient: mockCRQ,
+			Client:        fakeClient,
+			crqClient:     mockCRQ,
+			podCalculator: pod.NewPodResourceCalculator(fakeClient),
 		}
 
 		// Create test namespace
@@ -224,6 +226,38 @@ var _ = Describe("Pod Webhook", func() {
 				mockCRQ.setSelector(func(*corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
 					return testCRQ, nil
 				})
+
+				// Create existing pods to match the "used" values in the CRQ status
+				// This simulates the real-world scenario where there are already running pods
+				// that consume resources in the namespace
+				existingPod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-pod",
+						Namespace: "test-namespace",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "existing-container",
+								Image: "nginx:latest",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("1"),   // Matches "used" in CRQ status
+										corev1.ResourceMemory: resource.MustParse("2Gi"), // Matches "used" in CRQ status
+									},
+									Limits: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("2"),   // Matches "used" in CRQ status
+										corev1.ResourceMemory: resource.MustParse("4Gi"), // Matches "used" in CRQ status
+									},
+								},
+							},
+						},
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning, // Running pod consumes resources
+					},
+				}
+				Expect(fakeClient.Create(ctx, existingPod)).To(Succeed())
 			})
 
 			It("should allow pod creation within limits", func() {
@@ -299,14 +333,6 @@ var _ = Describe("Pod Webhook", func() {
 				testPod.Spec.Containers[0].Resources = corev1.ResourceRequirements{}
 				_, err := validator.ValidateCreate(ctx, testPod)
 				Expect(err).ToNot(HaveOccurred())
-			})
-
-			It("should return error when CRQ status cannot be retrieved", func() {
-				// Remove the CRQ from the fake client to simulate not found
-				Expect(fakeClient.Delete(ctx, testCRQ)).To(Succeed())
-				_, err := validator.ValidateCreate(ctx, testPod)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("failed to get current CRQ status"))
 			})
 
 			It("should handle pods with limits but no requests", func() {
@@ -468,6 +494,38 @@ var _ = Describe("Pod Webhook", func() {
 				mockCRQ.setSelector(func(*corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
 					return testCRQ, nil
 				})
+
+				// Create existing pods to match the "used" values in the CRQ status
+				// This simulates the real-world scenario where there are already running pods
+				// that consume resources in the namespace
+				existingPod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-pod-update",
+						Namespace: "test-namespace",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "existing-container",
+								Image: "nginx:latest",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("1"),   // Matches "used" in CRQ status
+										corev1.ResourceMemory: resource.MustParse("2Gi"), // Matches "used" in CRQ status
+									},
+									Limits: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("2"),   // Matches "used" in CRQ status
+										corev1.ResourceMemory: resource.MustParse("4Gi"), // Matches "used" in CRQ status
+									},
+								},
+							},
+						},
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning, // Running pod consumes resources
+					},
+				}
+				Expect(fakeClient.Create(ctx, existingPod)).To(Succeed())
 			})
 
 			It("should allow pod update within limits", func() {
@@ -550,6 +608,38 @@ var _ = Describe("Pod Webhook", func() {
 				mockCRQ.setSelector(func(*corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
 					return testCRQ, nil
 				})
+
+				// Create existing pods to match the "used" values in the CRQ status
+				// This simulates the real-world scenario where there are already running pods
+				// that consume resources in the namespace
+				existingPod := &corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "existing-pod-config",
+						Namespace: "test-namespace",
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:  "existing-container",
+								Image: "nginx:latest",
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("1"),   // Matches "used" in CRQ status
+										corev1.ResourceMemory: resource.MustParse("2Gi"), // Matches "used" in CRQ status
+									},
+									Limits: corev1.ResourceList{
+										corev1.ResourceCPU:    resource.MustParse("2"),   // Matches "used" in CRQ status
+										corev1.ResourceMemory: resource.MustParse("4Gi"), // Matches "used" in CRQ status
+									},
+								},
+							},
+						},
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning, // Running pod consumes resources
+					},
+				}
+				Expect(fakeClient.Create(ctx, existingPod)).To(Succeed())
 			})
 
 			It("should handle limits-only to requests-only changes", func() {

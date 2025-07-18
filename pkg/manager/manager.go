@@ -64,7 +64,7 @@ func SetupManager(
 // SetupControllers sets up all controllers with the manager
 func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
 	// Initialize compute resource calculator
-	computeCalculator := pod.NewComputeResourceCalculator(mgr.GetClient())
+	computeCalculator := pod.NewPodResourceCalculator(mgr.GetClient())
 
 	if err := (&controller.ClusterResourceQuotaReconciler{
 		Client:                   mgr.GetClient(),

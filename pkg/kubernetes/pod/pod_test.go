@@ -33,7 +33,7 @@ var _ = Describe("Pod", func() {
 					Phase: corev1.PodSucceeded,
 				},
 			}
-			Expect(IsTerminal(pod)).To(BeTrue())
+			Expect(IsPodTerminal(pod)).To(BeTrue())
 		})
 
 		It("should return true for failed pods", func() {
@@ -42,7 +42,7 @@ var _ = Describe("Pod", func() {
 					Phase: corev1.PodFailed,
 				},
 			}
-			Expect(IsTerminal(pod)).To(BeTrue())
+			Expect(IsPodTerminal(pod)).To(BeTrue())
 		})
 
 		It("should return false for running pods", func() {
@@ -51,7 +51,7 @@ var _ = Describe("Pod", func() {
 					Phase: corev1.PodRunning,
 				},
 			}
-			Expect(IsTerminal(pod)).To(BeFalse())
+			Expect(IsPodTerminal(pod)).To(BeFalse())
 		})
 
 		It("should return false for pending pods", func() {
@@ -60,7 +60,7 @@ var _ = Describe("Pod", func() {
 					Phase: corev1.PodPending,
 				},
 			}
-			Expect(IsTerminal(pod)).To(BeFalse())
+			Expect(IsPodTerminal(pod)).To(BeFalse())
 		})
 
 		It("should return false for unknown phase pods", func() {
@@ -69,7 +69,7 @@ var _ = Describe("Pod", func() {
 					Phase: corev1.PodUnknown,
 				},
 			}
-			Expect(IsTerminal(pod)).To(BeFalse())
+			Expect(IsPodTerminal(pod)).To(BeFalse())
 		})
 	})
 
@@ -99,7 +99,7 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			result := CalculateResourceUsage(pod, corev1.ResourceRequestsCPU)
+			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
 			expected := resource.MustParse("500m")
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
@@ -129,7 +129,7 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			result := CalculateResourceUsage(pod, corev1.ResourceRequestsMemory)
+			result := CalculatePodUsage(pod, corev1.ResourceRequestsMemory)
 			expected := resource.MustParse("1536Mi") // 512Mi + 1024Mi
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
@@ -161,7 +161,7 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			result := CalculateResourceUsage(pod, corev1.ResourceRequestsCPU)
+			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
 			expected := resource.MustParse("300m") // 100m + 200m = 300m
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
@@ -183,7 +183,7 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			result := CalculateResourceUsage(pod, corev1.ResourceLimitsCPU)
+			result := CalculatePodUsage(pod, corev1.ResourceLimitsCPU)
 			expected := resource.MustParse("500m")
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
@@ -205,7 +205,7 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			result := CalculateResourceUsage(pod, corev1.ResourceLimitsMemory)
+			result := CalculatePodUsage(pod, corev1.ResourceLimitsMemory)
 			expected := resource.MustParse("2Gi")
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
@@ -227,7 +227,7 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			result := CalculateResourceUsage(pod, "hugepages-2Mi")
+			result := CalculatePodUsage(pod, "hugepages-2Mi")
 			expected := resource.MustParse("1Gi")
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
@@ -245,7 +245,7 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			result := CalculateResourceUsage(pod, corev1.ResourceRequestsCPU)
+			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
 			expected := resource.MustParse("0")
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
@@ -293,7 +293,7 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			result := CalculateResourceUsage(pod, corev1.ResourceRequestsCPU)
+			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
 			expected := resource.MustParse("425m") // 50m + 75m + 100m + 200m = 425m
 			Expect(result.Equal(expected)).To(BeTrue())
 		})

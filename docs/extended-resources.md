@@ -171,7 +171,7 @@ kubectl apply -f examples/extended-resources-example.yaml
 The extended resources support is implemented in:
 
 - `CalculateResourceUsage()` - Individual pod resource calculation
-- `CalculateComputeUsage()` - Namespace-wide resource aggregation  
+- `CalculatePodUsage()` - Namespace-wide resource aggregation  
 - Both functions automatically handle any resource type through dynamic resource name lookup
 
 This implementation aligns with Kubernetes' ResourceQuota behavior and follows the official specification for extended resources.
