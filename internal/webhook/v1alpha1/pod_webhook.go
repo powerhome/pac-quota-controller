@@ -183,7 +183,7 @@ func (v *PodCustomValidator) validatePodAgainstQuota(ctx context.Context, newPod
 	}
 
 	// Get current real-time usage across all namespaces selected by this CRQ
-	currentUsage, err := v.calculaCurrentUsage(ctx, crq)
+	currentUsage, err := v.calculateCurrentUsage(ctx, crq)
 	if err != nil {
 		return fmt.Errorf("failed to calculate current usage: %w", err)
 	}
@@ -241,7 +241,7 @@ func (v *PodCustomValidator) validatePodUpdateAgainstQuota(ctx context.Context, 
 	}
 
 	// Get current real-time usage across all namespaces selected by this CRQ
-	currentUsage, err := v.calculaCurrentUsage(ctx, crq)
+	currentUsage, err := v.calculateCurrentUsage(ctx, crq)
 	if err != nil {
 		return fmt.Errorf("failed to calculate current usage: %w", err)
 	}
@@ -277,9 +277,9 @@ func (v *PodCustomValidator) validatePodUpdateAgainstQuota(ctx context.Context, 
 	return nil
 }
 
-// calculaCurrentUsage calculates the current resource usage across all namespaces
+// calculateCurrentUsage calculates the current resource usage across all namespaces
 // selected by the CRQ using the existing calculator implementations
-func (v *PodCustomValidator) calculaCurrentUsage(ctx context.Context, crq *quotav1alpha1.ClusterResourceQuota) (map[corev1.ResourceName]resource.Quantity, error) {
+func (v *PodCustomValidator) calculateCurrentUsage(ctx context.Context, crq *quotav1alpha1.ClusterResourceQuota) (map[corev1.ResourceName]resource.Quantity, error) {
 	// Get all namespaces that match this CRQ selector
 	namespaces, err := namespace.GetSelectedNamespaces(ctx, v.Client, crq)
 	if err != nil {
