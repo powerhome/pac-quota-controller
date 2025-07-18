@@ -9,19 +9,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// ComputeResourceCalculator handles compute resource usage calculations for pods
-type ComputeResourceCalculator struct {
+// PodResourceCalculator handles compute resource usage calculations for pods
+type PodResourceCalculator struct {
 	client.Client
 }
 
-// NewComputeResourceCalculator creates a new ComputeResourceCalculator
-func NewComputeResourceCalculator(c client.Client) *ComputeResourceCalculator {
-	return &ComputeResourceCalculator{Client: c}
+// NewPodResourceCalculator creates a new ComputeResourceCalculator
+func NewPodResourceCalculator(c client.Client) *PodResourceCalculator {
+	return &PodResourceCalculator{Client: c}
 }
 
-// CalculateComputeUsage calculates the usage for compute resources (CPU/Memory requests or limits)
+// CalculatePodUsage calculates the usage for compute resources (CPU/Memory requests or limits)
 // across all non-terminal pods in the specified namespace
-func (c *ComputeResourceCalculator) CalculateComputeUsage(
+func (c *PodResourceCalculator) CalculatePodUsage(
 	ctx context.Context,
 	namespace string,
 	resourceName corev1.ResourceName,
@@ -44,11 +44,11 @@ func (c *ComputeResourceCalculator) CalculateComputeUsage(
 		pod := &podList.Items[i]
 
 		// Skip terminal pods (Succeeded or Failed) as they don't consume resources
-		if IsTerminal(pod) {
+		if IsPodTerminal(pod) {
 			continue
 		}
 
-		podUsage := CalculateResourceUsage(pod, resourceName)
+		podUsage := CalculatePodUsage(pod, resourceName)
 		totalUsage.Add(podUsage)
 	}
 

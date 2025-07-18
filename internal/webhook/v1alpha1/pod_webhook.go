@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	corev1 "k8s.io/api/core/v1"
@@ -40,8 +41,9 @@ var podlog = logf.Log.WithName("pod-resource")
 func SetupPodWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).For(&corev1.Pod{}).
 		WithValidator(&PodCustomValidator{
-			Client:    mgr.GetClient(),
-			crqClient: quota.NewCRQClient(mgr.GetClient()),
+			Client:        mgr.GetClient(),
+			crqClient:     quota.NewCRQClient(mgr.GetClient()),
+			podCalculator: pod.NewPodResourceCalculator(mgr.GetClient()),
 		}).
 		Complete()
 }
@@ -50,12 +52,10 @@ func SetupPodWebhookWithManager(mgr ctrl.Manager) error {
 
 // PodCustomValidator struct is responsible for validating the Pod resource
 // when it is created, updated, or deleted.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as this struct is used only for temporary operations and does not need to be deeply copied.
 type PodCustomValidator struct {
 	client.Client
-	crqClient quota.CRQClientInterface
+	crqClient     quota.CRQClientInterface
+	podCalculator *pod.PodResourceCalculator
 }
 
 var _ webhook.CustomValidator = &PodCustomValidator{}
@@ -70,20 +70,20 @@ func (v *PodCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Obj
 
 	// If the pod is in a terminal state, allow creation
 	// Terminal pods don't consume compute resources
-	if pod.IsTerminal(podObj) {
+	if pod.IsPodTerminal(podObj) {
 		return nil, nil
 	}
 
-	// Get the namespace for this pod
-	namespace := &corev1.Namespace{}
-	if err := v.Get(ctx, types.NamespacedName{Name: podObj.GetNamespace()}, namespace); err != nil {
+	// Get the ns for this pod
+	ns := &corev1.Namespace{}
+	if err := v.Get(ctx, types.NamespacedName{Name: podObj.GetNamespace()}, ns); err != nil {
 		return nil, fmt.Errorf("failed to get namespace %s: %w", podObj.GetNamespace(), err)
 	}
 
 	// Find which CRQ (if any) selects this namespace
-	crq, err := v.crqClient.GetCRQByNamespace(ctx, namespace)
+	crq, err := v.crqClient.GetCRQByNamespace(ctx, ns)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get CRQ for namespace %s: %w", namespace.Name, err)
+		return nil, fmt.Errorf("failed to get CRQ for namespace %s: %w", ns.Name, err)
 	}
 
 	// If no CRQ selects this namespace, allow the pod
@@ -121,20 +121,20 @@ func (v *PodCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj 
 
 	// If the new pod is in a terminal state, allow the update
 	// Terminal pods don't consume compute resources
-	if pod.IsTerminal(newPod) {
+	if pod.IsPodTerminal(newPod) {
 		return nil, nil
 	}
 
-	// Get the namespace for this pod
-	namespace := &corev1.Namespace{}
-	if err := v.Get(ctx, types.NamespacedName{Name: newPod.GetNamespace()}, namespace); err != nil {
+	// Get the ns for this pod
+	ns := &corev1.Namespace{}
+	if err := v.Get(ctx, types.NamespacedName{Name: newPod.GetNamespace()}, ns); err != nil {
 		return nil, fmt.Errorf("failed to get namespace %s: %w", newPod.GetNamespace(), err)
 	}
 
 	// Find which CRQ (if any) selects this namespace
-	crq, err := v.crqClient.GetCRQByNamespace(ctx, namespace)
+	crq, err := v.crqClient.GetCRQByNamespace(ctx, ns)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get CRQ for namespace %s: %w", namespace.Name, err)
+		return nil, fmt.Errorf("failed to get CRQ for namespace %s: %w", ns.Name, err)
 	}
 
 	// If no CRQ selects this namespace, allow the update
@@ -164,13 +164,14 @@ func (v *PodCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Obj
 }
 
 // validatePodAgainstQuota checks if creating the pod would exceed CRQ limits
+// Uses real-time calculation across all namespaces selected by the CRQ to avoid race conditions
 func (v *PodCustomValidator) validatePodAgainstQuota(ctx context.Context, newPod *corev1.Pod, crq *quotav1alpha1.ClusterResourceQuota) error {
 	// Calculate resources that the new pod would consume
 	podResources := make(map[corev1.ResourceName]resource.Quantity)
 
 	// Calculate pod resource usage for each resource type in the CRQ
 	for resourceName := range crq.Spec.Hard {
-		podUsage := pod.CalculateResourceUsage(newPod, resourceName)
+		podUsage := pod.CalculatePodUsage(newPod, resourceName)
 		if !podUsage.IsZero() {
 			podResources[resourceName] = podUsage
 		}
@@ -181,32 +182,32 @@ func (v *PodCustomValidator) validatePodAgainstQuota(ctx context.Context, newPod
 		return nil
 	}
 
-	// Get current CRQ to check current usage
-	currentCRQ := &quotav1alpha1.ClusterResourceQuota{}
-	if err := v.Get(ctx, types.NamespacedName{Name: crq.Name}, currentCRQ); err != nil {
-		return fmt.Errorf("failed to get current CRQ status: %w", err)
+	// Get current real-time usage across all namespaces selected by this CRQ
+	currentUsage, err := v.calculaCurrentUsage(ctx, crq)
+	if err != nil {
+		return fmt.Errorf("failed to calculate current usage: %w", err)
 	}
 
 	// Check each resource against quota limits
 	for resourceName, podUsage := range podResources {
-		hardLimit, hasLimit := currentCRQ.Spec.Hard[resourceName]
+		hardLimit, hasLimit := crq.Spec.Hard[resourceName]
 		if !hasLimit {
 			continue // No limit set for this resource
 		}
 
-		currentUsage, hasUsage := currentCRQ.Status.Total.Used[resourceName]
+		currentQuantity, hasUsage := currentUsage[resourceName]
 		if !hasUsage {
-			currentUsage = resource.Quantity{}
+			currentQuantity = resource.Quantity{}
 		}
 
 		// Calculate what the new total would be
-		newTotal := currentUsage.DeepCopy()
+		newTotal := currentQuantity.DeepCopy()
 		newTotal.Add(podUsage)
 
 		// Check if it would exceed the limit
 		if newTotal.Cmp(hardLimit) > 0 {
 			return fmt.Errorf("pod would exceed ClusterResourceQuota %s limit for %s: current usage %s + pod usage %s = %s > limit %s",
-				crq.Name, resourceName, currentUsage.String(), podUsage.String(), newTotal.String(), hardLimit.String())
+				crq.Name, resourceName, currentQuantity.String(), podUsage.String(), newTotal.String(), hardLimit.String())
 		}
 	}
 
@@ -214,14 +215,15 @@ func (v *PodCustomValidator) validatePodAgainstQuota(ctx context.Context, newPod
 }
 
 // validatePodUpdateAgainstQuota checks if updating the pod would exceed CRQ limits
+// Uses real-time calculation across all namespaces selected by the CRQ to avoid race conditions
 func (v *PodCustomValidator) validatePodUpdateAgainstQuota(ctx context.Context, oldPod, newPod *corev1.Pod, crq *quotav1alpha1.ClusterResourceQuota) error {
 	// Calculate the resource difference between old and new pod
 	resourceDelta := make(map[corev1.ResourceName]resource.Quantity)
 
 	// Calculate resource delta for each resource type in the CRQ
 	for resourceName := range crq.Spec.Hard {
-		oldUsage := pod.CalculateResourceUsage(oldPod, resourceName)
-		newUsage := pod.CalculateResourceUsage(newPod, resourceName)
+		oldUsage := pod.CalculatePodUsage(oldPod, resourceName)
+		newUsage := pod.CalculatePodUsage(newPod, resourceName)
 
 		// Calculate the delta (new - old)
 		delta := newUsage.DeepCopy()
@@ -238,10 +240,10 @@ func (v *PodCustomValidator) validatePodUpdateAgainstQuota(ctx context.Context, 
 		return nil
 	}
 
-	// Get current CRQ to check current usage
-	currentCRQ := &quotav1alpha1.ClusterResourceQuota{}
-	if err := v.Get(ctx, types.NamespacedName{Name: crq.Name}, currentCRQ); err != nil {
-		return fmt.Errorf("failed to get current CRQ status: %w", err)
+	// Get current real-time usage across all namespaces selected by this CRQ
+	currentUsage, err := v.calculaCurrentUsage(ctx, crq)
+	if err != nil {
+		return fmt.Errorf("failed to calculate current usage: %w", err)
 	}
 
 	// Check each resource delta against quota limits
@@ -251,26 +253,61 @@ func (v *PodCustomValidator) validatePodUpdateAgainstQuota(ctx context.Context, 
 			continue
 		}
 
-		hardLimit, hasLimit := currentCRQ.Spec.Hard[resourceName]
+		hardLimit, hasLimit := crq.Spec.Hard[resourceName]
 		if !hasLimit {
 			continue // No limit set for this resource
 		}
 
-		currentUsage, hasUsage := currentCRQ.Status.Total.Used[resourceName]
+		currentQuantity, hasUsage := currentUsage[resourceName]
 		if !hasUsage {
-			currentUsage = resource.Quantity{}
+			currentQuantity = resource.Quantity{}
 		}
 
 		// Calculate what the new total would be
-		newTotal := currentUsage.DeepCopy()
+		newTotal := currentQuantity.DeepCopy()
 		newTotal.Add(delta)
 
 		// Check if it would exceed the limit
 		if newTotal.Cmp(hardLimit) > 0 {
 			return fmt.Errorf("pod update would exceed ClusterResourceQuota %s limit for %s: current usage %s + delta %s = %s > limit %s",
-				crq.Name, resourceName, currentUsage.String(), delta.String(), newTotal.String(), hardLimit.String())
+				crq.Name, resourceName, currentQuantity.String(), delta.String(), newTotal.String(), hardLimit.String())
 		}
 	}
 
 	return nil
+}
+
+// calculaCurrentUsage calculates the current resource usage across all namespaces
+// selected by the CRQ using the existing calculator implementations
+func (v *PodCustomValidator) calculaCurrentUsage(ctx context.Context, crq *quotav1alpha1.ClusterResourceQuota) (map[corev1.ResourceName]resource.Quantity, error) {
+	// Get all namespaces that match this CRQ selector
+	namespaces, err := namespace.GetSelectedNamespaces(ctx, v.Client, crq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get matching namespaces: %w", err)
+	}
+
+	// Initialize usage map for all tracked resources
+	currentUsage := make(map[corev1.ResourceName]resource.Quantity)
+	for resourceName := range crq.Spec.Hard {
+		currentUsage[resourceName] = resource.Quantity{}
+	}
+
+	// Calculate usage for each namespace
+	for _, ns := range namespaces {
+		for resourceName := range crq.Spec.Hard {
+			nsUsage, err := v.podCalculator.CalculatePodUsage(ctx, ns, resourceName)
+
+			if err != nil {
+				return nil, fmt.Errorf("failed to calculate %s usage for namespace %s: %w", resourceName, ns, err)
+			}
+
+			// Add namespace usage to total
+			if total, exists := currentUsage[resourceName]; exists {
+				total.Add(nsUsage)
+				currentUsage[resourceName] = total
+			}
+		}
+	}
+
+	return currentUsage, nil
 }

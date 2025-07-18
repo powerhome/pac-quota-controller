@@ -17,6 +17,7 @@ charts/pac-quota-controller/charts
 # Output of the go coverage tool
 *.out
 cover.out
+coverage/
 
 # Go workspace file
 go.work

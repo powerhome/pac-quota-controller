@@ -72,7 +72,7 @@ func (resourceUpdatePredicate) Update(e event.UpdateEvent) bool {
 	// This is important for releasing quota resources when a pod completes.
 	if podOld, ok := e.ObjectOld.(*corev1.Pod); ok {
 		if podNew, ok := e.ObjectNew.(*corev1.Pod); ok {
-			if pod.IsTerminal(podOld) != pod.IsTerminal(podNew) {
+			if pod.IsPodTerminal(podOld) != pod.IsPodTerminal(podNew) {
 				return true
 			}
 		}
@@ -104,7 +104,7 @@ type ClusterResourceQuotaReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
 	crqClient                quota.CRQClientInterface
-	ComputeCalculator        *pod.ComputeResourceCalculator
+	ComputeCalculator        *pod.PodResourceCalculator
 	StorageCalculator        *storage.StorageResourceCalculator
 	OwnNamespace             string
 	ExcludeNamespaceLabelKey string
@@ -282,7 +282,7 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(_ context.Context,
 
 // calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
 func (r *ClusterResourceQuotaReconciler) calculateComputeResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
-	usage, err := r.ComputeCalculator.CalculateComputeUsage(ctx, ns, resourceName)
+	usage, err := r.ComputeCalculator.CalculatePodUsage(ctx, ns, resourceName)
 	if err != nil {
 		log.Error(err, "Failed to calculate compute resources", "resource", resourceName, "namespace", ns)
 		return resource.MustParse("0")

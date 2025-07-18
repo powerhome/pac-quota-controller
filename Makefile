@@ -73,6 +73,11 @@ KIND_CLUSTER ?= pac-quota-controller-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER) || true
 
+.PHONY: install-tools
+install-tools: ## Install development tools
+	go install github.com/onsi/ginkgo/v2/ginkgo@latest
+	go install github.com/onsi/gomega/...@latest
+
 .PHONY: test-e2e-setup
 test-e2e-setup:
 	@echo "[test-e2e-setup] Building manager image..."

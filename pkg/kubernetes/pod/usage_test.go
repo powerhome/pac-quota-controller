@@ -22,7 +22,7 @@ func TestPod(t *testing.T) {
 
 var _ = Describe("ComputeResourceCalculator", func() {
 	var (
-		calculator *ComputeResourceCalculator
+		calculator *PodResourceCalculator
 		fakeClient client.Client
 		ctx        context.Context
 		scheme     *runtime.Scheme
@@ -33,11 +33,11 @@ var _ = Describe("ComputeResourceCalculator", func() {
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
 		fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
-		calculator = NewComputeResourceCalculator(fakeClient)
+		calculator = NewPodResourceCalculator(fakeClient)
 		ctx = context.Background()
 	})
 
-	Context("CalculateComputeUsage", func() {
+	Context("CalculatePodUsage", func() {
 		It("should calculate CPU requests correctly", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -71,7 +71,7 @@ var _ = Describe("ComputeResourceCalculator", func() {
 
 			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
 
-			usage, err := calculator.CalculateComputeUsage(ctx, "test-namespace", corev1.ResourceRequestsCPU)
+			usage, err := calculator.CalculatePodUsage(ctx, "test-namespace", corev1.ResourceRequestsCPU)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(usage.MilliValue()).To(Equal(int64(300))) // 100m + 200m
 		})
@@ -101,7 +101,7 @@ var _ = Describe("ComputeResourceCalculator", func() {
 
 			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
 
-			usage, err := calculator.CalculateComputeUsage(ctx, "test-namespace", corev1.ResourceRequestsMemory)
+			usage, err := calculator.CalculatePodUsage(ctx, "test-namespace", corev1.ResourceRequestsMemory)
 			Expect(err).NotTo(HaveOccurred())
 			expectedMemory := resource.MustParse("128Mi")
 			Expect(usage.Value()).To(Equal(expectedMemory.Value()))
@@ -142,7 +142,7 @@ var _ = Describe("ComputeResourceCalculator", func() {
 
 			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
 
-			usage, err := calculator.CalculateComputeUsage(ctx, "test-namespace", corev1.ResourceRequestsCPU)
+			usage, err := calculator.CalculatePodUsage(ctx, "test-namespace", corev1.ResourceRequestsCPU)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(usage.MilliValue()).To(Equal(int64(150))) // 50m + 100m = 150m
 		})
@@ -218,7 +218,7 @@ var _ = Describe("ComputeResourceCalculator", func() {
 			Expect(fakeClient.Create(ctx, succeededPod)).To(Succeed())
 			Expect(fakeClient.Create(ctx, failedPod)).To(Succeed())
 
-			usage, err := calculator.CalculateComputeUsage(ctx, "test-namespace", corev1.ResourceRequestsCPU)
+			usage, err := calculator.CalculatePodUsage(ctx, "test-namespace", corev1.ResourceRequestsCPU)
 			Expect(err).NotTo(HaveOccurred())
 			// Only the running pod should be counted
 			Expect(usage.MilliValue()).To(Equal(int64(100)))
@@ -245,7 +245,7 @@ var _ = Describe("ComputeResourceCalculator", func() {
 
 			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
 
-			usage, err := calculator.CalculateComputeUsage(ctx, "test-namespace", corev1.ResourceRequestsCPU)
+			usage, err := calculator.CalculatePodUsage(ctx, "test-namespace", corev1.ResourceRequestsCPU)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(usage.MilliValue()).To(Equal(int64(0)))
 		})
@@ -275,13 +275,13 @@ var _ = Describe("ComputeResourceCalculator", func() {
 
 			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
 
-			usage, err := calculator.CalculateComputeUsage(ctx, "test-namespace", corev1.ResourceLimitsCPU)
+			usage, err := calculator.CalculatePodUsage(ctx, "test-namespace", corev1.ResourceLimitsCPU)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(usage.MilliValue()).To(Equal(int64(500)))
 		})
 
 		It("should return zero for empty namespace", func() {
-			usage, err := calculator.CalculateComputeUsage(ctx, "empty-namespace", corev1.ResourceRequestsCPU)
+			usage, err := calculator.CalculatePodUsage(ctx, "empty-namespace", corev1.ResourceRequestsCPU)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(usage.MilliValue()).To(Equal(int64(0)))
 		})
@@ -311,7 +311,7 @@ var _ = Describe("ComputeResourceCalculator", func() {
 
 			Expect(fakeClient.Create(ctx, pod)).To(Succeed())
 
-			usage, err := calculator.CalculateComputeUsage(ctx, "test-namespace", "hugepages-2Mi")
+			usage, err := calculator.CalculatePodUsage(ctx, "test-namespace", "hugepages-2Mi")
 			Expect(err).NotTo(HaveOccurred())
 			expected := resource.MustParse("1Gi")
 			Expect(usage.Equal(expected)).To(BeTrue())

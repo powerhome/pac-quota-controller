@@ -7,15 +7,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// IsTerminal checks if a pod is in a terminal phase (Succeeded or Failed).
+// IsPodTerminal checks if a pod is in a terminal phase (Succeeded or Failed).
 // Terminal pods don't consume compute resources as they're not actively running.
-func IsTerminal(pod *corev1.Pod) bool {
+func IsPodTerminal(pod *corev1.Pod) bool {
 	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
 }
 
-// CalculateResourceUsage calculates the resource usage for a single pod
+// CalculatePodUsage calculates the resource usage for a single pod
 // by summing all resources from both init containers and regular containers.
-func CalculateResourceUsage(pod *corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
+func CalculatePodUsage(pod *corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
 	// Calculate total usage for all containers (init + regular)
 	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
 
