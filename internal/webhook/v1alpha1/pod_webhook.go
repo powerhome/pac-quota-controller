@@ -68,12 +68,6 @@ func (v *PodCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Obj
 	}
 	podlog.Info("Validation for Pod upon creation", "name", podObj.GetName(), "namespace", podObj.GetNamespace())
 
-	// If the pod is in a terminal state, allow creation
-	// Terminal pods don't consume compute resources
-	if pod.IsPodTerminal(podObj) {
-		return nil, nil
-	}
-
 	// Get the ns for this pod
 	ns := &corev1.Namespace{}
 	if err := v.Get(ctx, types.NamespacedName{Name: podObj.GetNamespace()}, ns); err != nil {
