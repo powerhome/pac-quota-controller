@@ -74,7 +74,6 @@ spec:
         nvidia.com/gpu: "2"
         cpu: "500m"
       limits:
-        nvidia.com/gpu: "2"
         cpu: "1"
 ```
 
