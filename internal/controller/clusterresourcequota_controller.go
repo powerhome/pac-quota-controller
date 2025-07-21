@@ -25,7 +25,6 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -104,8 +103,7 @@ type ClusterResourceQuotaReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
 	crqClient                quota.CRQClientInterface
-	ComputeCalculator        *pod.PodResourceCalculator
-	StorageCalculator        *storage.StorageResourceCalculator
+	ComputeCalculator        *pod.ComputeResourceCalculator
 	OwnNamespace             string
 	ExcludeNamespaceLabelKey string
 }
@@ -238,7 +236,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 			case corev1.ResourceRequestsCPU, corev1.ResourceRequestsMemory, corev1.ResourceLimitsCPU, corev1.ResourceLimitsMemory:
 				currentUsage = r.calculateComputeResources(ctx, nsName, resourceName)
 			case corev1.ResourceRequestsStorage:
-				currentUsage = r.calculateStorageResources(ctx, nsName, resourceName)
+				currentUsage = r.calculateStorageResources(ctx, nsName)
 			default:
 				// Handle extended resources (hugepages, GPUs, etc.) via compute calculator
 				// Extended resources are typically consumed by pods, so they should be calculated
@@ -291,18 +289,10 @@ func (r *ClusterResourceQuotaReconciler) calculateComputeResources(ctx context.C
 }
 
 // calculateStorageResources calculates the usage for storage resource quotas.
-func (r *ClusterResourceQuotaReconciler) calculateStorageResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
-	if r.StorageCalculator == nil {
-		log.Error(nil, "StorageCalculator is nil", "namespace", ns, "resource", resourceName)
-		return resource.MustParse("0")
-	}
-
-	usage, err := r.StorageCalculator.CalculateStorageUsage(ctx, ns)
-	if err != nil {
-		log.Error(err, "Failed to calculate storage resources", "resource", resourceName, "namespace", ns)
-		return resource.MustParse("0")
-	}
-	return usage
+func (r *ClusterResourceQuotaReconciler) calculateStorageResources(_ context.Context, ns string) resource.Quantity {
+	// TODO: Implement PVC listing and summing up the storage requests.
+	log.Info("Placeholder: Calculating storage resources", "namespace", ns)
+	return resource.MustParse("0")
 }
 
 // updateStatus updates the status of the ClusterResourceQuota object.
@@ -376,7 +366,7 @@ func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.R
 
 	// Standard compute resources (already handled in switch above, but included for completeness)
 	switch resourceName {
-	case corev1.ResourceRequestsCPU, corev1.ResourceRequestsMemory, corev1.ResourceLimitsCPU, corev1.ResourceLimitsMemory, corev1.ResourceRequestsEphemeralStorage:
+	case corev1.ResourceRequestsCPU, corev1.ResourceRequestsMemory, corev1.ResourceLimitsCPU, corev1.ResourceLimitsMemory:
 		return true
 	}
 
@@ -405,10 +395,6 @@ func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.R
 func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.crqClient == nil {
 		r.crqClient = quota.NewCRQClient(r.Client)
-	}
-
-	if r.StorageCalculator == nil {
-		r.StorageCalculator = storage.NewStorageResourceCalculator(r.Client)
 	}
 
 	// Predicate to filter out updates to status subresource

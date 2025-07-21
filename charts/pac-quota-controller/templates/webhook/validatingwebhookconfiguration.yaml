@@ -67,22 +67,4 @@ webhooks:
         operations: ["CREATE", "UPDATE"]
         resources: ["pods"]
     namespaceSelector: {}
-  - name: vpersistentvolumeclaim-v1alpha1.powerapp.cloud
-    admissionReviewVersions: ["v1"]
-    sideEffects: None
-    failurePolicy: Fail
-    clientConfig:
-      {{- if not .Values.certmanager.enable }}
-      caBundle: {{ .Values.webhook.customTLS.caBundle }}
-      {{- end }}
-      service:
-        name: pac-quota-controller-webhook-service
-        namespace: {{ .Release.Namespace }}
-        path: /validate--v1-persistentvolumeclaim
-    rules:
-      - apiGroups: [""]
-        apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE"]
-        resources: ["persistentvolumeclaims"]
-    namespaceSelector: {}
 {{- end }}
