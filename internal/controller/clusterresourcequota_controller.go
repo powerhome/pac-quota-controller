@@ -103,7 +103,7 @@ type ClusterResourceQuotaReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
 	crqClient                quota.CRQClientInterface
-	ComputeCalculator        *pod.ComputeResourceCalculator
+	ComputeCalculator        *pod.PodResourceCalculator
 	OwnNamespace             string
 	ExcludeNamespaceLabelKey string
 }
