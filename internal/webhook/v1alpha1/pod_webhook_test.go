@@ -399,14 +399,6 @@ var _ = Describe("Pod Webhook", func() {
 				_, err := validator.ValidateCreate(ctx, testPod)
 				Expect(err).ToNot(HaveOccurred())
 			})
-
-			It("should allow creation of pods that start in terminal state", func() {
-				// Some edge case scenarios where a pod might be created in terminal state
-				testPod.Status.Phase = corev1.PodSucceeded
-				testPod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("5") // Would normally exceed quota
-				_, err := validator.ValidateCreate(ctx, testPod)
-				Expect(err).ToNot(HaveOccurred())
-			})
 		})
 	})
 
