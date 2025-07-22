@@ -76,8 +76,6 @@ func (d *PersistentVolumeClaimCustomDefaulter) Default(_ context.Context, obj ru
 	}
 	persistentvolumeclaimlog.Info("Defaulting for PersistentVolumeClaim", "name", persistentvolumeclaim.GetName())
 
-	// TODO(user): fill in your defaulting logic.
-
 	return nil
 }
 
