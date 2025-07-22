@@ -6,6 +6,23 @@ Thank you for your interest in contributing! Please follow these guidelines to h
 
 - Ensure you have Go, Docker, Kind, Helm, and other required tools installed (see project README).
 
+## Development Workflow
+
+### Pre-commit Setup
+
+Install pre-commit to automate code quality checks:
+
+```bash
+pip install pre-commit==4.2.0
+pre-commit install
+```
+
+Pre-commit automatically runs formatting, linting, testing, and code generation on every commit. Run manually with:
+
+```bash
+pre-commit run -a
+```
+
 ## Helm Chart Maintenance
 
 - The Helm chart is maintained manually. If you make changes to CRDs, APIs, or configuration options, update the chart in `charts/pac-quota-controller`.

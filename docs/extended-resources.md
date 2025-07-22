@@ -9,7 +9,7 @@ The pac-quota-controller **already supports** Kubernetes extended resources as d
 Extended resources are custom resources that can be tracked and limited by Kubernetes ResourceQuotas. Common examples include:
 
 - `nvidia.com/gpu` - NVIDIA GPU devices
-- `amd.com/gpu` - AMD GPU devices  
+- `amd.com/gpu` - AMD GPU devices
 - `example.com/foo` - Custom application-specific resources
 - `intel.com/fpga` - FPGA devices
 - Any domain-prefixed resource name
@@ -144,7 +144,7 @@ Run the test suite to verify extended resources work correctly:
 # Unit tests
 make test
 
-# E2E tests  
+# E2E tests
 make test-e2e
 
 # Apply example
@@ -170,7 +170,7 @@ kubectl apply -f examples/extended-resources-example.yaml
 The extended resources support is implemented in:
 
 - `CalculateResourceUsage()` - Individual pod resource calculation
-- `CalculatePodUsage()` - Namespace-wide resource aggregation  
+- `CalculatePodUsage()` - Namespace-wide resource aggregation
 - Both functions automatically handle any resource type through dynamic resource name lookup
 
 This implementation aligns with Kubernetes' ResourceQuota behavior and follows the official specification for extended resources.

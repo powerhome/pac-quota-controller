@@ -73,7 +73,7 @@ spec:
 This quota will apply to all namespaces with the label `team: frontend` and limit:
 
 - Total pods to 50
-- Total CPU requests to 10 cores and limits to 20 cores  
+- Total CPU requests to 10 cores and limits to 20 cores
 - Total memory requests to 20Gi and limits to 40Gi
 - Total storage requests from PVCs to 100Gi
 - Total ephemeral storage requests from Pods to 20Gi
