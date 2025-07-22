@@ -142,8 +142,6 @@ func (v *PersistentVolumeClaimCustomValidator) ValidateDelete(ctx context.Contex
 	}
 	persistentvolumeclaimlog.Info("Validation for PersistentVolumeClaim upon deletion", "name", persistentvolumeclaim.GetName())
 
-	// TODO(user): fill in your validation logic upon object deletion.
-
 	return nil, nil
 }
 
