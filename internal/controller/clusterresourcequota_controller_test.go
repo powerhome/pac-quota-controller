@@ -545,24 +545,6 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		})
 	})
 
-	Describe("calculateComputeResources", func() {
-		It("should return 0 as a placeholder (TODO: implement real logic)", func() {
-			reconciler := &ClusterResourceQuotaReconciler{}
-			result := reconciler.calculateComputeResources(context.Background(), "test-ns", corev1.ResourceRequestsCPU)
-			Expect(result.String()).To(Equal("0"))
-			// TODO: When real resource usage logic is implemented, update this test to check actual usage
-		})
-	})
-
-	Describe("calculateStorageResources", func() {
-		It("should return 0 as a placeholder (TODO: implement real logic)", func() {
-			reconciler := &ClusterResourceQuotaReconciler{}
-			result := reconciler.calculateStorageResources(context.Background(), "test-ns")
-			Expect(result.String()).To(Equal("0"))
-			// TODO: When real resource usage logic is implemented, update this test to check actual usage
-		})
-	})
-
 	Describe("findQuotasForObject (with Namespace objects)", func() {
 		var (
 			reconciler *ClusterResourceQuotaReconciler

@@ -20,8 +20,10 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -41,11 +43,6 @@ import (
 )
 
 var log = logf.Log.WithName("clusterresourcequota-controller")
-
-// isTerminal checks if a pod is in a terminal phase (Succeeded or Failed).
-func isTerminal(pod *corev1.Pod) bool {
-	return pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
-}
 
 // resourceUpdatePredicate implements a custom predicate function to filter resource updates.
 // It's designed to trigger reconciliation only on meaningful changes, such as spec updates
@@ -74,7 +71,7 @@ func (resourceUpdatePredicate) Update(e event.UpdateEvent) bool {
 	// This is important for releasing quota resources when a pod completes.
 	if podOld, ok := e.ObjectOld.(*corev1.Pod); ok {
 		if podNew, ok := e.ObjectNew.(*corev1.Pod); ok {
-			if isTerminal(podOld) != isTerminal(podNew) {
+			if pod.IsPodTerminal(podOld) != pod.IsPodTerminal(podNew) {
 				return true
 			}
 		}
@@ -86,11 +83,27 @@ func (resourceUpdatePredicate) Update(e event.UpdateEvent) bool {
 	return false
 }
 
+// Delete implements the delete event filter.
+func (resourceUpdatePredicate) Delete(e event.DeleteEvent) bool {
+	if e.Object == nil {
+		// Invalid event, ignore
+		return false
+	}
+
+	// Trigger reconciliation on pod deletions
+	if _, ok := e.Object.(*corev1.Pod); ok {
+		return true
+	}
+
+	return false
+}
+
 // ClusterResourceQuotaReconciler reconciles a ClusterResourceQuota object
 type ClusterResourceQuotaReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
 	crqClient                quota.CRQClientInterface
+	ComputeCalculator        *pod.PodResourceCalculator
 	OwnNamespace             string
 	ExcludeNamespaceLabelKey string
 }
@@ -225,18 +238,30 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 			case corev1.ResourceRequestsStorage:
 				currentUsage = r.calculateStorageResources(ctx, nsName)
 			default:
-				log.Info("Unsupported resource type for quota calculation", "resource", resourceName)
-				continue
+				// Handle extended resources (hugepages, GPUs, etc.) via compute calculator
+				// Extended resources are typically consumed by pods, so they should be calculated
+				// using the compute resource calculator
+				// TODO: fix this, temporary workaround
+				if r.isComputeResource(resourceName) {
+					currentUsage = r.calculateComputeResources(ctx, nsName, resourceName)
+				} else {
+					log.Info("Unsupported resource type for quota calculation", "resource", resourceName)
+					continue
+				}
 			}
-
 			// Update usage for the specific namespace
 			nsIndex := nsIndexMap[nsName]
 			usageByNamespace[nsIndex].Status.Used[resourceName] = currentUsage
 
-			// Aggregate total usage
-			total := totalUsage[resourceName]
-			total.Add(currentUsage)
-			totalUsage[resourceName] = total
+			// Aggregate total usage correctly
+			// Since resource.Quantity has pointer receiver methods, we need to be careful
+			// about how we handle the aggregation
+			if existing, exists := totalUsage[resourceName]; exists {
+				existing.Add(currentUsage)
+				totalUsage[resourceName] = existing
+			} else {
+				totalUsage[resourceName] = currentUsage
+			}
 		}
 	}
 
@@ -254,11 +279,13 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(_ context.Context,
 }
 
 // calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
-func (r *ClusterResourceQuotaReconciler) calculateComputeResources(_ context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
-	// TODO: Implement pod listing, iterating through containers, and summing up
-	// the specified resource requests or limits.
-	log.Info("Placeholder: Calculating compute resources", "resource", resourceName, "namespace", ns)
-	return resource.MustParse("0")
+func (r *ClusterResourceQuotaReconciler) calculateComputeResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+	usage, err := r.ComputeCalculator.CalculatePodUsage(ctx, ns, resourceName)
+	if err != nil {
+		log.Error(err, "Failed to calculate compute resources", "resource", resourceName, "namespace", ns)
+		return resource.MustParse("0")
+	}
+	return usage
 }
 
 // calculateStorageResources calculates the usage for storage resource quotas.
@@ -329,6 +356,39 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 	}
 
 	return nil
+}
+
+// TODO: Improve this, temporary workaround to handle compute resources.
+// isComputeResource determines if a resource type should be calculated using the compute calculator.
+// This includes standard compute resources and extended resources (hugepages, GPUs, etc.)
+func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.ResourceName) bool {
+	resourceStr := string(resourceName)
+
+	// Standard compute resources (already handled in switch above, but included for completeness)
+	switch resourceName {
+	case corev1.ResourceRequestsCPU, corev1.ResourceRequestsMemory, corev1.ResourceLimitsCPU, corev1.ResourceLimitsMemory:
+		return true
+	}
+
+	// Extended resources patterns
+	// Hugepages resources follow the pattern "hugepages-<size>"
+	if strings.HasPrefix(resourceStr, "hugepages-") {
+		return true
+	}
+
+	// GPU resources typically contain "gpu" in the name
+	if strings.Contains(strings.ToLower(resourceStr), "gpu") {
+		return true
+	}
+
+	// Extended resources typically have domain-style names (contain dots)
+	// Examples: nvidia.com/gpu, example.com/foo, intel.com/qat
+	if strings.Contains(resourceStr, ".") {
+		return true
+	}
+
+	// If we can't categorize it, assume it's not a compute resource
+	return false
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -53,8 +53,8 @@ func ValidateNamespaceOwnership(
 		for _, nsStatus := range otherCRQ.Status.Namespaces {
 			if _, conflict := myNamespaces[nsStatus.Namespace]; conflict {
 				conflicts = append(conflicts, fmt.Sprintf(
-					"namespace '%s' is already owned by another ClusterResourceQuota",
-					nsStatus.Namespace,
+					"namespace '%s' is already owned by another ClusterResourceQuota '%s'",
+					nsStatus.Namespace, otherCRQ.Name,
 				))
 			}
 		}

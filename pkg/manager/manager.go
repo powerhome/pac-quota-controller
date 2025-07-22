@@ -7,6 +7,7 @@ import (
 	"github.com/powerhome/pac-quota-controller/internal/controller"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/powerhome/pac-quota-controller/pkg/health"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -62,9 +63,13 @@ func SetupManager(
 
 // SetupControllers sets up all controllers with the manager
 func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
+	// Initialize compute resource calculator
+	computeCalculator := pod.NewPodResourceCalculator(mgr.GetClient())
+
 	if err := (&controller.ClusterResourceQuotaReconciler{
 		Client:                   mgr.GetClient(),
 		Scheme:                   mgr.GetScheme(),
+		ComputeCalculator:        computeCalculator,
 		ExcludeNamespaceLabelKey: cfg.ExcludeNamespaceLabelKey,
 		OwnNamespace:             cfg.OwnNamespace,
 	}).SetupWithManager(mgr); err != nil {

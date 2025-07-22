@@ -4,45 +4,54 @@ import (
 	"crypto/tls"
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"github.com/powerhome/pac-quota-controller/pkg/config"
-	"github.com/stretchr/testify/assert"
 )
 
-func TestSetupMetricsServer_Insecure(t *testing.T) {
-	cfg := &config.Config{
-		MetricsAddr:     ":8080",
-		SecureMetrics:   false,
-		MetricsCertPath: "",
-	}
-	options, watcher, err := SetupMetricsServer(cfg, nil)
-	assert.NoError(t, err)
-	assert.Equal(t, ":8080", options.BindAddress)
-	assert.False(t, options.SecureServing)
-	assert.Nil(t, watcher)
+func TestMetrics(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Metrics Package Suite")
 }
 
-func TestSetupMetricsServer_Secure_NoCerts(t *testing.T) {
-	cfg := &config.Config{
-		MetricsAddr:     ":8443",
-		SecureMetrics:   true,
-		MetricsCertPath: "",
-	}
-	options, watcher, err := SetupMetricsServer(cfg, []func(*tls.Config){})
-	assert.NoError(t, err)
-	assert.Equal(t, ":8443", options.BindAddress)
-	assert.True(t, options.SecureServing)
-	assert.Nil(t, watcher)
-	assert.NotNil(t, options.FilterProvider)
-}
+var _ = Describe("SetupMetricsServer", func() {
+	It("should setup insecure metrics server", func() {
+		cfg := &config.Config{
+			MetricsAddr:     ":8080",
+			SecureMetrics:   false,
+			MetricsCertPath: "",
+		}
+		options, watcher, err := SetupMetricsServer(cfg, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(options.BindAddress).To(Equal(":8080"))
+		Expect(options.SecureServing).To(BeFalse())
+		Expect(watcher).To(BeNil())
+	})
 
-func TestSetupMetricsServer_WithCerts_InvalidPath(t *testing.T) {
-	cfg := &config.Config{
-		MetricsAddr:     ":8443",
-		SecureMetrics:   true,
-		MetricsCertPath: "/invalid/path",
-		MetricsCertName: "cert.pem",
-		MetricsCertKey:  "key.pem",
-	}
-	_, _, err := SetupMetricsServer(cfg, nil)
-	assert.Error(t, err)
-}
+	It("should setup secure metrics server without certs", func() {
+		cfg := &config.Config{
+			MetricsAddr:     ":8443",
+			SecureMetrics:   true,
+			MetricsCertPath: "",
+		}
+		options, watcher, err := SetupMetricsServer(cfg, []func(*tls.Config){})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(options.BindAddress).To(Equal(":8443"))
+		Expect(options.SecureServing).To(BeTrue())
+		Expect(watcher).To(BeNil())
+		Expect(options.FilterProvider).NotTo(BeNil())
+	})
+
+	It("should return error for invalid cert path", func() {
+		cfg := &config.Config{
+			MetricsAddr:     ":8443",
+			SecureMetrics:   true,
+			MetricsCertPath: "/invalid/path",
+			MetricsCertName: "cert.pem",
+			MetricsCertKey:  "key.pem",
+		}
+		_, _, err := SetupMetricsServer(cfg, nil)
+		Expect(err).To(HaveOccurred())
+	})
+})

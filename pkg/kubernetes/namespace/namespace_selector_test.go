@@ -4,11 +4,20 @@ import (
 	"context"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+func TestNamespaceSelector(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Namespace Selector Package Suite")
+}
 
 func setupFakeNamespaces() []corev1.Namespace {
 	return []corev1.Namespace{
@@ -51,197 +60,161 @@ func setupFakeNamespaces() []corev1.Namespace {
 	}
 }
 
-func TestLabelSelectorMatchingOnly(t *testing.T) {
-	// Create a fake client with our test namespaces
-	namespaces := setupFakeNamespaces()
-	fakeClient := fake.NewClientBuilder().WithObjects(
-		&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3],
-	).Build()
+var _ = Describe("LabelBasedNamespaceSelector", func() {
+	var (
+		ctx        context.Context
+		fakeClient client.Client
+		namespaces []corev1.Namespace
+		scheme     *runtime.Scheme
+	)
 
-	// Create a selector for the "environment=test" label
-	selector := &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"environment": "test",
-		},
-	}
+	BeforeEach(func() {
+		ctx = context.Background()
+		scheme = runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
-	// Create our namespace selector
-	namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
-	assert.NoError(t, err, "Failed to create namespace selector")
+		namespaces = setupFakeNamespaces()
+		fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3],
+		).Build()
+	})
 
-	// Get the selected namespaces
-	selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(context.Background())
-	assert.NoError(t, err, "Failed to get selected namespaces")
-	assert.ElementsMatch(t, []string{"test-ns1", "test-ns2"}, selectedNamespaces)
-}
+	It("should match namespaces by environment label", func() {
+		selector := &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"environment": "test",
+			},
+		}
 
-func TestDetermineNamespaceChanges(t *testing.T) {
-	// Create a fake client with our test namespaces
-	namespaces := setupFakeNamespaces()
-	fakeClient := fake.NewClientBuilder().WithObjects(
-		&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3],
-	).Build()
+		namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
+		Expect(err).NotTo(HaveOccurred())
 
-	// Create a selector for the "environment=test" label
-	selector := &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"environment": "test",
-		},
-	}
+		selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(selectedNamespaces).To(ConsistOf("test-ns1", "test-ns2"))
+	})
 
-	// Create our namespace selector
-	namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
-	assert.NoError(t, err, "Failed to create namespace selector")
+	It("should determine namespace changes correctly", func() {
+		selector := &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"environment": "test",
+			},
+		}
 
-	// Previous state included test-ns1 and prod-ns1
-	previousNamespaces := []string{"test-ns1", "prod-ns1"}
+		namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
+		Expect(err).NotTo(HaveOccurred())
 
-	// Current state should be test-ns1 and test-ns2 based on the label selector
-	added, removed, err := namespaceSelector.DetermineNamespaceChanges(context.Background(), previousNamespaces)
-	assert.NoError(t, err, "Failed to determine namespace changes")
+		previousNamespaces := []string{"test-ns1", "prod-ns1"}
+		added, removed, err := namespaceSelector.DetermineNamespaceChanges(ctx, previousNamespaces)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(added).To(ConsistOf("test-ns2"))
+		Expect(removed).To(ConsistOf("prod-ns1"))
+	})
 
-	// test-ns2 should be added, prod-ns1 should be removed
-	assert.ElementsMatch(t, []string{"test-ns2"}, added)
-	assert.ElementsMatch(t, []string{"prod-ns1"}, removed)
-}
+	It("should handle no matching namespaces", func() {
+		selector := &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"environment": "doesnotexist",
+			},
+		}
 
-func TestLabelSelectorNoMatch(t *testing.T) {
-	// Create a fake client with our test namespaces
-	namespaces := setupFakeNamespaces()
-	fakeClient := fake.NewClientBuilder().WithObjects(
-		&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3],
-	).Build()
+		namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
+		Expect(err).NotTo(HaveOccurred())
 
-	// Selector that matches nothing
-	selector := &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"environment": "doesnotexist",
-		},
-	}
+		selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(selectedNamespaces).To(BeEmpty())
+	})
 
-	namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
-	assert.NoError(t, err, "Failed to create namespace selector")
+	It("should match multiple labels", func() {
+		selector := &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"environment": "test",
+				"team":        "frontend",
+			},
+		}
 
-	selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(context.Background())
-	assert.NoError(t, err, "Failed to get selected namespaces")
-	assert.Empty(t, selectedNamespaces, "Expected no namespaces to match")
-}
+		namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
+		Expect(err).NotTo(HaveOccurred())
 
-func TestLabelSelectorMultipleLabels(t *testing.T) {
-	// Create a fake client with our test namespaces
-	namespaces := setupFakeNamespaces()
-	fakeClient := fake.NewClientBuilder().WithObjects(
-		&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3],
-	).Build()
+		selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(selectedNamespaces).To(ConsistOf("test-ns1"))
+	})
 
-	// Selector that matches environment=test and team=frontend
-	selector := &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"environment": "test",
-			"team":        "frontend",
-		},
-	}
+	It("should handle empty previous namespaces", func() {
+		selector := &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"environment": "test",
+			},
+		}
 
-	namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
-	assert.NoError(t, err, "Failed to create namespace selector")
+		namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
+		Expect(err).NotTo(HaveOccurred())
 
-	selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(context.Background())
-	assert.NoError(t, err, "Failed to get selected namespaces")
-	assert.ElementsMatch(t, []string{"test-ns1"}, selectedNamespaces)
-}
+		previousNamespaces := []string{}
+		added, removed, err := namespaceSelector.DetermineNamespaceChanges(ctx, previousNamespaces)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(added).To(ConsistOf("test-ns1", "test-ns2"))
+		Expect(removed).To(BeEmpty())
+	})
 
-func TestDetermineNamespaceChanges_EmptyPrevious(t *testing.T) {
-	// Create a fake client with our test namespaces
-	namespaces := setupFakeNamespaces()
-	fakeClient := fake.NewClientBuilder().WithObjects(
-		&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3],
-	).Build()
+	It("should handle all namespaces removed", func() {
+		selector := &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"environment": "doesnotexist",
+			},
+		}
 
-	selector := &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"environment": "test",
-		},
-	}
+		namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
+		Expect(err).NotTo(HaveOccurred())
 
-	namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
-	assert.NoError(t, err, "Failed to create namespace selector")
+		previousNamespaces := []string{"test-ns1", "test-ns2", "prod-ns1", "review-123"}
+		added, removed, err := namespaceSelector.DetermineNamespaceChanges(ctx, previousNamespaces)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(added).To(BeEmpty())
+		Expect(removed).To(ConsistOf("test-ns1", "test-ns2", "prod-ns1", "review-123"))
+	})
 
-	// Previous state is empty
-	previousNamespaces := []string{}
-	added, removed, err := namespaceSelector.DetermineNamespaceChanges(context.Background(), previousNamespaces)
-	assert.NoError(t, err, "Failed to determine namespace changes")
-	assert.ElementsMatch(t, []string{"test-ns1", "test-ns2"}, added)
-	assert.Empty(t, removed)
-}
+	It("should handle invalid selector", func() {
+		selector := &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"bad key!": "value",
+			},
+		}
+		_, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
+		Expect(err).To(HaveOccurred())
+	})
 
-func TestDetermineNamespaceChanges_AllRemoved(t *testing.T) {
-	// Create a fake client with our test namespaces
-	namespaces := setupFakeNamespaces()
-	fakeClient := fake.NewClientBuilder().WithObjects(
-		&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3],
-	).Build()
+	It("should match using expressions", func() {
+		selector := &metav1.LabelSelector{
+			MatchExpressions: []metav1.LabelSelectorRequirement{{
+				Key:      "team",
+				Operator: metav1.LabelSelectorOpIn,
+				Values:   []string{"frontend"},
+			}},
+		}
 
-	selector := &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"environment": "doesnotexist",
-		},
-	}
+		namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
+		Expect(err).NotTo(HaveOccurred())
 
-	namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
-	assert.NoError(t, err, "Failed to create namespace selector")
+		selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(selectedNamespaces).To(ConsistOf("test-ns1", "prod-ns1", "review-123"))
+	})
 
-	// Previous state had all namespaces
-	previousNamespaces := []string{"test-ns1", "test-ns2", "prod-ns1", "review-123"}
-	added, removed, err := namespaceSelector.DetermineNamespaceChanges(context.Background(), previousNamespaces)
-	assert.NoError(t, err, "Failed to determine namespace changes")
-	assert.Empty(t, added)
-	assert.ElementsMatch(t, previousNamespaces, removed)
-}
+	It("should exclude namespaces without labels", func() {
+		noLabelNS := corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "nolabel-ns"}}
+		fakeClientWithExtra := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+			&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3], &noLabelNS,
+		).Build()
 
-func TestLabelSelectorInvalidSelector(t *testing.T) {
-	fakeClient := fake.NewClientBuilder().Build()
-	// Invalid selector (bad label key)
-	selector := &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"bad key!": "value",
-		},
-	}
-	_, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
-	assert.Error(t, err, "Expected error for invalid label selector")
-}
+		selector := &metav1.LabelSelector{MatchLabels: map[string]string{"environment": "test"}}
+		namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClientWithExtra, selector)
+		Expect(err).NotTo(HaveOccurred())
 
-func TestLabelSelector_MatchExpressions(t *testing.T) {
-	namespaces := setupFakeNamespaces()
-	fakeClient := fake.NewClientBuilder().WithObjects(
-		&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3],
-	).Build()
-
-	selector := &metav1.LabelSelector{
-		MatchExpressions: []metav1.LabelSelectorRequirement{{
-			Key: "team", Operator: metav1.LabelSelectorOpIn, Values: []string{"frontend"},
-		}},
-	}
-	namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
-	assert.NoError(t, err, "Failed to create namespace selector")
-
-	selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(context.Background())
-	assert.NoError(t, err, "Failed to get selected namespaces")
-	assert.ElementsMatch(t, []string{"test-ns1", "prod-ns1", "review-123"}, selectedNamespaces)
-}
-
-func TestLabelSelector_NamespaceWithNoLabels(t *testing.T) {
-	namespaces := setupFakeNamespaces()
-	noLabelNS := corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "nolabel-ns"}}
-	fakeClient := fake.NewClientBuilder().WithObjects(
-		&namespaces[0], &namespaces[1], &namespaces[2], &namespaces[3], &noLabelNS,
-	).Build()
-
-	selector := &metav1.LabelSelector{MatchLabels: map[string]string{"environment": "test"}}
-	namespaceSelector, err := NewLabelBasedNamespaceSelector(fakeClient, selector)
-	assert.NoError(t, err, "Failed to create namespace selector")
-
-	selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(context.Background())
-	assert.NoError(t, err, "Failed to get selected namespaces")
-	// Should not include the no-label namespace
-	assert.NotContains(t, selectedNamespaces, "nolabel-ns")
-}
+		selectedNamespaces, err := namespaceSelector.GetSelectedNamespaces(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(selectedNamespaces).NotTo(ContainElement("nolabel-ns"))
+	})
+})
