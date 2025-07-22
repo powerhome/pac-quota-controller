@@ -79,7 +79,6 @@ func (d *PersistentVolumeClaimCustomDefaulter) Default(_ context.Context, obj ru
 	return nil
 }
 
-// TODO(user): change verbs to "verbs=create;update;delete" if you want to enable deletion validation.
 // NOTE: The 'path' attribute must follow a specific pattern and should not be modified directly here.
 // Modifying the path for an invalid path can cause API server errors; failing to locate the webhook.
 // +kubebuilder:webhook:path=/validate--v1-persistentvolumeclaim,mutating=false,failurePolicy=fail,sideEffects=None,groups="",resources=persistentvolumeclaims,verbs=create;update,versions=v1,name=vpersistentvolumeclaim-v1.kb.io,admissionReviewVersions=v1
