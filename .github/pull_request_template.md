@@ -32,7 +32,6 @@ Describe documentation changes:
 - [ ] 🔧 Ran pre-commit hooks to validate changes:
   - [ ] `pre-commit run --all-files` (runs formatting, linting, generation, and unit tests)
   - [ ] `make test-e2e` (ensure e2e tests pass - not included in pre-commit)
-  - [ ] `pre-commit run helm-test --all-files` (optional: test Helm chart in Kind)
 
 ### Versioning & Release
 
