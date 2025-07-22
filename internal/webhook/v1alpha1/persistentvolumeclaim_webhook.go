@@ -50,33 +50,7 @@ func SetupPersistentVolumeClaimWebhookWithManager(mgr ctrl.Manager) error {
 			Client:            mgr.GetClient(),
 			StorageCalculator: storageCalculator,
 		}).
-		WithDefaulter(&PersistentVolumeClaimCustomDefaulter{}).
 		Complete()
-}
-
-// +kubebuilder:webhook:path=/mutate--v1-persistentvolumeclaim,mutating=true,failurePolicy=fail,sideEffects=None,groups="",resources=persistentvolumeclaims,verbs=create;update,versions=v1,name=mpersistentvolumeclaim-v1.kb.io,admissionReviewVersions=v1
-
-// PersistentVolumeClaimCustomDefaulter struct is responsible for setting default values on the custom resource of the
-// Kind PersistentVolumeClaim when those are created or updated.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as it is used only for temporary operations and does not need to be deeply copied.
-type PersistentVolumeClaimCustomDefaulter struct {
-	// TODO(user): Add more fields as needed for defaulting
-}
-
-var _ webhook.CustomDefaulter = &PersistentVolumeClaimCustomDefaulter{}
-
-// Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind PersistentVolumeClaim.
-func (d *PersistentVolumeClaimCustomDefaulter) Default(_ context.Context, obj runtime.Object) error {
-	persistentvolumeclaim, ok := obj.(*corev1.PersistentVolumeClaim)
-
-	if !ok {
-		return fmt.Errorf("expected an PersistentVolumeClaim object but got %T", obj)
-	}
-	persistentvolumeclaimlog.Info("Defaulting for PersistentVolumeClaim", "name", persistentvolumeclaim.GetName())
-
-	return nil
 }
 
 // NOTE: The 'path' attribute must follow a specific pattern and should not be modified directly here.

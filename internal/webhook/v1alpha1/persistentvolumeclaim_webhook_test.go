@@ -38,7 +38,6 @@ var _ = Describe("PVC Webhook Quota Validation", func() {
 	var (
 		ctx       context.Context
 		validator *PersistentVolumeClaimCustomValidator
-		defaulter *PersistentVolumeClaimCustomDefaulter
 		k8sClient client.Client
 		scheme    *runtime.Scheme
 		testNS    *corev1.Namespace
@@ -93,7 +92,6 @@ var _ = Describe("PVC Webhook Quota Validation", func() {
 			StorageCalculator: storageCalculator,
 		}
 
-		defaulter = &PersistentVolumeClaimCustomDefaulter{}
 	})
 
 	Describe("ValidateCreate", func() {
@@ -538,8 +536,6 @@ var _ = Describe("PVC Webhook Quota Validation", func() {
 			}
 
 			originalPVC := pvc.DeepCopy()
-			err := defaulter.Default(ctx, pvc)
-			Expect(err).NotTo(HaveOccurred())
 			Expect(pvc).To(Equal(originalPVC))
 		})
 	})
