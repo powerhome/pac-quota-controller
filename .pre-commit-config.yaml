@@ -1,0 +1,82 @@
+# Pre-commit configuration for pac-quota-controller
+# See https://pre-commit.com for more information
+repos:
+  # Basic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+
+  # Go formatting and linting
+  - repo: local
+    hooks:
+      # Go formatting
+      - id: go-fmt
+        name: Go Format (make fmt)
+        entry: make fmt
+        language: system
+        files: '\.go$'
+        pass_filenames: false
+
+      # Go linting
+      - id: go-lint
+        name: Go Lint (make lint)
+        entry: make lint
+        language: system
+        files: '\.go$'
+        pass_filenames: false
+
+      # Generate manifests (CRDs, RBAC, etc.)
+      - id: make-manifests
+        name: Generate Manifests (make manifests)
+        entry: make manifests
+        language: system
+        files: '^(api/|config/|internal/controller/|internal/webhook/).*\.go$'
+        pass_filenames: false
+
+      # Generate code (deepcopy, etc.)
+      - id: make-generate
+        name: Generate Code (make generate)
+        entry: make generate
+        language: system
+        files: '^api/.*\.go$'
+        pass_filenames: false
+
+      # Unit tests
+      - id: go-test
+        name: Go Unit Tests (make test)
+        entry: make test
+        language: system
+        files: '\.go$'
+        pass_filenames: false
+
+      # Helm chart linting
+      - id: helm-lint
+        name: Helm Lint (make helm-lint)
+        entry: make helm-lint
+        language: system
+        files: '^charts/.*\.(yaml|yml|tpl)$'
+        pass_filenames: false
+
+      # Helm documentation generation
+      - id: helm-docs
+        name: Generate Helm Docs (make helm-docs)
+        entry: make helm-docs
+        language: system
+        files: '^charts/.*\.(yaml|yml|gotmpl)$'
+        pass_filenames: false
+
+  # Dockerfile linting
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.1-beta
+    hooks:
+      - id: hadolint-docker
+        args: [--ignore, DL3008, --ignore, DL3009]
+
+# Configuration for different stages
+default_stages: [pre-commit]
+fail_fast: false

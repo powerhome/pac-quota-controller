@@ -1,28 +1,41 @@
-# Pull Request Checklist & Best Practices
+# 📝 Pull Request
 
-Before submitting your PR, please:
+## 📖 Description
 
-- [ ] Ensure your PR is focused and addresses a single concern (avoid unrelated changes)
-- [ ] Write a clear, descriptive title and summary for your PR
-- [ ] Reference related issues (if any) in the description
-- [ ] Keep commits clean and meaningful (squash/fixup as needed)
-- [ ] Add or update tests for new/changed behavior
-- [ ] Update documentation and Helm chart if you change APIs, CRDs, or configuration
-- [ ] Run the following commands and commit any changes:
-  - `make lint` (fix all lint issues)
-  - `make manifests` (commit CRD changes)
-  - `make generate` (commit generated code)
-  - `make test test-e2e` (ensure all tests pass)
-  - `make helm-docs` (update Helm chart docs if needed)
-  - `make helm-lint` (ensure Helm chart is valid)
-  - `make helm-test` (ensure Helm chart installs in Kind)
-- [ ] I have bumped the chart `version` in `charts/pac-quota-controller/Chart.yaml` if making a chart change
-- [ ] I have bumped the `appVersion` in `charts/pac-quota-controller/Chart.yaml` if releasing a new application version
-- [ ] I have tagged the release as `vX.Y.Z` for app releases or `chart-vX.Y.Z` for chart-only releases
+<!--
+Provide a detailed description of your changes:
+- What problem does this solve?
+- How did you solve it?
+- What are the key changes?
+- Why did you choose this approach?
+-->
 
-> **Note:** Chart and app versioning are manual. See CONTRIBUTING.md for details on how to release.
-> **Note:** For Helm chart installation, use GHCR as an OCI registry. See README for instructions.
+## 📚 Documentation
 
-## Additional Notes (optional)
+<!--
+Describe documentation changes:
+- Updated README
+- Added new docs
+- Updated API documentation
 
-<!-- Add any extra context, screenshots, or information here. -->
+-->
+
+- [ ] 📖 Updated documentation
+- [ ] 📄 Added examples
+
+### Testing & Validation
+
+- [ ] ✅ Added or updated tests for new/changed behavior
+- [ ] 📚 Updated documentation and Helm chart if APIs, CRDs, or configuration changed
+- [ ] 🔧 Ran pre-commit hooks to validate changes:
+  - [ ] `pre-commit run --all-files` (runs formatting, linting, generation, and unit tests)
+  - [ ] `make test-e2e` (ensure e2e tests pass - not included in pre-commit)
+
+### Versioning & Release
+
+- [ ] 📊 Bumped chart `version` in `charts/pac-quota-controller/Chart.yaml` if making a chart change
+- [ ] 🏷️ Bumped `appVersion` in `charts/pac-quota-controller/Chart.yaml` if releasing a new application version
+- [ ] 🔖 Tagged the release as `vX.Y.Z` for app releases or `chart-vX.Y.Z` for chart-only releases (if applicable)
+
+> **📝 Note:** Chart and app versioning are manual. See CONTRIBUTING.md for details on how to release.
+> **🐙 Note:** For Helm chart installation, use GHCR as an OCI registry. See README for instructions.

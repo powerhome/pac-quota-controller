@@ -42,7 +42,7 @@ controllerManager:
     seccompProfile:
       type: RuntimeDefault
   terminationGracePeriodSeconds: 10
-  serviceAccount: 
+  serviceAccount:
     name: pac-quota-controller-manager
     annotations: {}
 
