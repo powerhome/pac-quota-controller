@@ -17,7 +17,6 @@ Describe documentation changes:
 - Updated README
 - Added new docs
 - Updated API documentation
-- Updated Helm chart docs
 
 -->
 
