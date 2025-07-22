@@ -54,8 +54,6 @@ func SetupPersistentVolumeClaimWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// TODO(user): EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-
 // +kubebuilder:webhook:path=/mutate--v1-persistentvolumeclaim,mutating=true,failurePolicy=fail,sideEffects=None,groups="",resources=persistentvolumeclaims,verbs=create;update,versions=v1,name=mpersistentvolumeclaim-v1.kb.io,admissionReviewVersions=v1
 
 // PersistentVolumeClaimCustomDefaulter struct is responsible for setting default values on the custom resource of the
