@@ -23,7 +23,6 @@ Describe documentation changes:
 
 - [ ] 📖 Updated documentation
 - [ ] 📄 Added examples
-- [ ] 🔄 Updated Helm chart docs (`make helm-docs`)
 
 ### Testing & Validation
 
