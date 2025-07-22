@@ -7,7 +7,6 @@ import (
 	"io"
 	"math/rand"
 	"slices"
-	"strconv"
 	"time"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -23,18 +22,33 @@ import (
 )
 
 // GenerateResourceName generates a unique test name with the given prefix.
-// This provides consistent naming across all e2e tests.
+// Ensures the total length stays within Kubernetes 63-character limit.
+// Format: prefix-timestamp-random (e.g., "test-pod-1642531200-ab12")
 func GenerateResourceName(prefix string) string {
-	return fmt.Sprintf("%s-%d", prefix, rand.Intn(1000000))
+	// Use last 8 digits of Unix timestamp + 4-char random suffix
+	timestamp := time.Now().Unix() % 100000000            // Last 8 digits
+	randomSuffix := fmt.Sprintf("%04x", rand.Intn(65536)) // 4-char hex (0000-ffff)
+
+	// Calculate max prefix length to stay under 63 chars
+	// Format: prefix-timestamp-random = prefix-12345678-abcd
+	// Suffix length: 1 + 8 + 1 + 4 = 14 chars
+	maxPrefixLen := 63 - 14
+
+	if len(prefix) > maxPrefixLen {
+		prefix = prefix[:maxPrefixLen]
+	}
+
+	return fmt.Sprintf("%s-%08d-%s", prefix, timestamp, randomSuffix)
 }
 
 // GenerateTestSuffix generates a unique suffix for test resources.
 // This is useful when tests need just a suffix for multiple resources.
 // Keeps the suffix short to respect Kubernetes 63-character name limits.
+// Format: timestamp-random (e.g., "12345678-ab12") - 13 chars max
 func GenerateTestSuffix() string {
-	// Use Unix timestamp (seconds) + 4-digit random to keep it short but unique
-	// This gives us format like "1642531200-1234" (14 chars max)
-	return fmt.Sprintf("%d-%04d", time.Now().Unix(), rand.Intn(10000))
+	timestamp := time.Now().Unix() % 100000000            // Last 8 digits
+	randomSuffix := fmt.Sprintf("%04x", rand.Intn(65536)) // 4-char hex
+	return fmt.Sprintf("%08d-%s", timestamp, randomSuffix)
 }
 
 // ServiceAccountToken returns a token for the specified service account in the given namespace.
