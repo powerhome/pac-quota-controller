@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -123,15 +124,6 @@ func (r *ClusterResourceQuotaReconciler) isNamespaceExcluded(ns *corev1.Namespac
 	return hasLabel
 }
 
-// +kubebuilder:rbac:groups=quota.powerapp.cloud,resources=clusterresourcequotas,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=quota.powerapp.cloud,resources=clusterresourcequotas/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=quota.powerapp.cloud,resources=clusterresourcequotas/finalizers,verbs=update
-// +kubebuilder:rbac:groups=core,resources=namespaces,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=persistentvolumeclaims,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch
-// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
 // It implements the logic to select namespaces, calculate aggregate usage,
@@ -282,7 +274,7 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(_ context.Context,
 
 // calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
 func (r *ClusterResourceQuotaReconciler) calculateComputeResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
-	usage, err := r.ComputeCalculator.CalculatePodUsage(ctx, ns, resourceName)
+	usage, err := r.ComputeCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
 		log.Error(err, "Failed to calculate compute resources", "resource", resourceName, "namespace", ns)
 		return resource.MustParse("0")
@@ -297,7 +289,7 @@ func (r *ClusterResourceQuotaReconciler) calculateStorageResources(ctx context.C
 		return resource.MustParse("0")
 	}
 
-	usage, err := r.StorageCalculator.CalculateStorageUsage(ctx, ns)
+	usage, err := r.StorageCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
 		log.Error(err, "Failed to calculate storage resources", "resource", resourceName, "namespace", ns)
 		return resource.MustParse("0")
@@ -349,7 +341,7 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 	log.Info("Processing object event, finding relevant CRQs")
 
 	// Find which CRQ selects this namespace.
-	crq, err := r.crqClient.GetCRQByNamespace(ctx, ns)
+	crq, err := r.crqClient.GetCRQByNamespace(ns)
 	if err != nil {
 		log.Error(err, "Failed to get ClusterResourceQuota for namespace")
 		return nil
@@ -403,13 +395,23 @@ func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.R
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	k8sConfig := mgr.GetConfig()
+	clientset, err := kubernetes.NewForConfig(k8sConfig)
+	if err != nil {
+		return fmt.Errorf("unable to create kubernetes clientset: %w", err)
+	}
 	if r.crqClient == nil {
 		r.crqClient = quota.NewCRQClient(r.Client)
 	}
 
 	if r.StorageCalculator == nil {
-		r.StorageCalculator = storage.NewStorageResourceCalculator(r.Client)
+		r.StorageCalculator = storage.NewStorageResourceCalculator(clientset)
 	}
+	if r.ComputeCalculator == nil {
+		r.ComputeCalculator = pod.NewPodResourceCalculator(clientset)
+	}
+
+	log.Info("Setting up ClusterResourceQuota controller", "ownNamespace", r.OwnNamespace)
 
 	// Predicate to filter out updates to status subresource
 	// This prevents reconcile loops caused by status updates
@@ -429,10 +431,7 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	// TODO: Add more resources as needed.
 	watchedObjectTypes := []client.Object{
 		&corev1.Pod{},
-		&corev1.Service{},
 		&corev1.PersistentVolumeClaim{},
-		&corev1.Secret{},
-		&corev1.ConfigMap{},
 	}
 
 	for _, objType := range watchedObjectTypes {

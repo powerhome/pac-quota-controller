@@ -6,20 +6,17 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/internal/controller"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
-	"github.com/powerhome/pac-quota-controller/pkg/health"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
-	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
-	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"go.uber.org/zap"
 
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-var setupLog = logf.Log.WithName("setup.manager")
+var setupLog = zap.NewNop()
 
 // InitScheme initializes the runtime scheme
 func InitScheme() *k8sruntime.Scheme {
@@ -27,7 +24,6 @@ func InitScheme() *k8sruntime.Scheme {
 
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(quotav1alpha1.AddToScheme(scheme))
-	// +kubebuilder:scaffold:scheme
 
 	return scheme
 }
@@ -36,18 +32,14 @@ func InitScheme() *k8sruntime.Scheme {
 func SetupManager(
 	cfg *config.Config,
 	scheme *k8sruntime.Scheme,
-	metricsOpts server.Options,
-	webhookServer webhook.Server,
 ) (ctrl.Manager, error) {
 	mgr, err := ctrl.NewManager(
 		ctrl.GetConfigOrDie(),
 		ctrl.Options{
-			Scheme:                 scheme,
-			Metrics:                metricsOpts,
-			WebhookServer:          webhookServer,
-			HealthProbeBindAddress: cfg.ProbeAddr,
-			LeaderElection:         cfg.EnableLeaderElection,
-			LeaderElectionID:       "81307769.powerapp.cloud",
+			Scheme: scheme,
+
+			LeaderElection:   cfg.EnableLeaderElection,
+			LeaderElectionID: "81307769.powerapp.cloud",
 		},
 	)
 
@@ -55,16 +47,20 @@ func SetupManager(
 		return nil, err
 	}
 
-	// Configure health checks
-	health.SetupChecks(mgr)
-
 	return mgr, nil
 }
 
 // SetupControllers sets up all controllers with the manager
 func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
 	// Initialize compute resource calculator
-	computeCalculator := pod.NewPodResourceCalculator(mgr.GetClient())
+	// Convert controller-runtime client to kubernetes clientset
+	k8sConfig := mgr.GetConfig()
+	clientset, err := kubernetes.NewForConfig(k8sConfig)
+	if err != nil {
+		setupLog.Error("unable to create kubernetes clientset", zap.Error(err))
+		return err
+	}
+	computeCalculator := pod.NewPodResourceCalculator(clientset)
 
 	if err := (&controller.ClusterResourceQuotaReconciler{
 		Client:                   mgr.GetClient(),
@@ -73,30 +69,8 @@ func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
 		ExcludeNamespaceLabelKey: cfg.ExcludeNamespaceLabelKey,
 		OwnNamespace:             cfg.OwnNamespace,
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ClusterResourceQuota")
+		setupLog.Error("unable to create controller", zap.Error(err), zap.String("controller", "ClusterResourceQuota"))
 		return err
-	}
-	// +kubebuilder:scaffold:builder
-
-	return nil
-}
-
-// AddCertWatchers adds certificate watchers to the manager
-func AddCertWatchers(mgr ctrl.Manager, metricsCertWatcher, webhookCertWatcher *certwatcher.CertWatcher) error {
-	if metricsCertWatcher != nil {
-		setupLog.Info("Adding metrics certificate watcher to manager")
-		if err := mgr.Add(metricsCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add metrics certificate watcher to manager")
-			return err
-		}
-	}
-
-	if webhookCertWatcher != nil {
-		setupLog.Info("Adding webhook certificate watcher to manager")
-		if err := mgr.Add(webhookCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add webhook certificate watcher to manager")
-			return err
-		}
 	}
 
 	return nil
@@ -106,7 +80,7 @@ func AddCertWatchers(mgr ctrl.Manager, metricsCertWatcher, webhookCertWatcher *c
 func Start(mgr ctrl.Manager) {
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+		setupLog.Error("problem running manager", zap.Error(err))
 		os.Exit(1)
 	}
 }

@@ -35,15 +35,15 @@ repos:
         name: Generate Manifests (make manifests)
         entry: make manifests
         language: system
-        files: '^(api/|config/|internal/controller/|internal/webhook/).*\.go$'
+        files: '^(api/|config/|internal/controller/|pkg/webhook/).*\.go$'
         pass_filenames: false
 
-      # Generate code (deepcopy, etc.)
+      # Generate code (mocks, etc.)
       - id: make-generate
         name: Generate Code (make generate)
         entry: make generate
         language: system
-        files: '^api/.*\.go$'
+        files: '^pkg/kubernetes/.*\.go$'
         pass_filenames: false
 
       # Unit tests

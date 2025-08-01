@@ -20,24 +20,30 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 )
 
-var log = logf.Log.WithName("storage-resource-calculator")
+var log = zap.NewNop()
 
 // StorageResourceCalculator provides methods for calculating storage resource usage
 // from PersistentVolumeClaims only. Ephemeral storage calculation is handled by the pod package.
 type StorageResourceCalculator struct {
-	client.Client
+	usage.BaseResourceCalculator
 }
 
+// Ensure StorageResourceCalculator implements StorageResourceCalculatorInterface
+var _ StorageResourceCalculatorInterface = &StorageResourceCalculator{}
+
 // NewStorageResourceCalculator creates a new instance of StorageResourceCalculator.
-func NewStorageResourceCalculator(c client.Client) *StorageResourceCalculator {
+func NewStorageResourceCalculator(c kubernetes.Interface) *StorageResourceCalculator {
 	return &StorageResourceCalculator{
-		Client: c,
+		BaseResourceCalculator: *usage.NewBaseResourceCalculator(c),
 	}
 }
 
@@ -47,15 +53,11 @@ func NewStorageResourceCalculator(c client.Client) *StorageResourceCalculator {
 func (c *StorageResourceCalculator) CalculateStorageUsage(
 	ctx context.Context, namespace string,
 ) (resource.Quantity, error) {
-	log.Info("Calculating storage usage", "namespace", namespace)
+	log.Info("Calculating storage usage", zap.String("namespace", namespace))
 
 	// List all PVCs in the namespace
-	pvcList := &corev1.PersistentVolumeClaimList{}
-	listOpts := &client.ListOptions{
-		Namespace: namespace,
-	}
-
-	if err := c.List(ctx, pvcList, listOpts); err != nil {
+	pvcList, err := c.Client.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
 		return resource.Quantity{}, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
 	}
 
@@ -65,19 +67,81 @@ func (c *StorageResourceCalculator) CalculateStorageUsage(
 		storageRequest := getPVCStorageRequest(&pvc)
 		totalUsage.Add(storageRequest)
 
-		log.V(1).Info("PVC storage request",
-			"namespace", namespace,
-			"pvc", pvc.Name,
-			"request", storageRequest.String(),
-			"phase", pvc.Status.Phase)
+		log.Debug("PVC storage request",
+			zap.String("namespace", namespace),
+			zap.String("pvc", pvc.Name),
+			zap.String("request", storageRequest.String()),
+			zap.String("phase", string(pvc.Status.Phase)))
 	}
 
 	log.Info("Storage usage calculation completed",
-		"namespace", namespace,
-		"totalUsage", totalUsage.String(),
-		"pvcCount", len(pvcList.Items))
+		zap.String("namespace", namespace),
+		zap.String("totalUsage", totalUsage.String()),
+		zap.Int("pvcCount", len(pvcList.Items)))
 
 	return *totalUsage, nil
+}
+
+// CalculateUsage calculates the total usage for a specific resource in a namespace
+func (c *StorageResourceCalculator) CalculateUsage(
+	ctx context.Context, namespace string, resourceName corev1.ResourceName,
+) (resource.Quantity, error) {
+	// For storage resources, we only handle storage-related resources
+	switch resourceName {
+	case usage.ResourceRequestsStorage, usage.ResourceStorage:
+		return c.CalculateStorageUsage(ctx, namespace)
+	case usage.ResourcePersistentVolumeClaims:
+		pvcCount, err := c.CalculatePVCCount(ctx, namespace)
+		if err != nil {
+			return resource.Quantity{}, err
+		}
+		return *resource.NewQuantity(pvcCount, resource.DecimalSI), nil
+	default:
+		// Return zero for non-storage resources
+		return resource.Quantity{}, nil
+	}
+}
+
+// CalculateTotalUsage calculates the total usage across all storage resources in a namespace
+func (c *StorageResourceCalculator) CalculateTotalUsage(ctx context.Context, namespace string) (
+	map[corev1.ResourceName]resource.Quantity, error) {
+	result := make(map[corev1.ResourceName]resource.Quantity)
+
+	// Calculate usage for storage resources
+	resources := []corev1.ResourceName{
+		usage.ResourceRequestsStorage,
+		usage.ResourceStorage,
+		usage.ResourcePersistentVolumeClaims, // Add PVC count
+	}
+
+	for _, resourceName := range resources {
+		resourceUsage, err := c.CalculateUsage(ctx, namespace, resourceName)
+		if err != nil {
+			return nil, err
+		}
+		result[resourceName] = resourceUsage
+	}
+
+	return result, nil
+}
+
+// CalculatePVCCount calculates the number of PersistentVolumeClaims in a namespace
+func (c *StorageResourceCalculator) CalculatePVCCount(ctx context.Context, namespace string) (int64, error) {
+	log.Info("Calculating PVC count", zap.String("namespace", namespace))
+
+	// List all PVCs in the namespace
+	pvcList, err := c.Client.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
+	}
+
+	count := int64(len(pvcList.Items))
+
+	log.Info("PVC count calculation completed",
+		zap.String("namespace", namespace),
+		zap.Int64("pvcCount", count))
+
+	return count, nil
 }
 
 // CalculateStorageClassUsage calculates storage usage for a specific storage class in a namespace.
@@ -86,15 +150,13 @@ func (c *StorageResourceCalculator) CalculateStorageUsage(
 func (c *StorageResourceCalculator) CalculateStorageClassUsage(
 	ctx context.Context, namespace, storageClass string,
 ) (resource.Quantity, error) {
-	log.Info("Calculating storage class usage", "namespace", namespace, "storageClass", storageClass)
+	log.Info("Calculating storage class usage",
+		zap.String("namespace", namespace),
+		zap.String("storageClass", storageClass))
 
 	// List all PVCs in the namespace
-	pvcList := &corev1.PersistentVolumeClaimList{}
-	listOpts := &client.ListOptions{
-		Namespace: namespace,
-	}
-
-	if err := c.List(ctx, pvcList, listOpts); err != nil {
+	pvcList, err := c.Client.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
 		return resource.Quantity{}, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
 	}
 
@@ -106,19 +168,19 @@ func (c *StorageResourceCalculator) CalculateStorageClassUsage(
 			storageRequest := getPVCStorageRequest(&pvc)
 			totalUsage.Add(storageRequest)
 
-			log.V(1).Info("PVC storage class request",
-				"namespace", namespace,
-				"pvc", pvc.Name,
-				"storageClass", storageClass,
-				"request", storageRequest.String(),
-				"phase", pvc.Status.Phase)
+			log.Debug("PVC storage class request",
+				zap.String("namespace", namespace),
+				zap.String("pvc", pvc.Name),
+				zap.String("storageClass", storageClass),
+				zap.String("request", storageRequest.String()),
+				zap.String("phase", string(pvc.Status.Phase)))
 		}
 	}
 
 	log.Info("Storage class usage calculation completed",
-		"namespace", namespace,
-		"storageClass", storageClass,
-		"totalUsage", totalUsage.String())
+		zap.String("namespace", namespace),
+		zap.String("storageClass", storageClass),
+		zap.String("totalUsage", totalUsage.String()))
 
 	return *totalUsage, nil
 }
@@ -129,15 +191,13 @@ func (c *StorageResourceCalculator) CalculateStorageClassUsage(
 func (c *StorageResourceCalculator) CalculateStorageClassCount(
 	ctx context.Context, namespace, storageClass string,
 ) (int64, error) {
-	log.Info("Calculating storage class PVC count", "namespace", namespace, "storageClass", storageClass)
+	log.Info("Calculating storage class PVC count",
+		zap.String("namespace", namespace),
+		zap.String("storageClass", storageClass))
 
 	// List all PVCs in the namespace
-	pvcList := &corev1.PersistentVolumeClaimList{}
-	listOpts := &client.ListOptions{
-		Namespace: namespace,
-	}
-
-	if err := c.List(ctx, pvcList, listOpts); err != nil {
+	pvcList, err := c.Client.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
 		return 0, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
 	}
 
@@ -148,18 +208,18 @@ func (c *StorageResourceCalculator) CalculateStorageClassCount(
 		if pvcStorageClass == storageClass {
 			count++
 
-			log.V(1).Info("PVC storage class match",
-				"namespace", namespace,
-				"pvc", pvc.Name,
-				"storageClass", storageClass,
-				"phase", pvc.Status.Phase)
+			log.Debug("PVC storage class match",
+				zap.String("namespace", namespace),
+				zap.String("pvc", pvc.Name),
+				zap.String("storageClass", storageClass),
+				zap.String("phase", string(pvc.Status.Phase)))
 		}
 	}
 
 	log.Info("Storage class PVC count calculation completed",
-		"namespace", namespace,
-		"storageClass", storageClass,
-		"count", count)
+		zap.String("namespace", namespace),
+		zap.String("storageClass", storageClass),
+		zap.Int64("count", count))
 
 	return count, nil
 }
@@ -168,6 +228,10 @@ func (c *StorageResourceCalculator) CalculateStorageClassCount(
 // If no storage request is specified, it returns a zero quantity.
 // This follows the same logic as Kubernetes ResourceQuota for storage calculation.
 func getPVCStorageRequest(pvc *corev1.PersistentVolumeClaim) resource.Quantity {
+	if pvc == nil {
+		return resource.Quantity{}
+	}
+
 	if pvc.Spec.Resources.Requests == nil {
 		return resource.Quantity{}
 	}
@@ -183,6 +247,10 @@ func getPVCStorageRequest(pvc *corev1.PersistentVolumeClaim) resource.Quantity {
 // Returns empty string if no storage class is specified.
 // This follows the same logic as Kubernetes ResourceQuota for storage class specific quotas.
 func getPVCStorageClass(pvc *corev1.PersistentVolumeClaim) string {
+	if pvc == nil {
+		return ""
+	}
+
 	if pvc.Spec.StorageClassName == nil {
 		return ""
 	}

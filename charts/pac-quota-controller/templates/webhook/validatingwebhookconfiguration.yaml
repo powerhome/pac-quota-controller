@@ -27,7 +27,12 @@ webhooks:
         apiVersions: ["v1alpha1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["clusterresourcequotas"]
-    namespaceSelector: {}
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - {{ .Release.Namespace }}
   - name: vnamespace-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
@@ -39,16 +44,18 @@ webhooks:
       service:
         name: pac-quota-controller-webhook-service
         namespace: {{ .Release.Namespace }}
-        # Super annoying but kubebuilder router creates the path
-        # using the group and version, namespace doesn't contain a group
-        # so we have to double dashes
         path: /validate--v1-namespace
     rules:
       - apiGroups: [""]
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["namespaces"]
-    namespaceSelector: {}
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - {{ .Release.Namespace }}
   - name: vpod-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
@@ -66,7 +73,12 @@ webhooks:
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["pods"]
-    namespaceSelector: {}
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - {{ .Release.Namespace }}
   - name: vpersistentvolumeclaim-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
@@ -84,5 +96,10 @@ webhooks:
         apiVersions: ["v1"]
         operations: ["CREATE", "UPDATE"]
         resources: ["persistentvolumeclaims"]
-    namespaceSelector: {}
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+            - {{ .Release.Namespace }}
 {{- end }}

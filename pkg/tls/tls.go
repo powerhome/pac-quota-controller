@@ -4,10 +4,10 @@ import (
 	"crypto/tls"
 
 	"github.com/powerhome/pac-quota-controller/pkg/config"
-	"sigs.k8s.io/controller-runtime/pkg/log"
+	"go.uber.org/zap"
 )
 
-var setupLog = log.Log.WithName("setup.tls")
+var setupLog = zap.NewNop()
 
 // ConfigureTLS returns TLS options based on configuration
 func ConfigureTLS(cfg *config.Config) []func(*tls.Config) {

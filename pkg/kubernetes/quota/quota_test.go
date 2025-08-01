@@ -2,7 +2,7 @@ package quota
 
 import (
 	"context"
-	"testing"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,14 +14,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestQuota(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Quota Package Suite")
+// fakeClient is a test client that can be configured to return errors
+type fakeClient struct {
+	client.Client
+	listFunc func(context.Context, client.ObjectList, ...client.ListOption) error
+}
+
+func (f *fakeClient) List(ctx context.Context, obj client.ObjectList, opts ...client.ListOption) error {
+	if f.listFunc != nil {
+		return f.listFunc(ctx, obj, opts...)
+	}
+	return fmt.Errorf("list not implemented")
 }
 
 var _ = Describe("CRQClient", func() {
 	var (
-		ctx       context.Context
 		k8sClient client.Client
 		crqClient *CRQClient
 		sch       *runtime.Scheme
@@ -33,7 +40,6 @@ var _ = Describe("CRQClient", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
 		sch = runtime.NewScheme()
 		Expect(corev1.AddToScheme(sch)).To(Succeed())
 		Expect(quotav1alpha1.AddToScheme(sch)).To(Succeed())
@@ -96,7 +102,7 @@ var _ = Describe("CRQClient", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2).Build()
 			})
 			It("should return all CRQs", func() {
-				crqs, err := crqClient.ListAllCRQs(ctx)
+				crqs, err := crqClient.ListAllCRQs()
 				Expect(err).NotTo(HaveOccurred())
 				Expect(crqs).To(HaveLen(2))
 				Expect(crqs).To(ConsistOf(*crq1, *crq2))
@@ -107,12 +113,27 @@ var _ = Describe("CRQClient", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).Build()
 			})
 			It("should return an empty list", func() {
-				crqs, err := crqClient.ListAllCRQs(ctx)
+				crqs, err := crqClient.ListAllCRQs()
 				Expect(err).NotTo(HaveOccurred())
 				Expect(crqs).To(BeEmpty())
 			})
 		})
 		// Error case for c.Client.List is hard to test with fake client without specific error injection.
+		It("should handle client error", func() {
+			// Create a client that will return an error
+			errorClient := &fakeClient{
+				listFunc: func(ctx context.Context, obj client.ObjectList, opts ...client.ListOption) error {
+					return fmt.Errorf("simulated client error")
+				},
+			}
+			crqClient := NewCRQClient(errorClient)
+
+			crqs, err := crqClient.ListAllCRQs()
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("simulated client error"))
+			Expect(crqs).To(BeNil())
+		})
 	})
 
 	Describe("NamespaceMatchesCRQ", func() {
@@ -176,7 +197,7 @@ var _ = Describe("CRQClient", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, nsDev, nsProd).Build()
 			})
 			It("should return the matching CRQ", func() {
-				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				crq, err := crqClient.GetCRQByNamespace(nsDev)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(crq).NotTo(BeNil())
 				Expect(crq.Name).To(Equal("crq-dev"))
@@ -196,7 +217,7 @@ var _ = Describe("CRQClient", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, crqBoth, nsDev, nsProd).Build()
 			})
 			It("should return an error", func() {
-				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				crq, err := crqClient.GetCRQByNamespace(nsDev)
 				Expect(err).To(HaveOccurred())
 				Expect(crq).To(BeNil())
 				Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
@@ -210,7 +231,7 @@ var _ = Describe("CRQClient", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, nsTest).Build()
 			})
 			It("should return nil without error", func() {
-				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsTest)
+				crq, err := crqClient.GetCRQByNamespace(nsTest)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(crq).To(BeNil())
 			})
@@ -221,7 +242,7 @@ var _ = Describe("CRQClient", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsDev).Build()
 			})
 			It("should return nil without error", func() {
-				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				crq, err := crqClient.GetCRQByNamespace(nsDev)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(crq).To(BeNil())
 			})
@@ -239,7 +260,7 @@ var _ = Describe("CRQClient", func() {
 				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crqInvalidSelector, nsDev).Build()
 			})
 			It("should propagate the error", func() {
-				_, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				_, err := crqClient.GetCRQByNamespace(nsDev)
 				Expect(err).To(HaveOccurred())
 			})
 		})
