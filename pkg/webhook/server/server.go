@@ -222,26 +222,60 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 	}
 
 	// Start certificate watcher if configured
-	if s.certWatcher != nil {
-		if s.log != nil {
-			s.log.Info("Starting certificate watcher")
-		}
-		if err := s.certWatcher.Start(ctx); err != nil {
-			if s.log != nil {
-				s.log.Error("Failed to start certificate watcher", zap.Error(err))
-			}
-			return fmt.Errorf("failed to start certificate watcher: %w", err)
-		}
-		if s.log != nil {
-			s.log.Info("Certificate watcher started successfully")
-		}
+	if err := s.startCertWatcher(ctx); err != nil {
+		return err
 	}
 
-	// Setup server address and TLS configuration
+	// Configure the server
+	s.configureServer()
+
+	// Start the server and wait for it to be ready
+	serverStarted := s.startServerInBackground()
+	if err := s.waitForServerReady(ctx, serverStarted); err != nil {
+		return err
+	}
+
+	// Mark the server as ready and wait for shutdown
+	s.MarkReady()
+	if s.log != nil {
+		s.log.Info("Webhook server startup initiated successfully")
+	}
+
+	// Wait for context cancellation
+	<-ctx.Done()
+
+	// Perform graceful shutdown
+	return s.shutdown()
+}
+
+// startCertWatcher starts the certificate watcher if configured
+func (s *GinWebhookServer) startCertWatcher(ctx context.Context) error {
+	if s.certWatcher == nil {
+		return nil
+	}
+
+	if s.log != nil {
+		s.log.Info("Starting certificate watcher")
+	}
+
+	if err := s.certWatcher.Start(ctx); err != nil {
+		if s.log != nil {
+			s.log.Error("Failed to start certificate watcher", zap.Error(err))
+		}
+		return fmt.Errorf("failed to start certificate watcher: %w", err)
+	}
+
+	if s.log != nil {
+		s.log.Info("Certificate watcher started successfully")
+	}
+	return nil
+}
+
+// configureServer sets up the server address and TLS configuration
+func (s *GinWebhookServer) configureServer() {
 	s.server.Addr = fmt.Sprintf(":%d", s.port)
 	s.server.Handler = s.engine
 
-	// Configure TLS if certificate watcher is available
 	if s.certWatcher != nil {
 		s.server.TLSConfig = &tls.Config{
 			GetCertificate: s.certWatcher.GetCertificate,
@@ -250,8 +284,10 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 			s.log.Info("TLS configuration set up using certificate watcher")
 		}
 	}
+}
 
-	// Start server in a goroutine
+// startServerInBackground starts the HTTP server in a goroutine
+func (s *GinWebhookServer) startServerInBackground() <-chan error {
 	serverStarted := make(chan error, 1)
 	go func() {
 		var err error
@@ -266,6 +302,7 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 			}
 			err = s.server.ListenAndServe()
 		}
+
 		if err != nil && err != http.ErrServerClosed {
 			if s.log != nil {
 				s.log.Error("Webhook server error", zap.Error(err))
@@ -275,47 +312,33 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 			serverStarted <- nil
 		}
 	}()
+	return serverStarted
+}
 
-	// Wait for the server to be actually isReady to accept connections
-	// We'll poll the readiness endpoint to ensure the server is truly isReady
+// waitForServerReady waits for the server to be ready to accept connections
+func (s *GinWebhookServer) waitForServerReady(ctx context.Context, serverStarted <-chan error) error {
 	isReady := false
 	maxRetries := 30 // 15 seconds max wait time (30 * 500ms)
 	backoff := 500 * time.Millisecond
 	maxBackoff := 2 * time.Second
+
 	for i := 0; i < maxRetries && !isReady; i++ {
 		select {
 		case err := <-serverStarted:
 			if err != nil {
 				return fmt.Errorf("webhook server failed to start: %w", err)
 			}
-			// Server stopped unexpectedly
 			return fmt.Errorf("webhook server stopped unexpectedly")
 		case <-ctx.Done():
-			// Context was cancelled before server became ready, shut down gracefully
-			if s.log != nil {
-				s.log.Info("Context cancelled before server ready, shutting down")
-			}
-			// Stop certificate watcher if running
-			if s.certWatcher != nil {
-				s.certWatcher.Stop()
-			}
-			// Create a context with timeout for graceful shutdown
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			return s.server.Shutdown(shutdownCtx)
+			return s.handleContextCancelled()
 		case <-time.After(backoff):
-			// Test if server is actually ready by making a simple connection
 			if s.isServerReady() {
 				isReady = true
 				if s.log != nil {
 					s.log.Info("Webhook server is ready to accept connections")
 				}
 			} else {
-				// Exponential backoff: double the wait time, up to maxBackoff
-				backoff *= 2
-				if backoff > maxBackoff {
-					backoff = maxBackoff
-				}
+				backoff = s.calculateNextBackoff(backoff, maxBackoff)
 			}
 		}
 	}
@@ -323,22 +346,39 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 	if !isReady {
 		return fmt.Errorf("webhook server failed to become ready within timeout period")
 	}
+	return nil
+}
 
-	// Mark the server as ready now that it can accept connections
-	s.MarkReady()
-
+// handleContextCancelled handles context cancellation during startup
+func (s *GinWebhookServer) handleContextCancelled() error {
 	if s.log != nil {
-		s.log.Info("Webhook server startup initiated successfully")
+		s.log.Info("Context cancelled before server ready, shutting down")
 	}
 
-	// Wait for context cancellation
-	<-ctx.Done()
+	if s.certWatcher != nil {
+		s.certWatcher.Stop()
+	}
 
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return s.server.Shutdown(shutdownCtx)
+}
+
+// calculateNextBackoff calculates the next backoff duration with exponential backoff
+func (s *GinWebhookServer) calculateNextBackoff(currentBackoff, maxBackoff time.Duration) time.Duration {
+	nextBackoff := currentBackoff * 2
+	if nextBackoff > maxBackoff {
+		return maxBackoff
+	}
+	return nextBackoff
+}
+
+// shutdown performs graceful shutdown of the server
+func (s *GinWebhookServer) shutdown() error {
 	if s.log != nil {
 		s.log.Info("Shutting down webhook server")
 	}
 
-	// Stop certificate watcher if running
 	if s.certWatcher != nil {
 		if s.log != nil {
 			s.log.Info("Stopping certificate watcher")
@@ -346,7 +386,6 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 		s.certWatcher.Stop()
 	}
 
-	// Create a context with timeout for graceful shutdown
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
