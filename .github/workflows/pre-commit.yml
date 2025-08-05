@@ -22,12 +22,12 @@ jobs:
         with:
           go-version: '1.24.5'
           check-latest: true
+      - name: Install dependencies
+        run: make deps
       - name: Run fmt
         run: make fmt
       - name: Run vet
         run: make vet
-      - name: Run make manifests
-        run: make manifests
       - name: Run make generate
         run: make generate
       - name: Run make helm-docs

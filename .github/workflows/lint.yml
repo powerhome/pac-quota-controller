@@ -19,7 +19,8 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install dependencies
+        run: make deps
+
       - name: Run linter
-        uses: golangci/golangci-lint-action@4afd733a84b1f43292c63897423277bb7f4313a9 # v8
-        with:
-          version: v2.1.0
+        run: make lint

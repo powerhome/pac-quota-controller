@@ -31,6 +31,9 @@ jobs:
       - name: Create kind cluster
         run: kind create cluster
 
+      - name: Install dependencies
+        run: make deps
+
       - name: Prepare pac-quota-controller
         run: |
           go mod tidy
