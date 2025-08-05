@@ -303,11 +303,11 @@ func createCRQJSON(name, cpu, memory string) []byte {
 	jsonTemplate := `{"apiVersion":"quota.powerapp.cloud/v1alpha1","kind":"ClusterResourceQuota",` +
 		`"metadata":{"name":"%s"},"spec":{"hard":{"cpu":"%s","memory":"%s"},` +
 		`"namespaceSelector":{"matchLabels":{"environment":"production"}}}}`
-	return fmt.Appendf(nil, jsonTemplate, name, cpu, memory)
+	return []byte(fmt.Sprintf(jsonTemplate, name, cpu, memory))
 }
 
 // Helper function to create CRQ delete JSON
 func createCRQDeleteJSON(name string) []byte {
 	jsonTemplate := `{"apiVersion":"quota.powerapp.cloud/v1alpha1","kind":"ClusterResourceQuota","metadata":{"name":"%s"}}`
-	return fmt.Appendf(nil, jsonTemplate, name)
+	return []byte(fmt.Sprintf(jsonTemplate, name))
 }
