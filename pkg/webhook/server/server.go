@@ -280,6 +280,8 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 	// We'll poll the readiness endpoint to ensure the server is truly isReady
 	isReady := false
 	maxRetries := 30 // 15 seconds max wait time (30 * 500ms)
+	backoff := 500 * time.Millisecond
+	maxBackoff := 2 * time.Second
 	for i := 0; i < maxRetries && !isReady; i++ {
 		select {
 		case err := <-serverStarted:
