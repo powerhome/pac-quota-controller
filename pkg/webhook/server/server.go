@@ -301,12 +301,18 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			return s.server.Shutdown(shutdownCtx)
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(backoff):
 			// Test if server is actually ready by making a simple connection
 			if s.isServerReady() {
 				isReady = true
 				if s.log != nil {
 					s.log.Info("Webhook server is ready to accept connections")
+				}
+			} else {
+				// Exponential backoff: double the wait time, up to maxBackoff
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
 				}
 			}
 		}
