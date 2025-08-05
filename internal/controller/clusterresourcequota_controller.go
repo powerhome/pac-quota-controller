@@ -319,6 +319,11 @@ func (r *ClusterResourceQuotaReconciler) updateStatus(
 // - Other namespaced objects (Pods, Services, etc.) by first retrieving their namespace
 // It excludes the controller's own namespace and any namespaces marked with the exclusion label.
 func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context, obj client.Object) []reconcile.Request {
+	// Handle nil object gracefully
+	if obj == nil {
+		return nil
+	}
+
 	var ns *corev1.Namespace
 	var err error
 
@@ -326,9 +331,15 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 	if namespace, ok := obj.(*corev1.Namespace); ok {
 		ns = namespace
 	} else {
+		// For cluster-scoped resources, return nil (no quota mapping needed)
+		namespaceName := obj.GetNamespace()
+		if namespaceName == "" {
+			return nil
+		}
+
 		// For other objects, get the namespace they belong to
 		ns = &corev1.Namespace{}
-		if err = r.Get(ctx, types.NamespacedName{Name: obj.GetNamespace()}, ns); err != nil {
+		if err = r.Get(ctx, types.NamespacedName{Name: namespaceName}, ns); err != nil {
 			log.Error(err, "Failed to get namespace for object to check for exclusion", "object", client.ObjectKeyFromObject(obj))
 			return nil
 		}
@@ -338,7 +349,14 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 		return nil // Ignore events from excluded namespaces
 	}
 
-	log.Info("Processing object event, finding relevant CRQs")
+	// Get object GVK for better logging
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	log.Info("Processing object event, finding relevant CRQs",
+		"object", client.ObjectKeyFromObject(obj),
+		"group", gvk.Group,
+		"version", gvk.Version,
+		"kind", gvk.Kind,
+		"namespace", ns.Name)
 
 	// Find which CRQ selects this namespace.
 	crq, err := r.crqClient.GetCRQByNamespace(ns)

@@ -51,6 +51,19 @@ func (f *fakeStatusWriter) Create(ctx context.Context, obj client.Object, subRes
 	return nil
 }
 
+// Success status writer for happy path tests
+type successStatusWriter struct{}
+
+func (f *successStatusWriter) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+	return nil
+}
+func (f *successStatusWriter) Update(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+	return nil
+}
+func (f *successStatusWriter) Create(ctx context.Context, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+	return nil
+}
+
 type fakeClient struct {
 	client.Client
 	getFunc      func(context.Context, client.ObjectKey, client.Object) error
@@ -102,7 +115,29 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 	Context("Reconcile", func() {
 		It("should successfully reconcile the resource", func() {
-			reconciler := &ClusterResourceQuotaReconciler{}
+			// Create a fake client that returns the test quota
+			fakeClient := &fakeClient{
+				getFunc: func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+					if crq, ok := obj.(*quotav1alpha1.ClusterResourceQuota); ok {
+						*crq = *testQuota
+						return nil
+					}
+					return nil
+				},
+				listFunc: func(ctx context.Context, obj client.ObjectList, opts ...client.ListOption) error {
+					if nsList, ok := obj.(*corev1.NamespaceList); ok {
+						// Return empty namespace list for this test
+						nsList.Items = []corev1.Namespace{}
+						return nil
+					}
+					return nil
+				},
+				statusWriter: &successStatusWriter{}, // Use success status writer
+			}
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				Client: fakeClient,
+			}
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Name: testQuota.Name,

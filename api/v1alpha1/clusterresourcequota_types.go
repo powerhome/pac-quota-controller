@@ -114,10 +114,10 @@ func (crqs *ClusterResourceQuotaStatus) GetNamespaces() []string {
 // namespaces that match a label selector.
 type ClusterResourceQuota struct {
 	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.ObjectMeta `json:"metadata"`
 
-	Spec   ClusterResourceQuotaSpec   `json:"spec,omitempty"`
-	Status ClusterResourceQuotaStatus `json:"status,omitempty"`
+	Spec   ClusterResourceQuotaSpec   `json:"spec"`
+	Status ClusterResourceQuotaStatus `json:"status"`
 }
 
 // +kubebuilder:object:root=true
@@ -125,7 +125,7 @@ type ClusterResourceQuota struct {
 // ClusterResourceQuotaList contains a list of ClusterResourceQuota.
 type ClusterResourceQuotaList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata"`
 	Items           []ClusterResourceQuota `json:"items"`
 }
 

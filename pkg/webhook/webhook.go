@@ -24,16 +24,18 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/webhook/server"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // SetupGinWebhookServer configures the Gin-based webhook server with certificate watching
 func SetupGinWebhookServer(
 	cfg *config.Config,
-	c kubernetes.Interface,
+	k8sClient kubernetes.Interface,
+	runtimeClient client.Client,
 	log *zap.Logger,
 ) (*server.GinWebhookServer, *certwatcher.CertWatcher) {
 	// Create the Gin webhook server
-	webhookServer := server.NewGinWebhookServer(cfg, c, log)
+	webhookServer := server.NewGinWebhookServer(cfg, k8sClient, runtimeClient, log)
 
 	// Setup certificate watcher if certificates are provided
 	if len(cfg.WebhookCertPath) > 0 {

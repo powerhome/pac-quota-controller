@@ -45,13 +45,7 @@ type CertWatcher struct {
 
 // NewCertWatcher creates a new certificate watcher
 func NewCertWatcher(certPath, keyPath string, log *zap.Logger) (*CertWatcher, error) {
-	// Validate that both files exist
-	if _, err := os.Stat(certPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("certificate file does not exist: %s", certPath)
-	}
-	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("private key file does not exist: %s", keyPath)
-	}
+	// Don't validate files exist immediately - we'll wait for them with retries
 
 	// Create fsnotify watcher
 	watcher, err := fsnotify.NewWatcher()
@@ -68,24 +62,48 @@ func NewCertWatcher(certPath, keyPath string, log *zap.Logger) (*CertWatcher, er
 		reloadChan: make(chan struct{}, 1), // Buffered to avoid blocking
 	}
 
-	// Load initial certificate
-	if err := cw.loadCertificate(); err != nil {
-		if closeErr := watcher.Close(); closeErr != nil {
-			log.Error("Failed to close watcher", zap.Error(closeErr))
-		}
-		return nil, fmt.Errorf("failed to load initial certificate: %w", err)
-	}
-
-	// Watch the directory containing the certificate files
-	certDir := filepath.Dir(certPath)
-	if err := watcher.Add(certDir); err != nil {
-		if closeErr := watcher.Close(); closeErr != nil {
-			log.Error("Failed to close watcher", zap.Error(closeErr))
-		}
-		return nil, fmt.Errorf("failed to watch certificate directory: %w", err)
-	}
-
 	return cw, nil
+}
+
+// waitForCertificateFiles waits for certificate files to become available with retries
+func (cw *CertWatcher) waitForCertificateFiles(ctx context.Context, maxRetries int, retryInterval time.Duration) error {
+	for i := 0; i < maxRetries; i++ {
+		// Check if both files exist
+		if _, err := os.Stat(cw.certPath); err == nil {
+			if _, err := os.Stat(cw.keyPath); err == nil {
+				// Both files exist, try to load the certificate
+				if err := cw.loadCertificate(); err != nil {
+					cw.log.Warn("Certificate files exist but failed to load, retrying",
+						zap.Int("attempt", i+1),
+						zap.Int("maxRetries", maxRetries),
+						zap.Error(err))
+				} else {
+					cw.log.Info("Successfully loaded certificates",
+						zap.Int("attempt", i+1))
+					return nil
+				}
+			}
+		}
+
+		if i < maxRetries-1 { // Don't sleep on the last iteration
+			cw.log.Info("Waiting for certificate files to become available",
+				zap.String("certPath", cw.certPath),
+				zap.String("keyPath", cw.keyPath),
+				zap.Int("attempt", i+1),
+				zap.Int("maxRetries", maxRetries),
+				zap.Duration("retryInterval", retryInterval))
+
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(retryInterval):
+				// Continue to next iteration
+			}
+		}
+	}
+
+	return fmt.Errorf("failed to load certificates after %d attempts: cert=%s, key=%s",
+		maxRetries, cw.certPath, cw.keyPath)
 }
 
 // loadCertificate loads the certificate and private key from files
@@ -128,10 +146,6 @@ func (cw *CertWatcher) loadCertificate() error {
 		return fmt.Errorf("failed to create TLS certificate: %w", err)
 	}
 
-	// Note: Skip hostname validation for Kubernetes webhooks as K8s handles TLS validation
-	// The certificate is issued for service names like pac-quota-controller-webhook-service.pac-quota-controller-system.svc
-	// but the webhook server might bind to localhost during development or 0.0.0.0 in production
-
 	cw.cert = &tlsCert
 	cw.log.Info("Certificate loaded successfully",
 		zap.String("subject", cert.Subject.CommonName),
@@ -146,6 +160,20 @@ func (cw *CertWatcher) Start(ctx context.Context) error {
 	cw.log.Info("Starting certificate watcher",
 		zap.String("certPath", cw.certPath),
 		zap.String("keyPath", cw.keyPath))
+
+	// Wait for certificates to be available with retries
+	maxRetries := 60 // 5 minutes with 5-second intervals
+	retryInterval := 5 * time.Second
+
+	if err := cw.waitForCertificateFiles(ctx, maxRetries, retryInterval); err != nil {
+		return fmt.Errorf("failed to wait for certificate files: %w", err)
+	}
+
+	// Watch the directory containing the certificate files
+	certDir := filepath.Dir(cw.certPath)
+	if err := cw.watcher.Add(certDir); err != nil {
+		return fmt.Errorf("failed to watch certificate directory: %w", err)
+	}
 
 	go cw.watchLoop(ctx)
 	return nil

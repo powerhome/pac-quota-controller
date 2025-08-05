@@ -2,6 +2,7 @@ package manager
 
 import (
 	"os"
+	"time"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/internal/controller"
@@ -33,16 +34,32 @@ func SetupManager(
 	cfg *config.Config,
 	scheme *k8sruntime.Scheme,
 ) (ctrl.Manager, error) {
-	mgr, err := ctrl.NewManager(
-		ctrl.GetConfigOrDie(),
-		ctrl.Options{
-			Scheme: scheme,
+	// Determine leader election namespace
+	leaderElectionNamespace := cfg.LeaderElectionNamespace
+	if leaderElectionNamespace == "" {
+		leaderElectionNamespace = cfg.OwnNamespace
+	}
 
-			LeaderElection:   cfg.EnableLeaderElection,
-			LeaderElectionID: "81307769.powerapp.cloud",
-		},
-	)
+	// Setup manager options
+	options := ctrl.Options{
+		Scheme:                  scheme,
+		LeaderElection:          cfg.EnableLeaderElection,
+		LeaderElectionID:        "81307769.powerapp.cloud",
+		LeaderElectionNamespace: leaderElectionNamespace,
+	}
 
+	// Configure leader election timing if enabled
+	if cfg.EnableLeaderElection {
+		leaseDuration := time.Duration(cfg.LeaderElectionLeaseDuration) * time.Second
+		renewDeadline := time.Duration(cfg.LeaderElectionRenewDeadline) * time.Second
+		retryPeriod := time.Duration(cfg.LeaderElectionRetryPeriod) * time.Second
+
+		options.LeaseDuration = &leaseDuration
+		options.RenewDeadline = &renewDeadline
+		options.RetryPeriod = &retryPeriod
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), options)
 	if err != nil {
 		return nil, err
 	}

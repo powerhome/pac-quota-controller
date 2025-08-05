@@ -15,6 +15,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -22,17 +27,32 @@ import (
 
 var _ = Describe("PersistentVolumeClaimWebhook", func() {
 	var (
-		ginEngine *gin.Engine
-		webhook   *PersistentVolumeClaimWebhook
+		ginEngine         *gin.Engine
+		webhook           *PersistentVolumeClaimWebhook
+		fakeRuntimeClient client.Client
+		crqClient         *quota.CRQClient
+		testNamespace     *corev1.Namespace
 	)
 
 	BeforeEach(func() {
 		gin.SetMode(gin.TestMode)
 		ginEngine = gin.New()
 
+		// Create test namespace that will be used in tests
+		testNamespace = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-namespace",
+			},
+		}
+
 		// Create webhook with fake client
-		k8sClient := fake.NewSimpleClientset()
+		k8sClient := fake.NewSimpleClientset(testNamespace)
+		scheme := runtime.NewScheme()
+		_ = quotav1alpha1.AddToScheme(scheme)
+		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
+		crqClient = quota.NewCRQClient(fakeRuntimeClient)
 		webhook = NewPersistentVolumeClaimWebhook(k8sClient, zap.NewNop())
+		webhook.SetCRQClient(crqClient)
 
 		// Setup route
 		ginEngine.POST("/pvc", webhook.Handle)

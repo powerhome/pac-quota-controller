@@ -15,8 +15,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -24,15 +27,22 @@ import (
 
 var _ = Describe("ClusterResourceQuotaWebhook", func() {
 	var (
-		webhook    *ClusterResourceQuotaWebhook
-		fakeClient kubernetes.Interface
-		logger     *zap.Logger
+		webhook           *ClusterResourceQuotaWebhook
+		fakeClient        kubernetes.Interface
+		fakeRuntimeClient client.Client
+		crqClient         *quota.CRQClient
+		logger            *zap.Logger
 	)
 
 	BeforeEach(func() {
 		fakeClient = fake.NewSimpleClientset()
+		scheme := runtime.NewScheme()
+		_ = quotav1alpha1.AddToScheme(scheme)
+		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
+		crqClient = quota.NewCRQClient(fakeRuntimeClient)
 		logger, _ = zap.NewDevelopment()
 		webhook = NewClusterResourceQuotaWebhook(fakeClient, logger)
+		webhook.SetCRQClient(crqClient)
 	})
 
 	Describe("NewClusterResourceQuotaWebhook", func() {
@@ -67,9 +77,8 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateCreate(crq)
+			err := webhook.validateCreate(crq)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(BeNil())
 		})
 	})
 
@@ -92,17 +101,15 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateUpdate(crq)
+			err := webhook.validateUpdate(crq)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(BeNil())
 		})
 	})
 
 	Describe("validateDelete", func() {
 		It("should validate cluster resource quota deletion", func() {
-			warnings, err := webhook.validateDelete()
+			err := webhook.validateDelete()
 			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(BeNil())
 		})
 	})
 

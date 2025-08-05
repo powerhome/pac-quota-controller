@@ -17,20 +17,40 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
 
 var _ = Describe("PodWebhook", func() {
 	var (
-		webhook    *PodWebhook
-		fakeClient kubernetes.Interface
-		logger     *zap.Logger
-		ginEngine  *gin.Engine
+		webhook           *PodWebhook
+		fakeClient        kubernetes.Interface
+		fakeRuntimeClient client.Client
+		crqClient         *quota.CRQClient
+		logger            *zap.Logger
+		ginEngine         *gin.Engine
+		testNamespace     *corev1.Namespace
 	)
 
 	BeforeEach(func() {
-		fakeClient = fake.NewSimpleClientset()
+		// Create test namespace that will be used in tests
+		testNamespace = &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-namespace",
+			},
+		}
+
+		fakeClient = fake.NewSimpleClientset(testNamespace)
+		scheme := runtime.NewScheme()
+		_ = quotav1alpha1.AddToScheme(scheme)
+		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
+		crqClient = quota.NewCRQClient(fakeRuntimeClient)
 		logger = zap.NewNop()
 		webhook = NewPodWebhook(fakeClient, logger)
+		webhook.SetCRQClient(crqClient)
 		gin.SetMode(gin.TestMode)
 		ginEngine = gin.New()
 		ginEngine.POST("/webhook", webhook.Handle)

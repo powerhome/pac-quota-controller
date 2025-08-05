@@ -29,12 +29,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/kubernetes"
+
+	namespaceutil "github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
 
 // NamespaceWebhook handles webhook requests for Namespace resources
 type NamespaceWebhook struct {
-	client kubernetes.Interface
-	log    *zap.Logger
+	client    kubernetes.Interface
+	crqClient *quota.CRQClient
+	log       *zap.Logger
 }
 
 // NewNamespaceWebhook creates a new NamespaceWebhook
@@ -133,6 +137,7 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 		h.log.Error("Validation failed", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
+			Code:    http.StatusForbidden,
 			Message: err.Error(),
 		}
 	} else {
@@ -145,22 +150,38 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 	c.JSON(http.StatusOK, admissionReview)
 }
 
-//nolint:unparam // This function will be implemented in the future
+//nolint:unparam // This function is now properly implemented
 func (h *NamespaceWebhook) validateCreate(_ context.Context, namespace *corev1.Namespace) error {
-	// For now, skip CRQ validation since we're removing controller-runtime dependencies
-	// TODO: Implement CRQ validation using native Kubernetes client when needed
-	h.log.Info("Skipping CRQ validation for namespace create",
+	h.log.Info("Validating namespace for CRQ conflicts",
 		zap.String("namespace", namespace.Name))
-	// This function will be implemented in the future
-	return nil
+
+	return h.validateNamespaceAgainstCRQs(namespace)
 }
 
-//nolint:unparam // This function will be implemented in the future
+//nolint:unparam // This function is now properly implemented
 func (h *NamespaceWebhook) validateUpdate(_ context.Context, namespace *corev1.Namespace) error {
-	// For now, skip CRQ validation since we're removing controller-runtime dependencies
-	// TODO: Implement CRQ validation using native Kubernetes client when needed
-	h.log.Info("Skipping CRQ validation for namespace update",
+	h.log.Info("Validating namespace update for CRQ conflicts",
 		zap.String("namespace", namespace.Name))
-	// This function will be implemented in the future
-	return nil
+
+	return h.validateNamespaceAgainstCRQs(namespace)
+}
+
+// validateNamespaceAgainstCRQs checks if the namespace would conflict with existing CRQs
+func (h *NamespaceWebhook) validateNamespaceAgainstCRQs(ns *corev1.Namespace) error {
+	if h.crqClient == nil {
+		h.log.Info("No CRQ client available, skipping CRQ validation",
+			zap.String("namespace", ns.Name))
+		return nil
+	}
+
+	validator := namespaceutil.NewNamespaceValidator(h.client, h.crqClient)
+	return validator.ValidateNamespaceAgainstCRQs(ns)
+}
+
+// SetCRQClient sets the CRQ client for validation
+func (h *NamespaceWebhook) SetCRQClient(crqClient *quota.CRQClient) {
+	h.crqClient = crqClient
+	if h.log != nil {
+		h.log.Info("Set CRQ client for namespace webhook")
+	}
 }

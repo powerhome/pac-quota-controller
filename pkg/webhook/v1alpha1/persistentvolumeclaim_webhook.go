@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -193,15 +194,40 @@ func (h *PersistentVolumeClaimWebhook) validateStorageQuota(
 	// Get storage request from PVC
 	storageRequest := getStorageRequest(pvc)
 
-	// Validate storage quota
+	// Validate general storage quota
 	if err := h.validateResourceQuota(pvc.Namespace, usage.ResourceRequestsStorage, storageRequest); err != nil {
-		return fmt.Errorf("storage quota validation failed: %w", err)
+		return fmt.Errorf("ClusterResourceQuota storage validation failed: %w", err)
 	}
 
-	// Validate PVC count (always 1 for a new PVC)
+	// Validate general PVC count (always 1 for a new PVC)
 	pvcCount := resource.NewQuantity(1, resource.DecimalSI)
 	if err := h.validateResourceQuota(pvc.Namespace, usage.ResourcePersistentVolumeClaims, *pvcCount); err != nil {
-		return fmt.Errorf("PVC count quota validation failed: %w", err)
+		return fmt.Errorf("ClusterResourceQuota PVC count validation failed: %w", err)
+	}
+
+	// Validate storage class specific quotas if storage class is specified
+	if pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName != "" {
+		storageClass := *pvc.Spec.StorageClassName
+
+		// Validate storage class specific storage quota
+		storageClassStorageResource := corev1.ResourceName(fmt.Sprintf(
+			"%s.storageclass.storage.k8s.io/requests.storage", storageClass))
+		if err := h.validateResourceQuota(pvc.Namespace, storageClassStorageResource, storageRequest); err != nil {
+			return fmt.Errorf("ClusterResourceQuota storage class '%s' storage validation failed: %w", storageClass, err)
+		}
+
+		// Validate storage class specific PVC count
+		storageClassCountResource := corev1.ResourceName(fmt.Sprintf(
+			"%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClass))
+		if err := h.validateResourceQuota(pvc.Namespace, storageClassCountResource, *pvcCount); err != nil {
+			return fmt.Errorf("ClusterResourceQuota storage class '%s' PVC count validation failed: %w", storageClass, err)
+		}
+
+		h.log.Info("PVC storage class specific CRQ validation passed",
+			zap.String("pvc", pvc.Name),
+			zap.String("namespace", pvc.Namespace),
+			zap.String("storageClass", storageClass),
+			zap.String("storageRequest", storageRequest.String()))
 	}
 
 	h.log.Info("PVC CRQ validation passed",
@@ -240,6 +266,25 @@ func (h *PersistentVolumeClaimWebhook) calculateCurrentUsage(namespace string,
 		}
 		return *resource.NewQuantity(count, resource.DecimalSI), nil
 	default:
+		// Check if this is a storage class specific resource
+		resourceStr := string(resourceName)
+
+		// Pattern: <storage-class>.storageclass.storage.k8s.io/requests.storage
+		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage") {
+			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage")
+			return h.storageCalculator.CalculateStorageClassUsage(context.Background(), namespace, storageClass)
+		}
+
+		// Pattern: <storage-class>.storageclass.storage.k8s.io/persistentvolumeclaims
+		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims") {
+			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims")
+			count, err := h.storageCalculator.CalculateStorageClassCount(context.Background(), namespace, storageClass)
+			if err != nil {
+				return resource.Quantity{}, err
+			}
+			return *resource.NewQuantity(count, resource.DecimalSI), nil
+		}
+
 		return resource.Quantity{}, fmt.Errorf("unsupported resource type: %s", resourceName)
 	}
 }

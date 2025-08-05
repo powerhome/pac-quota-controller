@@ -30,12 +30,14 @@ import (
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
 
 // ClusterResourceQuotaWebhook handles webhook requests for ClusterResourceQuota resources
 type ClusterResourceQuotaWebhook struct {
-	client kubernetes.Interface
-	log    *zap.Logger
+	client    kubernetes.Interface
+	crqClient *quota.CRQClient
+	log       *zap.Logger
 }
 
 // NewClusterResourceQuotaWebhook creates a new ClusterResourceQuotaWebhook
@@ -108,22 +110,21 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 	}
 
 	// Validate based on operation
-	var warnings []string
 	var err error
 
 	switch admissionReview.Request.Operation {
 	case admissionv1.Create:
 		h.log.Info("Validating ClusterResourceQuota on create",
 			zap.String("name", crq.GetName()))
-		warnings, err = h.validateCreate(&crq)
+		err = h.validateCreate(&crq)
 	case admissionv1.Update:
 		h.log.Info("Validating ClusterResourceQuota on update",
 			zap.String("name", crq.GetName()))
-		warnings, err = h.validateUpdate(&crq)
+		err = h.validateUpdate(&crq)
 	case admissionv1.Delete:
 		h.log.Info("Validating ClusterResourceQuota on delete",
 			zap.String("name", crq.GetName()))
-		warnings, err = h.validateDelete()
+		err = h.validateDelete()
 	default:
 		h.log.Error("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
@@ -138,13 +139,11 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 		h.log.Error("Validation failed", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
+			Code:    http.StatusForbidden,
 			Message: err.Error(),
 		}
 	} else {
 		admissionReview.Response.Allowed = true
-		if len(warnings) > 0 {
-			admissionReview.Response.Warnings = warnings
-		}
 	}
 
 	c.JSON(http.StatusOK, admissionReview)
@@ -152,17 +151,41 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 
 func (h *ClusterResourceQuotaWebhook) validateCreate(
 	crq *quotav1alpha1.ClusterResourceQuota,
-) ([]string, error) {
-	return namespace.ValidateNamespaceOwnership(h.client, crq)
+) error {
+	if h.crqClient == nil {
+		return fmt.Errorf("CRQ client not available for validation")
+	}
+
+	validator := namespace.NewNamespaceValidator(h.client, h.crqClient)
+	if err := validator.ValidateCRQNamespaceConflicts(crq); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (h *ClusterResourceQuotaWebhook) validateUpdate(
 	crq *quotav1alpha1.ClusterResourceQuota,
-) ([]string, error) {
-	return namespace.ValidateNamespaceOwnership(h.client, crq)
+) error {
+	if h.crqClient == nil {
+		return fmt.Errorf("CRQ client not available for validation")
+	}
+
+	validator := namespace.NewNamespaceValidator(h.client, h.crqClient)
+	if err := validator.ValidateCRQNamespaceConflicts(crq); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (h *ClusterResourceQuotaWebhook) validateDelete() ([]string, error) {
+func (h *ClusterResourceQuotaWebhook) validateDelete() error {
 	// No validation needed for delete operations
-	return nil, nil
+	return nil
+}
+
+// SetCRQClient sets the CRQ client for validation
+func (h *ClusterResourceQuotaWebhook) SetCRQClient(crqClient *quota.CRQClient) {
+	h.crqClient = crqClient
+	if h.log != nil {
+		h.log.Info("Set CRQ client for ClusterResourceQuota webhook")
+	}
 }

@@ -42,7 +42,7 @@ controllerManager:
     runAsNonRoot: true
     seccompProfile:
       type: RuntimeDefault
-  terminationGracePeriodSeconds: 10
+  terminationGracePeriodSeconds: 15
   serviceAccount:
     name: pac-quota-controller-manager
     annotations: {}

@@ -10,7 +10,8 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
 
-// validateCRQResourceQuotaWithNamespace is a shared function for validating resource quotas across webhooks with actual namespace object
+// validateCRQResourceQuotaWithNamespace is a shared function for validating resource quotas
+// across webhooks with actual namespace object
 func validateCRQResourceQuotaWithNamespace(
 	crqClient *quota.CRQClient,
 	ns *corev1.Namespace,
@@ -94,8 +95,9 @@ func validateCRQResourceQuotaWithNamespace(
 				zap.String("total_usage", totalUsage.String()),
 				zap.String("limit", quotaLimit.String()),
 				zap.String("crq", crq.Name))
-			return fmt.Errorf("resource quota would be exceeded: requested %s, current usage %s, quota limit %s, total would be %s",
-				requestedQuantity.String(), currentUsage.String(), quotaLimit.String(), totalUsage.String())
+			return fmt.Errorf("ClusterResourceQuota '%s' %s limit exceeded: requested %s, current usage %s, "+
+				"quota limit %s, total would be %s",
+				crq.Name, resourceName, requestedQuantity.String(), currentUsage.String(), quotaLimit.String(), totalUsage.String())
 		}
 	} else {
 		log.Info("No quota limit defined for resource, allowing operation",

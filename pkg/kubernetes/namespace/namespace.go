@@ -4,13 +4,30 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
+
+// NamespaceValidator handles validation logic for namespaces and CRQs
+type NamespaceValidator struct {
+	kubernetesClient kubernetes.Interface
+	crqClient        *quota.CRQClient
+}
+
+// NewNamespaceValidator creates a new NamespaceValidator
+func NewNamespaceValidator(kubernetesClient kubernetes.Interface, crqClient *quota.CRQClient) *NamespaceValidator {
+	return &NamespaceValidator{
+		kubernetesClient: kubernetesClient,
+		crqClient:        crqClient,
+	}
+}
 
 // LabelBasedNamespaceSelector selects namespaces based on label selectors
 type LabelBasedNamespaceSelector struct {
@@ -109,35 +126,141 @@ func (s *LabelBasedNamespaceSelector) DetermineNamespaceChanges(
 	return added, removed, nil
 }
 
-// ValidateNamespaceOwnership checks to ensure no namespace is already owned by another CRQ.
-func ValidateNamespaceOwnership(
-	c kubernetes.Interface,
-	crq *quotav1alpha1.ClusterResourceQuota,
-) ([]string, error) {
+// ValidateCRQNamespaceConflicts validates that a CRQ doesn't conflict with existing CRQs
+func (v *NamespaceValidator) ValidateCRQNamespaceConflicts(crq *quotav1alpha1.ClusterResourceQuota) error {
 	if crq.Spec.NamespaceSelector == nil {
-		return nil, nil // If no selector, nothing to check
+		return nil // If no selector, nothing to check
 	}
 
 	// Use the namespace selector utility to get intended namespaces for this CRQ
-	selector, err := NewLabelBasedNamespaceSelector(c, crq.Spec.NamespaceSelector)
+	selector, err := NewLabelBasedNamespaceSelector(v.kubernetesClient, crq.Spec.NamespaceSelector)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create namespace selector: %w", err)
+		return fmt.Errorf("failed to create namespace selector: %w", err)
 	}
 	intendedNamespaces, err := selector.GetSelectedNamespaces()
 	if err != nil {
-		return nil, fmt.Errorf("failed to select namespaces: %w", err)
+		return fmt.Errorf("failed to select namespaces: %w", err)
 	}
 	if len(intendedNamespaces) == 0 {
-		return nil, nil // No intended namespaces, nothing to check
-	}
-	myNamespaces := make(map[string]struct{}, len(intendedNamespaces))
-	for _, ns := range intendedNamespaces {
-		myNamespaces[ns] = struct{}{}
+		return nil // No intended namespaces, nothing to check
 	}
 
-	// For now, skip CRQ validation since we're removing controller-runtime dependencies
-	// TODO: Implement CRQ validation using native Kubernetes client when needed
-	return []string{}, nil
+	// Check if any of the intended namespaces are already owned by other CRQs
+	conflictingCRQs, err := v.findConflictingCRQsForNamespaces(intendedNamespaces, crq.Name)
+	if err != nil {
+		return fmt.Errorf("failed to check for conflicting CRQs: %w", err)
+	}
+
+	if len(conflictingCRQs) > 0 {
+		var conflictMessages []string
+		for namespaceName, crqNames := range conflictingCRQs {
+			conflictMessages = append(conflictMessages,
+				fmt.Sprintf("namespace '%s' is already selected by ClusterResourceQuota(s): %v", namespaceName, crqNames))
+		}
+		return fmt.Errorf("namespace ownership conflict: ClusterResourceQuota '%s' cannot be created/updated "+
+			"because it would conflict with existing ClusterResourceQuotas: %s",
+			crq.Name, strings.Join(conflictMessages, "; "))
+	}
+
+	return nil
+}
+
+// ValidateNamespaceAgainstCRQs validates that a namespace doesn't conflict with existing CRQs
+func (v *NamespaceValidator) ValidateNamespaceAgainstCRQs(namespace *corev1.Namespace) error {
+	// Get all existing CRQs
+	allCRQs, err := v.listAllCRQs()
+	if err != nil {
+		return fmt.Errorf("failed to list CRQs: %w", err)
+	}
+
+	// Check which CRQs would select this namespace
+	var matchingCRQs []string
+	for _, crq := range allCRQs {
+		matches, err := v.namespaceMatchesCRQ(namespace, &crq)
+		if err != nil {
+			return fmt.Errorf("failed to check if namespace %s matches CRQ %s: %w",
+				namespace.Name, crq.Name, err)
+		}
+
+		if matches {
+			matchingCRQs = append(matchingCRQs, crq.Name)
+		}
+	}
+
+	// If more than one CRQ would select this namespace, it's a conflict
+	if len(matchingCRQs) > 1 {
+		return fmt.Errorf("multiple ClusterResourceQuotas select namespace \"%s\": %v",
+			namespace.Name, matchingCRQs)
+	}
+
+	return nil
+}
+
+// findConflictingCRQsForNamespaces checks if any of the given namespaces are already selected by other CRQs
+func (v *NamespaceValidator) findConflictingCRQsForNamespaces(
+	namespaces []string, excludeCRQName string,
+) (map[string][]string, error) {
+	conflicts := make(map[string][]string)
+
+	// Get all existing CRQs
+	allCRQs, err := v.listAllCRQs()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list CRQs: %w", err)
+	}
+
+	// For each namespace, check if it would be selected by any existing CRQs (excluding the current one)
+	for _, namespaceName := range namespaces {
+		// Get the namespace object to check its labels
+		ns, err := v.kubernetesClient.CoreV1().Namespaces().Get(context.TODO(), namespaceName, metav1.GetOptions{})
+		if err != nil {
+			// If namespace doesn't exist, it's not a conflict (it will be created)
+			continue
+		}
+
+		// Check each CRQ to see if it would select this namespace
+		var conflictingCRQNames []string
+		for _, existingCRQ := range allCRQs {
+			// Skip the CRQ we're currently validating
+			if existingCRQ.Name == excludeCRQName {
+				continue
+			}
+
+			// Check if this CRQ would select this namespace
+			matches, err := v.namespaceMatchesCRQ(ns, &existingCRQ)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check if namespace %s matches CRQ %s: %w",
+					namespaceName, existingCRQ.Name, err)
+			}
+
+			if matches {
+				conflictingCRQNames = append(conflictingCRQNames, existingCRQ.Name)
+			}
+		}
+
+		if len(conflictingCRQNames) > 0 {
+			conflicts[namespaceName] = conflictingCRQNames
+		}
+	}
+
+	return conflicts, nil
+}
+
+// listAllCRQs returns all ClusterResourceQuotas in the cluster using the CRQ client
+func (v *NamespaceValidator) listAllCRQs() ([]quotav1alpha1.ClusterResourceQuota, error) {
+	if v.crqClient == nil {
+		return []quotav1alpha1.ClusterResourceQuota{}, nil
+	}
+	return v.crqClient.ListAllCRQs()
+}
+
+// namespaceMatchesCRQ returns true if the namespace matches the CRQ's selector.
+func (v *NamespaceValidator) namespaceMatchesCRQ(
+	ns *corev1.Namespace, crq *quotav1alpha1.ClusterResourceQuota,
+) (bool, error) {
+	if v.crqClient == nil {
+		return false, nil
+	}
+	return v.crqClient.NamespaceMatchesCRQ(ns, crq)
 }
 
 func GetSelectedNamespaces(
@@ -198,4 +321,44 @@ func DetermineNamespaceChanges(previous, current []string) (added, removed []str
 	sort.Strings(removed)
 
 	return added, removed
+}
+
+// ValidateNamespaceAgainstCRQs validates that a namespace doesn't conflict with existing CRQs
+// This is used by the namespace webhook to ensure no namespace gets selected by multiple CRQs
+func ValidateNamespaceAgainstCRQs(
+	c kubernetes.Interface,
+	crqClient *quota.CRQClient,
+	namespace *corev1.Namespace,
+) error {
+	if crqClient == nil {
+		return nil // Skip validation if no CRQ client available
+	}
+
+	// Get all existing CRQs
+	allCRQs, err := crqClient.ListAllCRQs()
+	if err != nil {
+		return fmt.Errorf("failed to list CRQs: %w", err)
+	}
+
+	// Check which CRQs would select this namespace
+	var matchingCRQs []string
+	for _, crq := range allCRQs {
+		matches, err := crqClient.NamespaceMatchesCRQ(namespace, &crq)
+		if err != nil {
+			return fmt.Errorf("failed to check if namespace %s matches CRQ %s: %w",
+				namespace.Name, crq.Name, err)
+		}
+
+		if matches {
+			matchingCRQs = append(matchingCRQs, crq.Name)
+		}
+	}
+
+	// If more than one CRQ would select this namespace, it's a conflict
+	if len(matchingCRQs) > 1 {
+		return fmt.Errorf("multiple ClusterResourceQuotas select namespace \"%s\": %v",
+			namespace.Name, matchingCRQs)
+	}
+
+	return nil
 }

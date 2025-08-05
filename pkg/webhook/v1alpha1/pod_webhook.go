@@ -184,7 +184,7 @@ func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) 
 	if !podUsage.IsZero() {
 		// Validate CPU requests
 		if err := h.validateResourceQuota(podObj.Namespace, usage.ResourceRequestsCPU, podUsage); err != nil {
-			return nil, fmt.Errorf("CPU requests quota validation failed: %w", err)
+			return nil, fmt.Errorf("ClusterResourceQuota CPU requests validation failed: %w", err)
 		}
 	}
 
@@ -192,7 +192,7 @@ func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) 
 	if !podUsage.IsZero() {
 		// Validate memory requests
 		if err := h.validateResourceQuota(podObj.Namespace, usage.ResourceRequestsMemory, podUsage); err != nil {
-			return nil, fmt.Errorf("memory requests quota validation failed: %w", err)
+			return nil, fmt.Errorf("ClusterResourceQuota memory requests validation failed: %w", err)
 		}
 	}
 
@@ -200,7 +200,7 @@ func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) 
 	if !podUsage.IsZero() {
 		// Validate CPU limits
 		if err := h.validateResourceQuota(podObj.Namespace, usage.ResourceLimitsCPU, podUsage); err != nil {
-			return nil, fmt.Errorf("CPU limits quota validation failed: %w", err)
+			return nil, fmt.Errorf("ClusterResourceQuota CPU limits validation failed: %w", err)
 		}
 	}
 
@@ -208,14 +208,14 @@ func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) 
 	if !podUsage.IsZero() {
 		// Validate memory limits
 		if err := h.validateResourceQuota(podObj.Namespace, usage.ResourceLimitsMemory, podUsage); err != nil {
-			return nil, fmt.Errorf("memory limits quota validation failed: %w", err)
+			return nil, fmt.Errorf("ClusterResourceQuota memory limits validation failed: %w", err)
 		}
 	}
 
 	// Validate pod count (always 1 for a new pod)
 	podCount := resource.NewQuantity(1, resource.DecimalSI)
 	if err := h.validateResourceQuota(podObj.Namespace, usage.ResourcePods, *podCount); err != nil {
-		return nil, fmt.Errorf("pod count quota validation failed: %w", err)
+		return nil, fmt.Errorf("ClusterResourceQuota pod count validation failed: %w", err)
 	}
 
 	h.log.Info("Pod CRQ validation passed",

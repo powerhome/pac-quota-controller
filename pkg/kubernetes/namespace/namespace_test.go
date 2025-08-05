@@ -258,22 +258,28 @@ var _ = Describe("Namespace", func() {
 		})
 	})
 
-	Describe("ValidateNamespaceOwnership", func() {
+	Describe("NamespaceValidator.ValidateCRQNamespaceConflicts", func() {
 		It("should return nil when namespace selector is nil", func() {
+			fakeClient := fake.NewSimpleClientset()
+			// Create a mock CRQ client that returns empty list
+			validator := NewNamespaceValidator(fakeClient, nil)
+
 			crq := &quotav1alpha1.ClusterResourceQuota{
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: nil,
 				},
 			}
 
-			warnings, err := ValidateNamespaceOwnership(nil, crq)
+			err := validator.ValidateCRQNamespaceConflicts(crq)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(warnings).To(BeNil())
 		})
 
-		It("should return empty warnings for valid CRQ", func() {
+		It("should return no error for valid CRQ when no conflicts", func() {
 			fakeClient := fake.NewSimpleClientset()
+			// Create a mock CRQ client that returns empty list
+			validator := NewNamespaceValidator(fakeClient, nil)
+
 			crq := &quotav1alpha1.ClusterResourceQuota{
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
@@ -282,14 +288,15 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			warnings, err := ValidateNamespaceOwnership(fakeClient, crq)
+			err := validator.ValidateCRQNamespaceConflicts(crq)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(warnings).To(BeNil())
 		})
 
 		It("should handle error when selector creation fails", func() {
 			fakeClient := fake.NewSimpleClientset()
+			validator := NewNamespaceValidator(fakeClient, nil)
+
 			crq := &quotav1alpha1.ClusterResourceQuota{
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
@@ -304,16 +311,16 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			warnings, err := ValidateNamespaceOwnership(fakeClient, crq)
+			err := validator.ValidateCRQNamespaceConflicts(crq)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to create namespace selector"))
-			Expect(warnings).To(BeNil())
 		})
 
 		It("should handle error when namespace selection fails", func() {
 			// Create a client that will fail when listing namespaces
 			fakeClient := fake.NewSimpleClientset()
+			validator := NewNamespaceValidator(fakeClient, nil)
 
 			// Since the fake client doesn't have any namespaces, GetSelectedNamespaces will succeed
 			// but return an empty list. To test the error path, we need to create a scenario where
@@ -332,15 +339,16 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			warnings, err := ValidateNamespaceOwnership(fakeClient, crqInvalid)
+			err := validator.ValidateCRQNamespaceConflicts(crqInvalid)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to create namespace selector"))
-			Expect(warnings).To(BeNil())
 		})
 
 		It("should handle empty namespace list", func() {
 			fakeClient := fake.NewSimpleClientset()
+			validator := NewNamespaceValidator(fakeClient, nil)
+
 			crq := &quotav1alpha1.ClusterResourceQuota{
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
@@ -349,15 +357,15 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			warnings, err := ValidateNamespaceOwnership(fakeClient, crq)
+			err := validator.ValidateCRQNamespaceConflicts(crq)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(warnings).To(BeNil())
 		})
 
 		It("should handle case where namespaces are found but validation is skipped", func() {
 			// Create a fake client with some namespaces that match the selector
 			fakeClient := fake.NewSimpleClientset()
+			validator := NewNamespaceValidator(fakeClient, nil)
 
 			// Note: We can't easily add namespaces to fake.NewSimpleClientset() in this context
 			// The current implementation skips validation and returns empty list anyway
@@ -369,10 +377,9 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			warnings, err := ValidateNamespaceOwnership(fakeClient, crq)
+			err := validator.ValidateCRQNamespaceConflicts(crq)
 
 			Expect(err).NotTo(HaveOccurred())
-			Expect(warnings).To(BeNil())
 		})
 	})
 

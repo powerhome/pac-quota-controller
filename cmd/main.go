@@ -93,8 +93,8 @@ func main() {
 				os.Exit(1)
 			}
 
-			// Set up Gin webhook server
-			webhookServer, webhookCertWatcher := webhook.SetupGinWebhookServer(cfg, clientset, zapLogger)
+			// Set up Gin webhook server with manager's client for CRQ operations
+			webhookServer, webhookCertWatcher := webhook.SetupGinWebhookServer(cfg, clientset, mgr.GetClient(), zapLogger)
 
 			// Start webhook server
 			go func() {
@@ -103,7 +103,6 @@ func main() {
 				}
 			}()
 
-			// Start certificate watchers if configured
 			if webhookCertWatcher != nil {
 				go func() {
 					if err := webhookCertWatcher.Start(context.Background()); err != nil {
@@ -128,20 +127,10 @@ func main() {
 				}
 			}()
 
-			// Add a small delay and then log readiness
+			// Log when manager is elected as leader
 			go func() {
 				<-mgr.Elected()
 				zapLogger.Info("Controller manager elected as leader and ready to process resources")
-
-				// Set CRQ client for webhook server now that the manager is ready
-				if webhookServer != nil {
-					webhookServer.SetCRQClient(mgr.GetClient())
-				}
-
-				// Mark webhook server as ready now that the manager is ready
-				if webhookServer != nil {
-					webhookServer.MarkReady()
-				}
 			}()
 
 			// Wait for shutdown signal

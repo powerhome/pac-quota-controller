@@ -16,6 +16,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,15 +28,22 @@ import (
 
 var _ = Describe("NamespaceWebhook", func() {
 	var (
-		webhook    *NamespaceWebhook
-		fakeClient kubernetes.Interface
-		logger     *zap.Logger
+		webhook           *NamespaceWebhook
+		fakeClient        kubernetes.Interface
+		fakeRuntimeClient client.Client
+		crqClient         *quota.CRQClient
+		logger            *zap.Logger
 	)
 
 	BeforeEach(func() {
 		fakeClient = fake.NewSimpleClientset()
+		scheme := runtime.NewScheme()
+		_ = quotav1alpha1.AddToScheme(scheme)
+		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
+		crqClient = quota.NewCRQClient(fakeRuntimeClient)
 		logger, _ = zap.NewDevelopment()
 		webhook = NewNamespaceWebhook(fakeClient, logger)
+		webhook.SetCRQClient(crqClient)
 	})
 
 	Describe("NewNamespaceWebhook", func() {

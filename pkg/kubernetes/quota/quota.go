@@ -13,7 +13,6 @@ import (
 )
 
 // CRQClient encapsulates logic for working with ClusterResourceQuotas
-// using a controller-runtime client.
 type CRQClient struct {
 	Client client.Client
 }
@@ -27,9 +26,10 @@ func NewCRQClient(c client.Client) *CRQClient {
 // ListAllCRQs returns all ClusterResourceQuotas in the cluster.
 func (c *CRQClient) ListAllCRQs() ([]quotav1alpha1.ClusterResourceQuota, error) {
 	ctx := context.Background()
+
 	var crqList quotav1alpha1.ClusterResourceQuotaList
 	if err := c.Client.List(ctx, &crqList); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list ClusterResourceQuotas: %w", err)
 	}
 	return crqList.Items, nil
 }
