@@ -69,10 +69,9 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 .PHONY: install-tools
 install-tools: ## Install development tools
 	go install github.com/onsi/ginkgo/v2/ginkgo@latest
-	go install github.com/onsi/gomega/...@latest
 
 .PHONY: deps
-deps: envtest golangci-lint mockery install-tools ## Install all development dependencies
+deps: envtest golangci-lint mockery ## Install all development dependencies
 
 .PHONY: test-e2e-setup
 test-e2e-setup:
