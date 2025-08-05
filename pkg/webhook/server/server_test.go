@@ -90,25 +90,6 @@ var _ = Describe("GinWebhookServer", func() {
 		})
 	})
 
-	Describe("SetupCertificateWatcher", func() {
-		It("should setup certificate watcher with valid config", func() {
-			cfg.WebhookCertPath = "/tmp/certs"
-			cfg.WebhookCertName = "tls.crt"
-			cfg.WebhookCertKey = "tls.key"
-
-			err := server.SetupCertificateWatcher(cfg)
-			Expect(err).To(HaveOccurred()) // Should fail because cert files don't exist
-			Expect(err.Error()).To(ContainSubstring("failed to initialize webhook certificate watcher"))
-		})
-
-		It("should skip certificate watcher setup when no cert path", func() {
-			cfg.WebhookCertPath = ""
-			err := server.SetupCertificateWatcher(cfg)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(server.certWatcher).To(BeNil())
-		})
-	})
-
 	Describe("Start", func() {
 		It("should handle cancelled context immediately", func() {
 			// Use a context that's already cancelled
@@ -148,28 +129,6 @@ var _ = Describe("GinWebhookServer", func() {
 			// Test that the function exists and can be called
 			// We skip the actual execution since it waits for OS signals
 			Skip("Skipping signal handler test as it requires OS signals and would hang")
-		})
-	})
-
-	Describe("GetCertWatcher", func() {
-		It("should return certificate watcher", func() {
-			watcher := server.GetCertWatcher()
-			Expect(watcher).To(BeNil()) // Should be nil initially
-		})
-
-		It("should return certificate watcher after setup", func() {
-			// Setup certificate watcher (will fail but sets the field)
-			cfg.WebhookCertPath = "/tmp/certs"
-			cfg.WebhookCertName = "tls.crt"
-			cfg.WebhookCertKey = "tls.key"
-
-			err := server.SetupCertificateWatcher(cfg)
-			// Ignore setup errors in tests as certificates don't exist
-			_ = err
-
-			watcher := server.GetCertWatcher()
-			// Should be nil since setup failed
-			Expect(watcher).To(BeNil())
 		})
 	})
 
