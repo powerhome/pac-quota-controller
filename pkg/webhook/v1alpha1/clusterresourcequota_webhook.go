@@ -52,18 +52,22 @@ func NewClusterResourceQuotaWebhook(c kubernetes.Interface, log *zap.Logger) *Cl
 func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 	var admissionReview admissionv1.AdmissionReview
 	if err := c.ShouldBindJSON(&admissionReview); err != nil {
-		h.log.Error("Failed to bind admission review", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		h.log.Error("Invalid admission review request", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Invalid request format",
+			"details": err.Error(),
+		})
 		return
 	}
 
 	// Validate the request first
 	if admissionReview.Request == nil {
-		h.log.Error("Admission review request is nil")
+		h.log.Info("Admission review missing request field")
 		admissionReview.Response = &admissionv1.AdmissionResponse{
 			Allowed: false,
 			Result: &metav1.Status{
-				Message: "Admission review request is nil",
+				Code:    http.StatusBadRequest,
+				Message: "Missing admission request",
 			},
 		}
 		c.JSON(http.StatusOK, admissionReview)
@@ -82,12 +86,13 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 		Kind:    "ClusterResourceQuota",
 	}
 	if admissionReview.Request.Kind != expectedGVK {
-		h.log.Error("Unexpected resource kind",
-			zap.String("expected", fmt.Sprintf("%v", expectedGVK)),
-			zap.String("got", fmt.Sprintf("%v", admissionReview.Request.Kind)))
+		h.log.Info("Unexpected resource type",
+			zap.String("expected", expectedGVK.Kind),
+			zap.String("got", admissionReview.Request.Kind.Kind))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
-			Message: fmt.Sprintf("Unexpected resource kind: expected %v, got %v", expectedGVK, admissionReview.Request.Kind),
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("Expected %s resource, got %s", expectedGVK.Kind, admissionReview.Request.Kind.Kind),
 		}
 		c.JSON(http.StatusOK, admissionReview)
 		return
@@ -103,7 +108,8 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 		h.log.Error("Failed to decode ClusterResourceQuota", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
-			Message: fmt.Sprintf("Failed to decode ClusterResourceQuota: %v", err),
+			Code:    http.StatusBadRequest,
+			Message: "Unable to decode ClusterResourceQuota object",
 		}
 		c.JSON(http.StatusOK, admissionReview)
 		return
@@ -126,10 +132,11 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 			zap.String("name", crq.GetName()))
 		err = h.validateDelete()
 	default:
-		h.log.Error("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
+		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
-			Message: fmt.Sprintf("Unsupported operation: %s", admissionReview.Request.Operation),
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("Operation %s is not supported for ClusterResourceQuota", admissionReview.Request.Operation),
 		}
 		c.JSON(http.StatusOK, admissionReview)
 		return

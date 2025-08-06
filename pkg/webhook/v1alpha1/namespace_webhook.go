@@ -124,7 +124,7 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 			zap.String("name", namespace.GetName()))
 		err = h.validateUpdate(c.Request.Context(), &namespace)
 	default:
-		h.log.Error("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
+		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Message: fmt.Sprintf("Unsupported operation: %s", admissionReview.Request.Operation),

@@ -72,11 +72,12 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 
 	// Validate the request first
 	if admissionReview.Request == nil {
-		h.log.Error("Admission review request is nil")
+		h.log.Info("Admission review request is nil")
 		admissionReview.Response = &admissionv1.AdmissionResponse{
 			Allowed: false,
 			Result: &metav1.Status{
-				Message: "Admission review request is nil",
+				Code:    http.StatusBadRequest,
+				Message: "Missing admission request",
 			},
 		}
 		c.JSON(http.StatusOK, admissionReview)
@@ -95,12 +96,13 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 		Kind:    "Pod",
 	}
 	if admissionReview.Request.Kind != expectedGVK {
-		h.log.Error("Unexpected resource kind",
-			zap.String("expected", fmt.Sprintf("%v", expectedGVK)),
-			zap.String("got", fmt.Sprintf("%v", admissionReview.Request.Kind)))
+		h.log.Error("Unexpected resource type",
+			zap.String("expected", expectedGVK.Kind),
+			zap.String("got", admissionReview.Request.Kind.Kind))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
-			Message: fmt.Sprintf("Unexpected resource kind: expected %v, got %v", expectedGVK, admissionReview.Request.Kind),
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("Expected %s resource, got %s", expectedGVK.Kind, admissionReview.Request.Kind.Kind),
 		}
 		c.JSON(http.StatusOK, admissionReview)
 		return
@@ -116,7 +118,8 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 		h.log.Error("Failed to decode Pod", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
-			Message: fmt.Sprintf("Failed to decode Pod: %v", err),
+			Code:    http.StatusBadRequest,
+			Message: "Unable to decode Pod object",
 		}
 		c.JSON(http.StatusOK, admissionReview)
 		return
@@ -138,10 +141,11 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 			zap.String("namespace", podObj.GetNamespace()))
 		warnings, err = h.validateUpdate(&podObj)
 	default:
-		h.log.Error("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
+		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
-			Message: fmt.Sprintf("Unsupported operation: %s", admissionReview.Request.Operation),
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("Operation %s is not supported for Pod", admissionReview.Request.Operation),
 		}
 		c.JSON(http.StatusOK, admissionReview)
 		return
@@ -151,6 +155,7 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 		h.log.Error("Validation failed", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
+			Code:    http.StatusForbidden,
 			Message: err.Error(),
 		}
 	} else {

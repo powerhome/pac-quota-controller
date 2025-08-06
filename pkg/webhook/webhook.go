@@ -17,6 +17,8 @@ limitations under the License.
 package webhook
 
 import (
+	"crypto/tls"
+	"os"
 	"path/filepath"
 
 	"github.com/powerhome/pac-quota-controller/pkg/config"
@@ -44,12 +46,17 @@ func SetupGinWebhookServer(
 			zap.String("webhook-cert-name", cfg.WebhookCertName),
 			zap.String("webhook-cert-key", cfg.WebhookCertKey))
 
+		// First validate that the certificate files exist and are valid
+		certFile := filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertName)
+		keyFile := filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertKey)
+
+		if !isValidCertificatePair(certFile, keyFile, log) {
+			log.Info("Certificate files are not valid or don't exist - continuing without certificate watcher")
+			return webhookServer, nil
+		}
+
 		var err error
-		webhookCertWatcher, err := certwatcher.NewCertWatcher(
-			filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertName),
-			filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertKey),
-			log,
-		)
+		webhookCertWatcher, err := certwatcher.NewCertWatcher(certFile, keyFile, log)
 		if err != nil {
 			log.Error("Failed to initialize webhook certificate watcher", zap.Error(err))
 			log.Info("Continuing without certificate watcher - server will run without TLS")
@@ -66,4 +73,36 @@ func SetupGinWebhookServer(
 
 	// No certificates provided, return server without certificate watcher
 	return webhookServer, nil
+}
+
+// isValidCertificatePair checks if the certificate and key files exist and are valid
+func isValidCertificatePair(certFile, keyFile string, log *zap.Logger) bool {
+	// Check if files exist
+	if _, err := os.Stat(certFile); err != nil {
+		if log != nil {
+			log.Debug("Certificate file does not exist", zap.String("path", certFile), zap.Error(err))
+		}
+		return false
+	}
+
+	if _, err := os.Stat(keyFile); err != nil {
+		if log != nil {
+			log.Debug("Key file does not exist", zap.String("path", keyFile), zap.Error(err))
+		}
+		return false
+	}
+
+	// Try to load the certificate pair to validate they're proper certificates
+	_, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		if log != nil {
+			log.Debug("Failed to load certificate pair",
+				zap.String("certFile", certFile),
+				zap.String("keyFile", keyFile),
+				zap.Error(err))
+		}
+		return false
+	}
+
+	return true
 }

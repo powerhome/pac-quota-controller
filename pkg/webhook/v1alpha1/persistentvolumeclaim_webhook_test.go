@@ -151,7 +151,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			response := sendPVCWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Allowed).To(BeFalse())
-			Expect(response.Result.Message).To(ContainSubstring("Unexpected resource kind"))
+			Expect(response.Result.Message).To(ContainSubstring("Expected PersistentVolumeClaim resource"))
 		})
 
 		It("should handle unsupported operations", func() {
@@ -166,7 +166,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			response := sendPVCWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Allowed).To(BeFalse())
-			Expect(response.Result.Message).To(ContainSubstring("Unsupported operation"))
+			Expect(response.Result.Message).To(ContainSubstring("Operation DELETE is not supported"))
 		})
 
 		It("should handle nil admission review request", func() {
@@ -195,7 +195,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Admission review request is nil"))
+			Expect(response.Response.Result.Message).To(ContainSubstring("Missing admission request"))
 		})
 
 		It("should handle invalid JSON", func() {

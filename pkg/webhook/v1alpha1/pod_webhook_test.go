@@ -156,7 +156,7 @@ var _ = Describe("PodWebhook", func() {
 			Expect(response).NotTo(BeNil())
 			Expect(response.Response).NotTo(BeNil())
 			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Admission review request is nil"))
+			Expect(response.Response.Result.Message).To(ContainSubstring("Missing admission request"))
 		})
 
 		It("should reject request with wrong resource kind", func() {
@@ -177,7 +177,7 @@ var _ = Describe("PodWebhook", func() {
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Unexpected resource kind"))
+			Expect(response.Response.Result.Message).To(ContainSubstring("Expected Pod resource"))
 		})
 
 		It("should reject request with invalid JSON", func() {
@@ -202,7 +202,7 @@ var _ = Describe("PodWebhook", func() {
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Unsupported operation"))
+			Expect(response.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported"))
 		})
 
 		It("should handle pod with no containers", func() {
@@ -355,7 +355,7 @@ var _ = Describe("PodWebhook", func() {
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Unexpected resource kind"))
+			Expect(response.Response.Result.Message).To(ContainSubstring("Expected Pod resource"))
 		})
 
 		It("should handle failed pod decoding", func() {
@@ -376,7 +376,7 @@ var _ = Describe("PodWebhook", func() {
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Unsupported operation"))
+			Expect(response.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported"))
 		})
 	})
 
