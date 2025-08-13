@@ -811,7 +811,8 @@ var _ = Describe("PodWebhook", func() {
 			}
 
 			// Update clients with new resources
-			fakeClient = fake.NewSimpleClientset(testNamespace, namespace1, namespace2, namespace3, existingPod, complexNamespace)
+			fakeClient = fake.NewSimpleClientset(
+				testNamespace, namespace1, namespace2, namespace3, existingPod, complexNamespace)
 			err := fakeRuntimeClient.Create(context.Background(), complexCRQ)
 			Expect(err).NotTo(HaveOccurred())
 			err = fakeRuntimeClient.Create(context.Background(), complexNamespace)
@@ -985,7 +986,8 @@ var _ = Describe("PodWebhook", func() {
 			}
 
 			// Update clients with new resources
-			fakeClient = fake.NewSimpleClientset(testNamespace, namespace1, namespace2, namespace3, existingPod, isolatedNamespace)
+			fakeClient = fake.NewSimpleClientset(
+				testNamespace, namespace1, namespace2, namespace3, existingPod, isolatedNamespace)
 			err := fakeRuntimeClient.Create(context.Background(), noMatchCRQ)
 			Expect(err).NotTo(HaveOccurred())
 			err = fakeRuntimeClient.Create(context.Background(), isolatedNamespace)
@@ -1146,87 +1148,13 @@ var _ = Describe("PodWebhook", func() {
 			})
 
 			It("should handle pods in terminal states (Succeeded)", func() {
-				// Create a fresh namespace for this test to ensure clean state
-				testNs := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "terminal-test-namespace",
-					},
-				}
-				fakeClient = fake.NewSimpleClientset(testNs)
-				webhook = NewPodWebhook(fakeClient, crqClient, logger)
-
-				// Create a pod in Succeeded state (should not count towards usage)
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "succeeded-pod",
-						Namespace: "terminal-test-namespace",
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "test-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("100m"),
-									},
-								},
-							},
-						},
-					},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodSucceeded,
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("terminal-test-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usage, err := webhook.calculateCurrentUsage("terminal-test-namespace", "requests.cpu")
-				Expect(err).NotTo(HaveOccurred())
-				// Should not include the succeeded pod's resources
-				Expect(usage.Value()).To(Equal(int64(0)))
+				testTerminalPodState(corev1.PodSucceeded, "succeeded-pod", "terminal-test-namespace",
+					&fakeClient, crqClient, logger)
 			})
 
 			It("should handle pods in terminal states (Failed)", func() {
-				// Create a fresh namespace for this test to ensure clean state
-				testNs := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "failed-test-namespace",
-					},
-				}
-				fakeClient = fake.NewSimpleClientset(testNs)
-				webhook = NewPodWebhook(fakeClient, crqClient, logger)
-
-				// Create a pod in Failed state (should not count towards usage)
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "failed-pod",
-						Namespace: "failed-test-namespace",
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "test-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("200m"),
-									},
-								},
-							},
-						},
-					},
-					Status: corev1.PodStatus{
-						Phase: corev1.PodFailed,
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("failed-test-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usage, err := webhook.calculateCurrentUsage("failed-test-namespace", "requests.cpu")
-				Expect(err).NotTo(HaveOccurred())
-				// Should not include the failed pod's resources
-				Expect(usage.Value()).To(Equal(int64(0)))
+				testTerminalPodState(corev1.PodFailed, "failed-pod", "failed-test-namespace",
+					&fakeClient, crqClient, logger)
 			})
 
 			It("should handle pods with both init and regular containers", func() {
@@ -1274,56 +1202,6 @@ var _ = Describe("PodWebhook", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				usage, err := webhook.calculateCurrentUsage("init-container-test-namespace", "requests.cpu")
-				Expect(err).NotTo(HaveOccurred())
-				// Should include resources from both init and regular containers: 50m + 100m = 150m
-				Expect(usage.MilliValue()).To(Equal(int64(150)))
-			})
-
-			It("should handle pods with both init and regular containers", func() {
-				// Create a fresh namespace for this test to ensure clean state
-				testNs := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "init-test-namespace",
-					},
-				}
-				fakeClient = fake.NewSimpleClientset(testNs)
-				webhook = NewPodWebhook(fakeClient, crqClient, logger)
-
-				// Create a pod with both init and regular containers
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "init-and-regular-pod",
-						Namespace: "init-test-namespace",
-					},
-					Spec: corev1.PodSpec{
-						InitContainers: []corev1.Container{
-							{
-								Name:  "init-container",
-								Image: "busybox:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("50m"),
-									},
-								},
-							},
-						},
-						Containers: []corev1.Container{
-							{
-								Name:  "main-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("100m"),
-									},
-								},
-							},
-						},
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("init-test-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usage, err := webhook.calculateCurrentUsage("init-test-namespace", "requests.cpu")
 				Expect(err).NotTo(HaveOccurred())
 				// Should include resources from both init and regular containers: 50m + 100m = 150m
 				Expect(usage.MilliValue()).To(Equal(int64(150)))
@@ -1672,4 +1550,54 @@ func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.Admissi
 		}
 	}
 	return &response
+}
+
+// testTerminalPodState is a helper function to test pods in terminal states (Succeeded/Failed)
+func testTerminalPodState(phase corev1.PodPhase, podName, namespaceName string,
+	fakeClient *kubernetes.Interface, crqClient *quota.CRQClient, logger *zap.Logger) {
+	// Create a fresh namespace for this test to ensure clean state
+	testNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: namespaceName,
+		},
+	}
+	*fakeClient = fake.NewSimpleClientset(testNs)
+	webhook := NewPodWebhook(*fakeClient, crqClient, logger)
+
+	// Create a pod in the specified terminal state (should not count towards usage)
+	cpuRequest := "100m"
+	if phase == corev1.PodFailed {
+		cpuRequest = "200m"
+	}
+
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      podName,
+			Namespace: namespaceName,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "test-container",
+					Image: "nginx:latest",
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse(cpuRequest),
+						},
+					},
+				},
+			},
+		},
+		Status: corev1.PodStatus{
+			Phase: phase,
+		},
+	}
+	ctx := context.Background()
+	_, err := (*fakeClient).CoreV1().Pods(namespaceName).Create(ctx, pod, metav1.CreateOptions{})
+	Expect(err).NotTo(HaveOccurred())
+
+	usage, err := webhook.calculateCurrentUsage(namespaceName, "requests.cpu")
+	Expect(err).NotTo(HaveOccurred())
+	// Should not include the terminal pod's resources
+	Expect(usage.Value()).To(Equal(int64(0)))
 }

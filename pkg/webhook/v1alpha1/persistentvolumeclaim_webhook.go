@@ -46,7 +46,11 @@ type PersistentVolumeClaimWebhook struct {
 }
 
 // NewPersistentVolumeClaimWebhook creates a new PersistentVolumeClaimWebhook
-func NewPersistentVolumeClaimWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *PersistentVolumeClaimWebhook {
+func NewPersistentVolumeClaimWebhook(
+	k8sClient kubernetes.Interface,
+	crqClient *quota.CRQClient,
+	log *zap.Logger,
+) *PersistentVolumeClaimWebhook {
 	return &PersistentVolumeClaimWebhook{
 		client:            k8sClient,
 		storageCalculator: storage.NewStorageResourceCalculator(k8sClient),

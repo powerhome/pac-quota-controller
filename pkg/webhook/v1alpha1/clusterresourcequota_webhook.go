@@ -41,7 +41,11 @@ type ClusterResourceQuotaWebhook struct {
 }
 
 // NewClusterResourceQuotaWebhook creates a new ClusterResourceQuotaWebhook
-func NewClusterResourceQuotaWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *ClusterResourceQuotaWebhook {
+func NewClusterResourceQuotaWebhook(
+	k8sClient kubernetes.Interface,
+	crqClient *quota.CRQClient,
+	log *zap.Logger,
+) *ClusterResourceQuotaWebhook {
 	return &ClusterResourceQuotaWebhook{
 		client:    k8sClient,
 		crqClient: crqClient,

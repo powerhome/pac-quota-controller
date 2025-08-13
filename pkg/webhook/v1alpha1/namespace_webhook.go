@@ -42,7 +42,11 @@ type NamespaceWebhook struct {
 }
 
 // NewNamespaceWebhook creates a new NamespaceWebhook
-func NewNamespaceWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *NamespaceWebhook {
+func NewNamespaceWebhook(
+	k8sClient kubernetes.Interface,
+	crqClient *quota.CRQClient,
+	log *zap.Logger,
+) *NamespaceWebhook {
 	return &NamespaceWebhook{
 		client:    k8sClient,
 		crqClient: crqClient,

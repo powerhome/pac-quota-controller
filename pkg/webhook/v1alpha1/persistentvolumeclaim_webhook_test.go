@@ -31,6 +31,12 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+const (
+	premiumSSDStorageClass          = "premium-ssd"
+	fastSSDStorageClassResourceName = "fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims"
+	premiumSSDStorageClassRequests  = "premium-ssd.storageclass.storage.k8s.io/requests.storage"
+)
+
 var _ = Describe("PersistentVolumeClaimWebhook", func() {
 	var (
 		ginEngine         *gin.Engine
@@ -578,7 +584,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			})
 
 			It("should handle storage with specific storage class", func() {
-				storageClass := "premium-ssd"
+				storageClass := premiumSSDStorageClass
 				// Create a PVC with specific storage class
 				pvc := &corev1.PersistentVolumeClaim{
 					ObjectMeta: metav1.ObjectMeta{
@@ -597,7 +603,8 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				_, err := k8sClient.CoreV1().PersistentVolumeClaims("test-namespace").Create(ctx, pvc, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName("premium-ssd.storageclass.storage.k8s.io/requests.storage"))
+				usage, err := webhook.calculateCurrentUsage("test-namespace",
+					corev1.ResourceName("premium-ssd.storageclass.storage.k8s.io/requests.storage"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(Equal(int64(20 * 1024 * 1024 * 1024))) // 20Gi in bytes
 			})
@@ -663,7 +670,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				}
 
 				// Test storage class specific PVC count
-				usage, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims"))
+				usage, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName(fastSSDStorageClassResourceName))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(BeNumerically(">", 0)) // Should count the PVCs with specific storage class
 			})
@@ -730,11 +737,11 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					}
 
 					// Mock the CalculateStorageClassUsage to return an error
-					mockCalculator.On("CalculateStorageClassUsage", context.Background(), "test-namespace", "premium-ssd").
+					mockCalculator.On("CalculateStorageClassUsage", context.Background(), "test-namespace", premiumSSDStorageClass).
 						Return(resource.Quantity{}, errors.New("storage class usage calculation failed"))
 
 					// Call calculateCurrentUsage for storage class specific resource and expect error
-					_, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName("premium-ssd.storageclass.storage.k8s.io/requests.storage"))
+					_, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName(premiumSSDStorageClassRequests))
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("storage class usage calculation failed"))
 
@@ -756,7 +763,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 						Return(int64(0), errors.New("storage class count failed"))
 
 					// Call calculateCurrentUsage for storage class PVC count and expect error
-					_, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims"))
+					_, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName(fastSSDStorageClassResourceName))
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("storage class count failed"))
 
@@ -806,7 +813,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			})
 
 			It("should validate storage class specific quotas", func() {
-				storageClass := "premium-ssd"
+				storageClass := premiumSSDStorageClass
 				pvc := &corev1.PersistentVolumeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "premium-test-pvc",
@@ -828,7 +835,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			})
 
 			It("should validate general storage quota when storage class quota passes", func() {
-				storageClass := "premium-ssd"
+				storageClass := premiumSSDStorageClass
 				pvc := &corev1.PersistentVolumeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "general-test-pvc",
@@ -859,7 +866,8 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 							},
 						},
 					}
-					_, err := k8sClient.CoreV1().PersistentVolumeClaims("storage-test-ns").Create(ctx, existingPVC, metav1.CreateOptions{})
+					_, err := k8sClient.CoreV1().PersistentVolumeClaims("storage-test-ns").Create(
+						ctx, existingPVC, metav1.CreateOptions{})
 					Expect(err).NotTo(HaveOccurred())
 				}
 
@@ -1006,7 +1014,8 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 				// Try to expand beyond quota
 				updatedPVC := pvc.DeepCopy()
-				updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("20Gi") // Would make total 55Gi > 50Gi
+				// Would make total 55Gi > 50Gi
+				updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("20Gi")
 
 				err = webhook.validateUpdate(updatedPVC)
 				Expect(err).To(HaveOccurred())
