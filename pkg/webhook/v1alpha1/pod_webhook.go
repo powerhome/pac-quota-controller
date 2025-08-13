@@ -39,17 +39,17 @@ import (
 // PodWebhook handles webhook requests for Pod resources
 type PodWebhook struct {
 	client        kubernetes.Interface
-	podCalculator *pod.PodResourceCalculator
+	podCalculator pod.PodResourceCalculatorInterface
 	crqClient     *quota.CRQClient
 	log           *zap.Logger
 }
 
 // NewPodWebhook creates a new PodWebhook
-func NewPodWebhook(c kubernetes.Interface, log *zap.Logger) *PodWebhook {
+func NewPodWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *PodWebhook {
 	return &PodWebhook{
-		client:        c,
-		podCalculator: pod.NewPodResourceCalculator(c),
-		crqClient:     nil, // Will be set when controller-runtime client is available
+		client:        k8sClient,
+		podCalculator: pod.NewPodResourceCalculator(k8sClient),
+		crqClient:     crqClient,
 		log:           log,
 	}
 }
@@ -242,7 +242,7 @@ func (h *PodWebhook) validateResourceQuota(
 		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
 	}
 
-	return validateCRQResourceQuotaWithNamespace(h.crqClient, ns, resourceName, requestedQuantity,
+	return validateCRQResourceQuotaWithNamespace(h.crqClient, h.client, ns, resourceName, requestedQuantity,
 		h.calculateCurrentUsage, h.log)
 }
 
@@ -261,9 +261,4 @@ func (h *PodWebhook) calculateCurrentUsage(namespace string,
 	default:
 		return resource.Quantity{}, fmt.Errorf("unsupported resource type: %s", resourceName)
 	}
-}
-
-// SetCRQClient sets the CRQ client for quota validation
-func (h *PodWebhook) SetCRQClient(crqClient *quota.CRQClient) {
-	h.crqClient = crqClient
 }

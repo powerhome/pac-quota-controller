@@ -305,4 +305,115 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 			}()
 		})
 	})
+
+	Context("PVC Count Quota Tests", func() {
+		It("should allow PVC creation when within PVC count limits", func() {
+			// Update CRQ to have PVC count limit
+			testCRQ.Spec.Hard = quotav1alpha1.ResourceList{
+				corev1.ResourcePersistentVolumeClaims: resource.MustParse("3"),
+			}
+			err := k8sClient.Update(ctx, testCRQ)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create first PVC
+			pvc1 := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testutils.GenerateResourceName("test-pvc-1"),
+					Namespace: testNS,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{
+						corev1.ReadWriteOnce,
+					},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			}
+			err = k8sClient.Create(ctx, pvc1)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create second PVC - should succeed
+			pvc2 := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testutils.GenerateResourceName("test-pvc-2"),
+					Namespace: testNS,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{
+						corev1.ReadWriteOnce,
+					},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			}
+			err = k8sClient.Create(ctx, pvc2)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, pvc1)).To(Succeed())
+			Expect(k8sClient.Delete(ctx, pvc2)).To(Succeed())
+		})
+
+		It("should deny PVC creation when it would exceed PVC count limits", func() {
+			// Update CRQ to have strict PVC count limit
+			testCRQ.Spec.Hard = quotav1alpha1.ResourceList{
+				corev1.ResourcePersistentVolumeClaims: resource.MustParse("1"),
+			}
+			err := k8sClient.Update(ctx, testCRQ)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create first PVC - should succeed
+			pvc1 := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testutils.GenerateResourceName("test-pvc-1"),
+					Namespace: testNS,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{
+						corev1.ReadWriteOnce,
+					},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			}
+			err = k8sClient.Create(ctx, pvc1)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create second PVC - should fail due to PVC count limit
+			pvc2 := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testutils.GenerateResourceName("test-pvc-2"),
+					Namespace: testNS,
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					AccessModes: []corev1.PersistentVolumeAccessMode{
+						corev1.ReadWriteOnce,
+					},
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceStorage: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			}
+			err = k8sClient.Create(ctx, pvc2)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(SatisfyAll(
+				ContainSubstring("ClusterResourceQuota"),
+				ContainSubstring(crqName),
+			))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, pvc1)).To(Succeed())
+		})
+	})
 })

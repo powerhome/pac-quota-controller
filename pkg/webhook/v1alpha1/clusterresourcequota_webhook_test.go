@@ -41,8 +41,7 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
 		crqClient = quota.NewCRQClient(fakeRuntimeClient)
 		logger, _ = zap.NewDevelopment()
-		webhook = NewClusterResourceQuotaWebhook(fakeClient, logger)
-		webhook.SetCRQClient(crqClient)
+		webhook = NewClusterResourceQuotaWebhook(fakeClient, crqClient, logger)
 	})
 
 	Describe("NewClusterResourceQuotaWebhook", func() {
@@ -52,9 +51,21 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 		})
 
 		It("should create webhook with nil client", func() {
-			webhook := NewClusterResourceQuotaWebhook(nil, logger)
+			webhook := NewClusterResourceQuotaWebhook(nil, crqClient, logger)
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(BeNil())
+		})
+
+		It("should create webhook with nil logger", func() {
+			webhook := NewClusterResourceQuotaWebhook(fakeClient, crqClient, nil)
+			Expect(webhook).NotTo(BeNil())
+			Expect(webhook.log).To(BeNil())
+		})
+
+		It("should create webhook with nil CRQ client", func() {
+			webhook := NewClusterResourceQuotaWebhook(fakeClient, nil, logger)
+			Expect(webhook).NotTo(BeNil())
+			Expect(webhook.crqClient).To(BeNil())
 		})
 	})
 
@@ -220,12 +231,6 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 
 			// Verify response
 			Expect(w.Code).To(Equal(http.StatusOK))
-		})
-
-		It("should handle decode error", func() {
-			// Skip this test for now as the webhook successfully decodes valid JSON
-			// In real scenarios, decode errors would occur with malformed CRQ data
-			Skip("Skipping decode error test - webhook successfully handles valid JSON")
 		})
 
 		It("should handle update operation", func() {

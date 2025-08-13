@@ -20,3 +20,6 @@ packages:
   github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod:
     config:
       all: true
+  github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage:
+    config:
+      all: true

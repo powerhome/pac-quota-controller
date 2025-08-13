@@ -32,4 +32,5 @@ type StorageResourceCalculatorInterface interface {
 	// Additional storage-specific methods
 	CalculateStorageClassUsage(ctx context.Context, namespace, storageClass string) (resource.Quantity, error)
 	CalculateStorageClassCount(ctx context.Context, namespace, storageClass string) (int64, error)
+	CalculatePVCCount(ctx context.Context, namespace string) (int64, error)
 }

@@ -40,17 +40,17 @@ import (
 // PersistentVolumeClaimWebhook handles webhook requests for PersistentVolumeClaim resources
 type PersistentVolumeClaimWebhook struct {
 	client            kubernetes.Interface
-	storageCalculator *storage.StorageResourceCalculator
+	storageCalculator storage.StorageResourceCalculatorInterface
 	crqClient         *quota.CRQClient
 	log               *zap.Logger
 }
 
 // NewPersistentVolumeClaimWebhook creates a new PersistentVolumeClaimWebhook
-func NewPersistentVolumeClaimWebhook(c kubernetes.Interface, log *zap.Logger) *PersistentVolumeClaimWebhook {
+func NewPersistentVolumeClaimWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *PersistentVolumeClaimWebhook {
 	return &PersistentVolumeClaimWebhook{
-		client:            c,
-		storageCalculator: storage.NewStorageResourceCalculator(c),
-		crqClient:         nil, // Will be set when controller-runtime client is available
+		client:            k8sClient,
+		storageCalculator: storage.NewStorageResourceCalculator(k8sClient),
+		crqClient:         crqClient,
 		log:               log,
 	}
 }
@@ -254,7 +254,7 @@ func (h *PersistentVolumeClaimWebhook) validateResourceQuota(
 		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
 	}
 
-	return validateCRQResourceQuotaWithNamespace(h.crqClient, ns, resourceName, requestedQuantity,
+	return validateCRQResourceQuotaWithNamespace(h.crqClient, h.client, ns, resourceName, requestedQuantity,
 		h.calculateCurrentUsage, h.log)
 }
 
@@ -292,11 +292,6 @@ func (h *PersistentVolumeClaimWebhook) calculateCurrentUsage(namespace string,
 
 		return resource.Quantity{}, fmt.Errorf("unsupported resource type: %s", resourceName)
 	}
-}
-
-// SetCRQClient sets the CRQ client for quota validation
-func (h *PersistentVolumeClaimWebhook) SetCRQClient(crqClient *quota.CRQClient) {
-	h.crqClient = crqClient
 }
 
 func getStorageRequest(pvc *corev1.PersistentVolumeClaim) resource.Quantity {

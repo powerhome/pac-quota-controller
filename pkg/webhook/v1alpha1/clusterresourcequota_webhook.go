@@ -41,10 +41,11 @@ type ClusterResourceQuotaWebhook struct {
 }
 
 // NewClusterResourceQuotaWebhook creates a new ClusterResourceQuotaWebhook
-func NewClusterResourceQuotaWebhook(c kubernetes.Interface, log *zap.Logger) *ClusterResourceQuotaWebhook {
+func NewClusterResourceQuotaWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *ClusterResourceQuotaWebhook {
 	return &ClusterResourceQuotaWebhook{
-		client: c,
-		log:    log,
+		client:    k8sClient,
+		crqClient: crqClient,
+		log:       log,
 	}
 }
 
@@ -187,12 +188,4 @@ func (h *ClusterResourceQuotaWebhook) validateUpdate(
 func (h *ClusterResourceQuotaWebhook) validateDelete() error {
 	// No validation needed for delete operations
 	return nil
-}
-
-// SetCRQClient sets the CRQ client for validation
-func (h *ClusterResourceQuotaWebhook) SetCRQClient(crqClient *quota.CRQClient) {
-	h.crqClient = crqClient
-	if h.log != nil {
-		h.log.Info("Set CRQ client for ClusterResourceQuota webhook")
-	}
 }

@@ -177,37 +177,25 @@ func (s *GinWebhookServer) setupRoutes() {
 	if s.log != nil {
 		s.log.Info("Setting up ClusterResourceQuota webhook")
 	}
-	s.crqHandler = v1alpha1.NewClusterResourceQuotaWebhook(s.k8sClient, s.log)
-	if crqClient != nil {
-		s.crqHandler.SetCRQClient(crqClient)
-	}
+	s.crqHandler = v1alpha1.NewClusterResourceQuotaWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate-quota-powerapp-cloud-v1alpha1-clusterresourcequota", s.crqHandler.Handle)
 
 	if s.log != nil {
 		s.log.Info("Setting up namespace webhook")
 	}
-	s.namespaceHandler = v1alpha1.NewNamespaceWebhook(s.k8sClient, s.log)
-	if crqClient != nil {
-		s.namespaceHandler.SetCRQClient(crqClient)
-	}
+	s.namespaceHandler = v1alpha1.NewNamespaceWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate--v1-namespace", s.namespaceHandler.Handle)
 
 	if s.log != nil {
 		s.log.Info("Setting up pod webhook")
 	}
-	s.podHandler = v1alpha1.NewPodWebhook(s.k8sClient, s.log)
-	if crqClient != nil {
-		s.podHandler.SetCRQClient(crqClient)
-	}
+	s.podHandler = v1alpha1.NewPodWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate--v1-pod", s.podHandler.Handle)
 
 	if s.log != nil {
 		s.log.Info("Setting up PVC webhook")
 	}
-	s.pvcHandler = v1alpha1.NewPersistentVolumeClaimWebhook(s.k8sClient, s.log)
-	if crqClient != nil {
-		s.pvcHandler.SetCRQClient(crqClient)
-	}
+	s.pvcHandler = v1alpha1.NewPersistentVolumeClaimWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate--v1-persistentvolumeclaim", s.pvcHandler.Handle)
 
 	if s.log != nil {

@@ -6,7 +6,10 @@ import (
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/client-go/kubernetes"
 
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
 
@@ -14,6 +17,7 @@ import (
 // across webhooks with actual namespace object
 func validateCRQResourceQuotaWithNamespace(
 	crqClient *quota.CRQClient,
+	kubernetesClient kubernetes.Interface,
 	ns *corev1.Namespace,
 	resourceName corev1.ResourceName,
 	requestedQuantity resource.Quantity,
@@ -63,10 +67,10 @@ func validateCRQResourceQuotaWithNamespace(
 			zap.String("resource", string(resourceName)),
 			zap.String("limit", quotaLimit.String()))
 
-		// Calculate current usage for this resource
-		currentUsage, err := calculateCurrentUsage(ns.Name, resourceName)
+		// Calculate current usage across ALL namespaces that match the CRQ selector
+		currentUsage, err := calculateCRQCurrentUsage(kubernetesClient, crq, resourceName, calculateCurrentUsage, log)
 		if err != nil {
-			log.Error("Failed to calculate current usage",
+			log.Error("Failed to calculate current usage across CRQ namespaces",
 				zap.String("namespace", ns.Name),
 				zap.String("resource", string(resourceName)),
 				zap.Error(err))
@@ -112,4 +116,52 @@ func validateCRQResourceQuotaWithNamespace(
 		zap.String("requested", requestedQuantity.String()),
 		zap.String("crq", crq.Name))
 	return nil
+}
+
+// calculateCRQCurrentUsage calculates the current usage of a resource across all namespaces
+// that match the ClusterResourceQuota selector
+func calculateCRQCurrentUsage(
+	kubernetesClient kubernetes.Interface,
+	crq *quotav1alpha1.ClusterResourceQuota,
+	resourceName corev1.ResourceName,
+	calculateCurrentUsage func(string, corev1.ResourceName) (resource.Quantity, error),
+	log *zap.Logger,
+) (resource.Quantity, error) {
+	// Get all namespaces that match the CRQ selector
+	namespaceNames, err := namespace.GetSelectedNamespaces(kubernetesClient, crq)
+	if err != nil {
+		return resource.Quantity{}, fmt.Errorf("failed to get namespaces matching CRQ selector: %w", err)
+	}
+
+	log.Info("Calculating usage across CRQ namespaces",
+		zap.String("crq", crq.Name),
+		zap.String("resource", string(resourceName)),
+		zap.Strings("namespaces", namespaceNames))
+
+	// Calculate total usage across all matching namespaces
+	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
+	for _, namespaceName := range namespaceNames {
+		nsUsage, err := calculateCurrentUsage(namespaceName, resourceName)
+		if err != nil {
+			log.Error("Failed to calculate usage for namespace",
+				zap.String("namespace", namespaceName),
+				zap.String("resource", string(resourceName)),
+				zap.Error(err))
+			return resource.Quantity{}, fmt.Errorf("failed to calculate usage for namespace %s: %w", namespaceName, err)
+		}
+		totalUsage.Add(nsUsage)
+
+		log.Debug("Namespace usage calculated",
+			zap.String("namespace", namespaceName),
+			zap.String("resource", string(resourceName)),
+			zap.String("usage", nsUsage.String()))
+	}
+
+	log.Info("Total CRQ usage calculated",
+		zap.String("crq", crq.Name),
+		zap.String("resource", string(resourceName)),
+		zap.String("total_usage", totalUsage.String()),
+		zap.Strings("namespaces", namespaceNames))
+
+	return *totalUsage, nil
 }

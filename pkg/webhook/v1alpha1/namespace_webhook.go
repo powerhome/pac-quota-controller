@@ -42,10 +42,11 @@ type NamespaceWebhook struct {
 }
 
 // NewNamespaceWebhook creates a new NamespaceWebhook
-func NewNamespaceWebhook(c kubernetes.Interface, log *zap.Logger) *NamespaceWebhook {
+func NewNamespaceWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *NamespaceWebhook {
 	return &NamespaceWebhook{
-		client: c,
-		log:    log,
+		client:    k8sClient,
+		crqClient: crqClient,
+		log:       log,
 	}
 }
 
@@ -176,12 +177,4 @@ func (h *NamespaceWebhook) validateNamespaceAgainstCRQs(ns *corev1.Namespace) er
 
 	validator := namespaceutil.NewNamespaceValidator(h.client, h.crqClient)
 	return validator.ValidateNamespaceAgainstCRQs(ns)
-}
-
-// SetCRQClient sets the CRQ client for validation
-func (h *NamespaceWebhook) SetCRQClient(crqClient *quota.CRQClient) {
-	h.crqClient = crqClient
-	if h.log != nil {
-		h.log.Info("Set CRQ client for namespace webhook")
-	}
 }
