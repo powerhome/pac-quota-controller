@@ -1,4 +1,7 @@
 controllerManager:
+  # Optionally specify imagePullSecrets for pulling private images
+  # imagePullSecrets:
+  #   - name: ghcr-creds
   replicas: 1
   # The label key used to exclude namespaces from reconciliation.
   # Namespaces with this label (set to any value) will be ignored by the controller.

@@ -1,6 +1,6 @@
 # pac-quota-controller
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.1.1](https://img.shields.io/badge/Version-0.1.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.1](https://img.shields.io/badge/AppVersion-0.1.1-informational?style=flat-square)
 
 A Helm chart for PAC Quota Controller - Managing cluster resource quotas across namespaces
 
@@ -23,7 +23,7 @@ The PAC Quota Controller extends Kubernetes with a ClusterResourceQuota custom r
 This chart can use container images from GitHub Container Registry:
 
 ```console
-ghcr.io/powerhome/pac-quota-controller:0.1.0
+ghcr.io/powerhome/pac-quota-controller:0.1.1
 ```
 
 You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
@@ -34,6 +34,7 @@ You can configure which registry to use by modifying the `controllerManager.cont
 - Helm 3.8.0+
 
 ## Installation
+You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
 
 This chart is the single source of truth for deploying PAC Quota Controller. All manifests (CRDs, RBAC, webhooks, cert-manager, etc.) are managed here. Do not use Kustomize or Kubebuilder-generated manifests for deployment or testing.
 
@@ -41,6 +42,26 @@ To install the chart with the release name `pac-quota-controller`:
 
 ```sh
 helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
+```
+
+### Private Images
+
+If you are using a private image registry (such as a private GHCR repository), you can provide image pull secrets:
+
+```yaml
+controllerManager:
+  imagePullSecrets:
+    - name: ghcr-creds
+```
+
+Then create the secret in your namespace:
+
+```sh
+kubectl create secret docker-registry ghcr-creds \
+  --docker-server=https://ghcr.io \
+  --docker-username=<your-username> \
+  --docker-password=<your-token> \
+  --docker-email=<your-email>
 ```
 
 ## Upgrading
