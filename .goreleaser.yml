@@ -1,3 +1,5 @@
+version: 2
+
 project_name: pac-quota-controller
 
 before:
@@ -27,7 +29,14 @@ dockers:
   - image_templates:
       - "ghcr.io/powerhome/{{ .ProjectName }}:{{ .Version }}"
       - "ghcr.io/powerhome/{{ .ProjectName }}:latest"
-    dockerfile: Dockerfile.goreleaser
+    dockerfile: Dockerfile
+    extra_files:
+      - go.mod
+      - go.sum
+      - cmd/
+      - api/
+      - internal/
+      - pkg/
     build_flag_templates:
       - --label=org.opencontainers.image.title={{ .ProjectName }}
       - --label=org.opencontainers.image.description={{ .ProjectName }}
@@ -40,8 +49,7 @@ dockers:
     skip_push: auto
 
 archives:
-  - format: tar.gz
-    name_template: >-
+  - name_template: >-
       {{ .ProjectName }}_
       {{- title .Os }}_
       {{- if eq .Arch "amd64" }}x86_64

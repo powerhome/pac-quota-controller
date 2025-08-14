@@ -305,7 +305,7 @@ install-goreleaser: ## Install GoReleaser locally
 
 .PHONY: test-release
 test-release: install-goreleaser ## Run a test release with goreleaser
-	goreleaser release --snapshot --clean --skip-publish
+	goreleaser release --snapshot --clean --skip=publish
 
 .PHONY: release
 release: install-goreleaser ## Run a production release with goreleaser (requires GITHUB_TOKEN)
