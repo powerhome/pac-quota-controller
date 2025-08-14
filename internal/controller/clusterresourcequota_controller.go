@@ -228,6 +228,65 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 		// Initialize total usage for this resource
 		totalUsage[resourceName] = resource.Quantity{}
 
+		// Detect storage class–scoped quota resources
+		resourceStr := string(resourceName)
+		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage") {
+			// Example: fast-ssd.storageclass.storage.k8s.io/requests.storage
+			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage")
+			for _, nsName := range namespaces {
+				var currentUsage resource.Quantity
+				if r.StorageCalculator != nil {
+					usage, err := r.StorageCalculator.CalculateStorageClassUsage(ctx, nsName, storageClass)
+					if err != nil {
+						log.Error(err, "Failed to calculate storage class usage", "resource", resourceName, "namespace", nsName, "storageClass", storageClass)
+						currentUsage = resource.MustParse("0")
+					} else {
+						currentUsage = usage
+					}
+				} else {
+					log.Error(nil, "StorageCalculator is nil", "namespace", nsName, "resource", resourceName)
+					currentUsage = resource.MustParse("0")
+				}
+				nsIndex := nsIndexMap[nsName]
+				usageByNamespace[nsIndex].Status.Used[resourceName] = currentUsage
+				if existing, exists := totalUsage[resourceName]; exists {
+					existing.Add(currentUsage)
+					totalUsage[resourceName] = existing
+				} else {
+					totalUsage[resourceName] = currentUsage
+				}
+			}
+			continue
+		}
+		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims") {
+			// Example: fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims
+			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims")
+			for _, nsName := range namespaces {
+				var currentCount int64
+				if r.StorageCalculator != nil {
+					count, err := r.StorageCalculator.CalculateStorageClassCount(ctx, nsName, storageClass)
+					if err != nil {
+						log.Error(err, "Failed to calculate storage class PVC count", "resource", resourceName, "namespace", nsName, "storageClass", storageClass)
+						currentCount = 0
+					} else {
+						currentCount = count
+					}
+				} else {
+					log.Error(nil, "StorageCalculator is nil", "namespace", nsName, "resource", resourceName)
+					currentCount = 0
+				}
+				nsIndex := nsIndexMap[nsName]
+				usageByNamespace[nsIndex].Status.Used[resourceName] = *resource.NewQuantity(currentCount, resource.DecimalSI)
+				if existing, exists := totalUsage[resourceName]; exists {
+					existing.Add(*resource.NewQuantity(currentCount, resource.DecimalSI))
+					totalUsage[resourceName] = existing
+				} else {
+					totalUsage[resourceName] = *resource.NewQuantity(currentCount, resource.DecimalSI)
+				}
+			}
+			continue
+		}
+
 		for _, nsName := range namespaces {
 			var currentUsage resource.Quantity
 

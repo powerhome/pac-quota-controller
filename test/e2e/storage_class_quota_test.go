@@ -147,50 +147,62 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			}
 			Expect(k8sClient.Create(ctx, crq)).To(Succeed())
 
-			// Test 1: Create PVCs within fast SSD limits
+			By("Creating first fast SSD PVC within limits")
 			pvc1 := createTestPVC("fast-pvc-1", testNamespace, storageClassFast, "2Gi")
 			Expect(k8sClient.Create(ctx, pvc1)).To(Succeed(), "Should allow first fast SSD PVC within limits")
 
+			By("Creating second fast SSD PVC within limits")
 			pvc2 := createTestPVC("fast-pvc-2", testNamespace, storageClassFast, "2Gi")
 			Expect(k8sClient.Create(ctx, pvc2)).To(Succeed(), "Should allow second fast SSD PVC within limits")
 
-			// Test 2: Create PVC that would exceed fast SSD storage quota
+			By("Trying to create fast SSD PVC that exceeds storage quota (should fail)")
 			pvc3 := createTestPVC("fast-pvc-3", testNamespace, storageClassFast, "2Gi") // Total would be 6Gi > 5Gi limit
 			err := k8sClient.Create(ctx, pvc3)
 			Expect(err).To(HaveOccurred(), "Should block PVC that exceeds fast SSD storage quota")
-			Expect(err.Error()).To(ContainSubstring("storage class"), "Error should mention storage class")
+			Expect(err.Error()).To(
+				ContainSubstring("storage class "+storageClassFast+" storage limit"),
+				"Error should mention storage class storage limit",
+			)
 
-			// Test 3: Create smaller PVC within fast SSD storage quota but count quota
+			By("Creating third fast SSD PVC within both storage and count limits")
 			pvc4 := createTestPVC("fast-pvc-4", testNamespace, storageClassFast, "500Mi") // Within storage but count would be 3
 			Expect(k8sClient.Create(ctx, pvc4)).To(Succeed(), "Should allow third fast SSD PVC within both limits")
 
-			// Test 4: Create PVC that would exceed fast SSD count quota
+			By("Trying to create fast SSD PVC that exceeds count quota (should fail)")
 			pvc5 := createTestPVC("fast-pvc-5", testNamespace, storageClassFast, "100Mi") // Count would be 4 > 3 limit
 			err = k8sClient.Create(ctx, pvc5)
 			Expect(err).To(HaveOccurred(), "Should block PVC that exceeds fast SSD count quota")
-			Expect(err.Error()).To(ContainSubstring("PVC count"), "Error should mention PVC count")
+			Expect(err.Error()).To(
+				ContainSubstring("storage class "+storageClassFast+" PVC count limit"),
+				"Error should mention storage class PVC count limit",
+			)
 
-			// Test 5: Create PVCs with different storage class (slow HDD) - should be allowed
+			By("Creating slow HDD PVC with different quota")
 			slowPVC1 := createTestPVC("slow-pvc-1", testNamespace, storageClassSlow, "8Gi")
 			Expect(k8sClient.Create(ctx, slowPVC1)).To(Succeed(), "Should allow slow HDD PVC with different quota")
 
+			By("Creating second slow HDD PVC within limits")
 			slowPVC2 := createTestPVC("slow-pvc-2", testNamespace, storageClassSlow, "1Gi")
 			Expect(k8sClient.Create(ctx, slowPVC2)).To(Succeed(), "Should allow second slow HDD PVC within limits")
 
-			// Test 6: Create PVC that would exceed slow HDD count quota
+			By("Trying to create slow HDD PVC that exceeds count quota (should fail)")
 			slowPVC3 := createTestPVC("slow-pvc-3", testNamespace, storageClassSlow, "500Mi") // Count would be 3 > 2 limit
 			err = k8sClient.Create(ctx, slowPVC3)
 			Expect(err).To(HaveOccurred(), "Should block PVC that exceeds slow HDD count quota")
+			Expect(err.Error()).To(
+				ContainSubstring("storage class "+storageClassSlow+" PVC count limit"),
+				"Error should mention storage class PVC count limit",
+			)
 
-			// Test 7: Create PVC without storage class - should only count against general quotas
+			By("Creating PVC without storage class (should only count against general quotas)")
 			defaultPVC := createTestPVC("default-pvc", testNamespace, "", "3Gi")
 			Expect(k8sClient.Create(ctx, defaultPVC)).To(Succeed(), "Should allow PVC without storage class")
 
-			// Test 8: Create PVC with storage class not covered by quota - should only count against general quotas
+			By("Creating PVC with storage class not covered by quota (should only count against general quotas)")
 			customPVC := createTestPVC("custom-pvc", testNamespace, storageClassCustom, "2Gi")
 			Expect(k8sClient.Create(ctx, customPVC)).To(Succeed(), "Should allow PVC with unquoted storage class")
 
-			// Verify the ClusterResourceQuota status reflects usage
+			By("Verifying ClusterResourceQuota status reflects usage")
 			Eventually(func() bool {
 				updatedCRQ := &quotav1alpha1.ClusterResourceQuota{}
 				err := k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, updatedCRQ)
@@ -236,44 +248,56 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			}
 			Expect(k8sClient.Create(ctx, crq)).To(Succeed())
 
-			// Test fast SSD - only storage quota applies
+			By("Creating fast SSD PVC #1 (only storage quota applies)")
 			fastPVC1 := createTestPVC("fast-mixed-1", testNamespace, storageClassFast, "1Gi")
-			Expect(k8sClient.Create(ctx, fastPVC1)).To(Succeed())
+			Expect(k8sClient.Create(ctx, fastPVC1)).To(Succeed(), "Should allow fast SSD PVC #1 within storage quota")
 
+			By("Creating fast SSD PVC #2 (only storage quota applies)")
 			fastPVC2 := createTestPVC("fast-mixed-2", testNamespace, storageClassFast, "1Gi")
-			Expect(k8sClient.Create(ctx, fastPVC2)).To(Succeed())
+			Expect(k8sClient.Create(ctx, fastPVC2)).To(Succeed(), "Should allow fast SSD PVC #2 within storage quota")
 
-			// Many PVCs allowed, only storage matters
+			By("Creating fast SSD PVC #3 (only storage quota applies)")
 			fastPVC3 := createTestPVC("fast-mixed-3", testNamespace, storageClassFast, "100Mi")
-			Expect(k8sClient.Create(ctx, fastPVC3)).To(Succeed())
+			Expect(k8sClient.Create(ctx, fastPVC3)).To(Succeed(), "Should allow fast SSD PVC #3 within storage quota")
 
-			// This would exceed 3Gi storage limit
+			By("Trying to create fast SSD PVC #4 that exceeds storage quota (should fail)")
 			fastPVC4 := createTestPVC("fast-mixed-4", testNamespace, storageClassFast, "1Gi")
 			err := k8sClient.Create(ctx, fastPVC4)
 			Expect(err).To(HaveOccurred(), "Should block when fast SSD storage quota exceeded")
+			Expect(err.Error()).To(
+				ContainSubstring("storage class "+storageClassFast+" storage limit"),
+				"Error should mention storage class storage limit",
+			)
 
-			// Test slow HDD - only count quota applies
-			// Large storage OK, only count matters
+			By("Creating slow HDD PVC #1 (only count quota applies)")
 			slowPVC1 := createTestPVC("slow-mixed-1", testNamespace, storageClassSlow, "100Gi")
-			Expect(k8sClient.Create(ctx, slowPVC1)).To(Succeed())
+			Expect(k8sClient.Create(ctx, slowPVC1)).To(Succeed(), "Should allow slow HDD PVC #1 within count quota")
 
-			// Very large but still allowed
+			By("Creating slow HDD PVC #2 (only count quota applies)")
 			slowPVC2 := createTestPVC("slow-mixed-2", testNamespace, storageClassSlow, "200Gi")
-			Expect(k8sClient.Create(ctx, slowPVC2)).To(Succeed())
+			Expect(k8sClient.Create(ctx, slowPVC2)).To(Succeed(), "Should allow slow HDD PVC #2 within count quota")
 
-			// This would exceed count limit of 2
+			By("Trying to create slow HDD PVC #3 that exceeds count quota (should fail)")
 			slowPVC3 := createTestPVC("slow-mixed-3", testNamespace, storageClassSlow, "1Mi")
 			err = k8sClient.Create(ctx, slowPVC3)
 			Expect(err).To(HaveOccurred(), "Should block when slow HDD count quota exceeded")
+			Expect(err.Error()).To(
+				ContainSubstring("storage class "+storageClassSlow+" PVC count limit"),
+				"Error should mention storage class PVC count limit",
+			)
 
-			// Test custom storage class - both quotas apply
+			By("Creating custom storage class PVC #1 (both quotas apply)")
 			customPVC1 := createTestPVC("custom-mixed-1", testNamespace, storageClassCustom, "1Gi")
-			Expect(k8sClient.Create(ctx, customPVC1)).To(Succeed())
+			Expect(k8sClient.Create(ctx, customPVC1)).To(Succeed(), "Should allow custom storage class PVC #1 within quotas")
 
-			// Would exceed count limit of 1
+			By("Trying to create custom storage class PVC #2 that exceeds count quota (should fail)")
 			customPVC2 := createTestPVC("custom-mixed-2", testNamespace, storageClassCustom, "500Mi")
 			err = k8sClient.Create(ctx, customPVC2)
 			Expect(err).To(HaveOccurred(), "Should block when custom storage class count quota exceeded")
+			Expect(err.Error()).To(
+				ContainSubstring("storage class "+storageClassCustom+" PVC count limit"),
+				"Error should mention storage class PVC count limit",
+			)
 		})
 	})
 })
