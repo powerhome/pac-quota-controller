@@ -21,6 +21,10 @@ jobs:
 
       - name: Install dependencies
         run: go mod download
+      
+      - name: Install Go coverage tools
+        run: |
+          go install golang.org/x/tools/cmd/covdata@latest
 
       - name: Run unit tests with coverage
         run: |
