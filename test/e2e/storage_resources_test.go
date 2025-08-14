@@ -17,8 +17,6 @@ limitations under the License.
 package e2e
 
 import (
-	"context"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
@@ -31,7 +29,6 @@ import (
 
 var _ = Describe("Storage Resources E2E", func() {
 	var (
-		ctx     = context.Background()
 		suffix  string
 		crqName string
 	)

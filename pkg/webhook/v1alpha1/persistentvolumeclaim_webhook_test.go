@@ -39,6 +39,7 @@ const (
 
 var _ = Describe("PersistentVolumeClaimWebhook", func() {
 	var (
+		ctx               context.Context
 		ginEngine         *gin.Engine
 		webhook           *PersistentVolumeClaimWebhook
 		fakeRuntimeClient client.Client
@@ -266,7 +267,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				},
 			}
 
-			err := webhook.validateCreate(pvc)
+			err := webhook.validateCreate(ctx, pvc)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -287,7 +288,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				},
 			}
 
-			err := webhook.validateUpdate(pvc)
+			err := webhook.validateUpdate(ctx, pvc)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -308,7 +309,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				},
 			}
 
-			err := webhook.validateStorageQuota(pvc)
+			err := webhook.validateStorageQuota(ctx, pvc)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -325,19 +326,19 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				},
 			}
 
-			err := webhook.validateStorageQuota(pvc)
+			err := webhook.validateStorageQuota(ctx, pvc)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
 	Describe("validateResourceQuota", func() {
 		It("should validate storage quota successfully when within limits", func() {
-			err := webhook.validateResourceQuota("test-namespace", corev1.ResourceStorage, resource.MustParse("1Gi"))
+			err := webhook.validateResourceQuota(ctx, "test-namespace", corev1.ResourceStorage, resource.MustParse("1Gi"))
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should handle namespace not found", func() {
-			err := webhook.validateResourceQuota("nonexistent-namespace", corev1.ResourceStorage, resource.MustParse("1Gi"))
+			err := webhook.validateResourceQuota(ctx, "nonexistent-namespace", corev1.ResourceStorage, resource.MustParse("1Gi"))
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("namespaces \"nonexistent-namespace\" not found"))
 		})
@@ -554,12 +555,6 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 		})
 
 		Describe("calculateCurrentUsage function coverage", func() {
-			var ctx context.Context
-
-			BeforeEach(func() {
-				ctx = context.Background()
-			})
-
 			It("should handle storage requests correctly", func() {
 				// Create a PVC first
 				pvc := &corev1.PersistentVolumeClaim{
@@ -578,7 +573,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				_, err := k8sClient.CoreV1().PersistentVolumeClaims("test-namespace").Create(ctx, pvc, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage("test-namespace", usage.ResourceRequestsStorage)
+				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", usage.ResourceRequestsStorage)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(Equal(int64(10 * 1024 * 1024 * 1024))) // 10Gi in bytes
 			})
@@ -603,20 +598,20 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				_, err := k8sClient.CoreV1().PersistentVolumeClaims("test-namespace").Create(ctx, pvc, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage("test-namespace",
+				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace",
 					corev1.ResourceName("premium-ssd.storageclass.storage.k8s.io/requests.storage"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(Equal(int64(20 * 1024 * 1024 * 1024))) // 20Gi in bytes
 			})
 
 			It("should return error for unsupported resource types", func() {
-				_, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName("unsupported.resource"))
+				_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("unsupported.resource"))
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unsupported resource type"))
 			})
 
 			It("should handle non-existent namespace", func() {
-				usage, err := webhook.calculateCurrentUsage("non-existent-namespace", usage.ResourceRequestsStorage)
+				usage, err := webhook.calculateCurrentUsage(ctx, "non-existent-namespace", usage.ResourceRequestsStorage)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.IsZero()).To(BeTrue())
 			})
@@ -642,7 +637,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				}
 
 				// Test PVC count
-				usage, err := webhook.calculateCurrentUsage("test-namespace", "persistentvolumeclaims")
+				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("persistentvolumeclaims"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(BeNumerically(">", 0)) // Should count the PVCs
 			})
@@ -670,7 +665,11 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				}
 
 				// Test storage class specific PVC count
-				usage, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName(fastSSDStorageClassResourceName))
+				usage, err := webhook.calculateCurrentUsage(
+					ctx,
+					"test-namespace",
+					corev1.ResourceName(fastSSDStorageClassResourceName),
+				)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(BeNumerically(">", 0)) // Should count the PVCs with specific storage class
 			})
@@ -693,11 +692,9 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					}
 
 					// Mock the CalculateUsage to return an error
-					mockCalculator.On("CalculateUsage", context.Background(), "test-namespace", usage.ResourceRequestsStorage).
+					mockCalculator.On("CalculateUsage", ctx, "test-namespace", usage.ResourceRequestsStorage).
 						Return(resource.Quantity{}, errors.New("failed to calculate storage usage"))
-
-					// Call calculateCurrentUsage and expect error
-					_, err := webhook.calculateCurrentUsage("test-namespace", usage.ResourceRequestsStorage)
+					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", usage.ResourceRequestsStorage)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("failed to calculate storage usage"))
 
@@ -715,11 +712,12 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					}
 
 					// Mock the CalculatePVCCount to return an error
-					mockCalculator.On("CalculatePVCCount", context.Background(), "test-namespace").
+					mockCalculator.On("CalculatePVCCount", ctx, "test-namespace").
 						Return(int64(0), errors.New("failed to count PVCs"))
 
 					// Call calculateCurrentUsage for PVCs and expect error
-					_, err := webhook.calculateCurrentUsage("test-namespace", usage.ResourcePersistentVolumeClaims)
+					ctx := ctx
+					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", usage.ResourcePersistentVolumeClaims)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("failed to count PVCs"))
 
@@ -737,11 +735,12 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					}
 
 					// Mock the CalculateStorageClassUsage to return an error
-					mockCalculator.On("CalculateStorageClassUsage", context.Background(), "test-namespace", premiumSSDStorageClass).
+					mockCalculator.On("CalculateStorageClassUsage", ctx, "test-namespace", premiumSSDStorageClass).
 						Return(resource.Quantity{}, errors.New("storage class usage calculation failed"))
 
 					// Call calculateCurrentUsage for storage class specific resource and expect error
-					_, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName(premiumSSDStorageClassRequests))
+					ctx := ctx
+					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName(premiumSSDStorageClassRequests))
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("storage class usage calculation failed"))
 
@@ -759,11 +758,15 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					}
 
 					// Mock the CalculateStorageClassCount to return an error
-					mockCalculator.On("CalculateStorageClassCount", context.Background(), "test-namespace", "fast-ssd").
+					mockCalculator.On("CalculateStorageClassCount", ctx, "test-namespace", "fast-ssd").
 						Return(int64(0), errors.New("storage class count failed"))
 
 					// Call calculateCurrentUsage for storage class PVC count and expect error
-					_, err := webhook.calculateCurrentUsage("test-namespace", corev1.ResourceName(fastSSDStorageClassResourceName))
+					_, err := webhook.calculateCurrentUsage(
+						ctx,
+						"test-namespace",
+						corev1.ResourceName(fastSSDStorageClassResourceName),
+					)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("storage class count failed"))
 
@@ -779,7 +782,6 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			var ctx context.Context
 
 			BeforeEach(func() {
-				ctx = context.Background()
 				namespace = &corev1.Namespace{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "storage-test-ns",
@@ -829,7 +831,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					},
 				}
 
-				err := webhook.validateStorageQuota(pvc)
+				err := webhook.validateStorageQuota(ctx, pvc)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("premium-ssd.storageclass.storage.k8s.io/requests.storage"))
 			})
@@ -871,7 +873,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					Expect(err).NotTo(HaveOccurred())
 				}
 
-				err := webhook.validateStorageQuota(pvc)
+				err := webhook.validateStorageQuota(ctx, pvc)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("requests.storage"))
 			})
@@ -891,7 +893,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					},
 				}
 
-				err := webhook.validateStorageQuota(pvc)
+				err := webhook.validateStorageQuota(ctx, pvc)
 				Expect(err).NotTo(HaveOccurred()) // Should pass with general storage quota
 			})
 
@@ -908,7 +910,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					},
 				}
 
-				err := webhook.validateStorageQuota(pvc)
+				err := webhook.validateStorageQuota(ctx, pvc)
 				Expect(err).NotTo(HaveOccurred()) // Should pass when no storage requested
 			})
 		})
@@ -919,7 +921,6 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			var ctx context.Context
 
 			BeforeEach(func() {
-				ctx = context.Background()
 				namespace = &corev1.Namespace{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "update-test-ns",
@@ -973,7 +974,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				// Just change labels, not storage
 				updatedPVC.Labels = map[string]string{"updated": "true"}
 
-				err := webhook.validateUpdate(updatedPVC)
+				err := webhook.validateUpdate(ctx, updatedPVC)
 				Expect(err).NotTo(HaveOccurred())
 			})
 
@@ -1017,7 +1018,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				// Would make total 55Gi > 50Gi
 				updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("20Gi")
 
-				err = webhook.validateUpdate(updatedPVC)
+				err = webhook.validateUpdate(ctx, updatedPVC)
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("requests.storage"))
 			})
@@ -1037,7 +1038,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					},
 				}
 
-				err := webhook.validateUpdate(newPVC)
+				err := webhook.validateUpdate(ctx, newPVC)
 				Expect(err).NotTo(HaveOccurred()) // Should validate as normal
 			})
 		})

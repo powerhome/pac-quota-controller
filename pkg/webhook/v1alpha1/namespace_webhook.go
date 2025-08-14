@@ -156,23 +156,23 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 }
 
 //nolint:unparam // This function is now properly implemented
-func (h *NamespaceWebhook) validateCreate(_ context.Context, namespace *corev1.Namespace) error {
+func (h *NamespaceWebhook) validateCreate(ctx context.Context, namespace *corev1.Namespace) error {
 	h.log.Info("Validating namespace for CRQ conflicts",
 		zap.String("namespace", namespace.Name))
 
-	return h.validateNamespaceAgainstCRQs(namespace)
+	return h.validateNamespaceAgainstCRQs(ctx, namespace)
 }
 
 //nolint:unparam // This function is now properly implemented
-func (h *NamespaceWebhook) validateUpdate(_ context.Context, namespace *corev1.Namespace) error {
+func (h *NamespaceWebhook) validateUpdate(ctx context.Context, namespace *corev1.Namespace) error {
 	h.log.Info("Validating namespace update for CRQ conflicts",
 		zap.String("namespace", namespace.Name))
 
-	return h.validateNamespaceAgainstCRQs(namespace)
+	return h.validateNamespaceAgainstCRQs(ctx, namespace)
 }
 
 // validateNamespaceAgainstCRQs checks if the namespace would conflict with existing CRQs
-func (h *NamespaceWebhook) validateNamespaceAgainstCRQs(ns *corev1.Namespace) error {
+func (h *NamespaceWebhook) validateNamespaceAgainstCRQs(ctx context.Context, ns *corev1.Namespace) error {
 	if h.crqClient == nil {
 		h.log.Info("No CRQ client available, skipping CRQ validation",
 			zap.String("namespace", ns.Name))
@@ -180,5 +180,5 @@ func (h *NamespaceWebhook) validateNamespaceAgainstCRQs(ns *corev1.Namespace) er
 	}
 
 	validator := namespaceutil.NewNamespaceValidator(h.client, h.crqClient)
-	return validator.ValidateNamespaceAgainstCRQs(ns)
+	return validator.ValidateNamespaceAgainstCRQs(ctx, ns)
 }

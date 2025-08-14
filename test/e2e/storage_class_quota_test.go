@@ -17,7 +17,6 @@ limitations under the License.
 package e2e
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -36,7 +35,6 @@ import (
 
 var _ = Describe("Storage Class Quota E2E Tests", func() {
 	var (
-		ctx                context.Context
 		testNamespace      string
 		storageClassFast   string
 		storageClassSlow   string
@@ -77,7 +75,6 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 	}
 
 	BeforeEach(func() {
-		ctx = context.Background()
 		testNamespace = fmt.Sprintf("storage-class-test-%s", testutils.GenerateTestSuffix())
 		storageClassFast = fmt.Sprintf("fast-ssd-e2e-%s", testutils.GenerateTestSuffix())
 		storageClassSlow = fmt.Sprintf("slow-hdd-e2e-%s", testutils.GenerateTestSuffix())
@@ -160,7 +157,7 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			err := k8sClient.Create(ctx, pvc3)
 			Expect(err).To(HaveOccurred(), "Should block PVC that exceeds fast SSD storage quota")
 			Expect(err.Error()).To(
-				ContainSubstring("storage class "+storageClassFast+" storage limit"),
+				ContainSubstring("ClusterResourceQuota storage class '"+storageClassFast+"' storage validation failed"),
 				"Error should mention storage class storage limit",
 			)
 
@@ -173,7 +170,7 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			err = k8sClient.Create(ctx, pvc5)
 			Expect(err).To(HaveOccurred(), "Should block PVC that exceeds fast SSD count quota")
 			Expect(err.Error()).To(
-				ContainSubstring("storage class "+storageClassFast+" PVC count limit"),
+				ContainSubstring("ClusterResourceQuota storage class '"+storageClassFast+"' PVC count validation failed"),
 				"Error should mention storage class PVC count limit",
 			)
 
@@ -190,7 +187,7 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			err = k8sClient.Create(ctx, slowPVC3)
 			Expect(err).To(HaveOccurred(), "Should block PVC that exceeds slow HDD count quota")
 			Expect(err.Error()).To(
-				ContainSubstring("storage class "+storageClassSlow+" PVC count limit"),
+				ContainSubstring("ClusterResourceQuota storage class '"+storageClassSlow+"' PVC count validation failed"),
 				"Error should mention storage class PVC count limit",
 			)
 
@@ -265,7 +262,7 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			err := k8sClient.Create(ctx, fastPVC4)
 			Expect(err).To(HaveOccurred(), "Should block when fast SSD storage quota exceeded")
 			Expect(err.Error()).To(
-				ContainSubstring("storage class "+storageClassFast+" storage limit"),
+				ContainSubstring("ClusterResourceQuota storage class '"+storageClassFast+"' storage validation failed"),
 				"Error should mention storage class storage limit",
 			)
 
@@ -282,7 +279,7 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			err = k8sClient.Create(ctx, slowPVC3)
 			Expect(err).To(HaveOccurred(), "Should block when slow HDD count quota exceeded")
 			Expect(err.Error()).To(
-				ContainSubstring("storage class "+storageClassSlow+" PVC count limit"),
+				ContainSubstring("ClusterResourceQuota storage class '"+storageClassSlow+"' PVC count validation failed"),
 				"Error should mention storage class PVC count limit",
 			)
 
@@ -295,7 +292,7 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			err = k8sClient.Create(ctx, customPVC2)
 			Expect(err).To(HaveOccurred(), "Should block when custom storage class count quota exceeded")
 			Expect(err.Error()).To(
-				ContainSubstring("storage class "+storageClassCustom+" PVC count limit"),
+				ContainSubstring("ClusterResourceQuota storage class '"+storageClassCustom+"' PVC count validation failed"),
 				"Error should mention storage class PVC count limit",
 			)
 		})

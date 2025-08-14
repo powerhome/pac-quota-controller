@@ -128,17 +128,18 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 	var warnings []string
 	var err error
 
+	ctx := c.Request.Context()
 	switch admissionReview.Request.Operation {
 	case admissionv1.Create:
 		h.log.Info("Validating PersistentVolumeClaim on create",
 			zap.String("name", pvc.GetName()),
 			zap.String("namespace", pvc.GetNamespace()))
-		err = h.validateCreate(&pvc)
+		err = h.validateCreate(ctx, &pvc)
 	case admissionv1.Update:
 		h.log.Info("Validating PersistentVolumeClaim on update",
 			zap.String("name", pvc.GetName()),
 			zap.String("namespace", pvc.GetNamespace()))
-		err = h.validateUpdate(&pvc)
+		err = h.validateUpdate(ctx, &pvc)
 	default:
 		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
@@ -168,10 +169,11 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 }
 
 func (h *PersistentVolumeClaimWebhook) validateCreate(
+	ctx context.Context,
 	pvc *corev1.PersistentVolumeClaim,
 ) error {
 	// Check if any ClusterResourceQuota applies to this namespace and would be exceeded
-	if err := h.validateStorageQuota(pvc); err != nil {
+	if err := h.validateStorageQuota(ctx, pvc); err != nil {
 		h.log.Error("PVC creation blocked due to quota violation",
 			zap.String("pvc", pvc.GetName()),
 			zap.String("namespace", pvc.GetNamespace()),
@@ -183,10 +185,11 @@ func (h *PersistentVolumeClaimWebhook) validateCreate(
 }
 
 func (h *PersistentVolumeClaimWebhook) validateUpdate(
+	ctx context.Context,
 	pvc *corev1.PersistentVolumeClaim,
 ) error {
 	// Check if any ClusterResourceQuota applies to this namespace and would be exceeded
-	if err := h.validateStorageQuota(pvc); err != nil {
+	if err := h.validateStorageQuota(ctx, pvc); err != nil {
 		h.log.Error("PVC update blocked due to quota violation",
 			zap.String("pvc", pvc.GetName()),
 			zap.String("namespace", pvc.GetNamespace()),
@@ -198,19 +201,20 @@ func (h *PersistentVolumeClaimWebhook) validateUpdate(
 }
 
 func (h *PersistentVolumeClaimWebhook) validateStorageQuota(
+	ctx context.Context,
 	pvc *corev1.PersistentVolumeClaim,
 ) error {
 	// Get storage request from PVC
 	storageRequest := getStorageRequest(pvc)
 
 	// Validate general storage quota
-	if err := h.validateResourceQuota(pvc.Namespace, usage.ResourceRequestsStorage, storageRequest); err != nil {
+	if err := h.validateResourceQuota(ctx, pvc.Namespace, usage.ResourceRequestsStorage, storageRequest); err != nil {
 		return fmt.Errorf("ClusterResourceQuota storage validation failed: %w", err)
 	}
 
 	// Validate general PVC count (always 1 for a new PVC)
 	pvcCount := resource.NewQuantity(1, resource.DecimalSI)
-	if err := h.validateResourceQuota(pvc.Namespace, usage.ResourcePersistentVolumeClaims, *pvcCount); err != nil {
+	if err := h.validateResourceQuota(ctx, pvc.Namespace, usage.ResourcePersistentVolumeClaims, *pvcCount); err != nil {
 		return fmt.Errorf("ClusterResourceQuota PVC count validation failed: %w", err)
 	}
 
@@ -221,14 +225,14 @@ func (h *PersistentVolumeClaimWebhook) validateStorageQuota(
 		// Validate storage class specific storage quota
 		storageClassStorageResource := corev1.ResourceName(fmt.Sprintf(
 			"%s.storageclass.storage.k8s.io/requests.storage", storageClass))
-		if err := h.validateResourceQuota(pvc.Namespace, storageClassStorageResource, storageRequest); err != nil {
+		if err := h.validateResourceQuota(ctx, pvc.Namespace, storageClassStorageResource, storageRequest); err != nil {
 			return fmt.Errorf("ClusterResourceQuota storage class '%s' storage validation failed: %w", storageClass, err)
 		}
 
 		// Validate storage class specific PVC count
 		storageClassCountResource := corev1.ResourceName(fmt.Sprintf(
 			"%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClass))
-		if err := h.validateResourceQuota(pvc.Namespace, storageClassCountResource, *pvcCount); err != nil {
+		if err := h.validateResourceQuota(ctx, pvc.Namespace, storageClassCountResource, *pvcCount); err != nil {
 			return fmt.Errorf("ClusterResourceQuota storage class '%s' PVC count validation failed: %w", storageClass, err)
 		}
 
@@ -248,28 +252,31 @@ func (h *PersistentVolumeClaimWebhook) validateStorageQuota(
 
 // validateResourceQuota validates if a resource operation would exceed any applicable ClusterResourceQuota
 func (h *PersistentVolumeClaimWebhook) validateResourceQuota(
+	ctx context.Context,
 	namespace string,
 	resourceName corev1.ResourceName,
 	requestedQuantity resource.Quantity,
 ) error {
 	// Fetch the actual namespace object with labels
-	ns, err := h.client.CoreV1().Namespaces().Get(context.Background(), namespace, metav1.GetOptions{})
+	ns, err := h.client.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
 	}
 
-	return validateCRQResourceQuotaWithNamespace(h.crqClient, h.client, ns, resourceName, requestedQuantity,
-		h.calculateCurrentUsage, h.log)
+	return validateCRQResourceQuotaWithNamespace(ctx, h.crqClient, h.client, ns, resourceName, requestedQuantity,
+		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
+			return h.calculateCurrentUsage(ctx, ns, rn)
+		}, h.log)
 }
 
 // calculateCurrentUsage calculates the current usage of a resource in a namespace
-func (h *PersistentVolumeClaimWebhook) calculateCurrentUsage(namespace string,
+func (h *PersistentVolumeClaimWebhook) calculateCurrentUsage(ctx context.Context, namespace string,
 	resourceName corev1.ResourceName) (resource.Quantity, error) {
 	switch resourceName {
 	case usage.ResourceRequestsStorage:
-		return h.storageCalculator.CalculateUsage(context.Background(), namespace, resourceName)
+		return h.storageCalculator.CalculateUsage(ctx, namespace, resourceName)
 	case usage.ResourcePersistentVolumeClaims:
-		count, err := h.storageCalculator.CalculatePVCCount(context.Background(), namespace)
+		count, err := h.storageCalculator.CalculatePVCCount(ctx, namespace)
 		if err != nil {
 			return resource.Quantity{}, err
 		}
@@ -281,13 +288,13 @@ func (h *PersistentVolumeClaimWebhook) calculateCurrentUsage(namespace string,
 		// Pattern: <storage-class>.storageclass.storage.k8s.io/requests.storage
 		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage") {
 			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage")
-			return h.storageCalculator.CalculateStorageClassUsage(context.Background(), namespace, storageClass)
+			return h.storageCalculator.CalculateStorageClassUsage(ctx, namespace, storageClass)
 		}
 
 		// Pattern: <storage-class>.storageclass.storage.k8s.io/persistentvolumeclaims
 		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims") {
 			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims")
-			count, err := h.storageCalculator.CalculateStorageClassCount(context.Background(), namespace, storageClass)
+			count, err := h.storageCalculator.CalculateStorageClassCount(ctx, namespace, storageClass)
 			if err != nil {
 				return resource.Quantity{}, err
 			}

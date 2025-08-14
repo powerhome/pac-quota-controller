@@ -4,7 +4,6 @@
 package e2e
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -27,7 +26,6 @@ const (
 
 var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 	var (
-		ctx    context.Context
 		suffix string
 		ns     *corev1.Namespace
 		crq    *quotav1alpha1.ClusterResourceQuota
@@ -35,7 +33,6 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
 
 		// Generate unique suffix for each test to avoid collisions
 		suffix = testutils.GenerateTestSuffix()

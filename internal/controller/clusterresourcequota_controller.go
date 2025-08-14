@@ -418,7 +418,7 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 		"namespace", ns.Name)
 
 	// Find which CRQ selects this namespace.
-	crq, err := r.crqClient.GetCRQByNamespace(ns)
+	crq, err := r.crqClient.GetCRQByNamespace(ctx, ns)
 	if err != nil {
 		log.Error(err, "Failed to get ClusterResourceQuota for namespace")
 		return nil

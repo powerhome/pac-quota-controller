@@ -92,8 +92,6 @@ func (f *fakeClient) Status() client.StatusWriter {
 
 var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 	var testQuota *quotav1alpha1.ClusterResourceQuota
-	ctx := context.Background()
-
 	BeforeAll(func() {
 		testQuota = &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{
@@ -172,7 +170,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			// Mock the CRQ client to return our test quota
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
 			mockCRQClient.On("ListAllCRQs").Return([]quotav1alpha1.ClusterResourceQuota{*testQuota}, nil).Maybe()
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(testQuota, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(testQuota, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 
 			// Test that the namespace is correctly identified as selected
@@ -193,7 +191,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
 			mockCRQClient.On("ListAllCRQs").Return([]quotav1alpha1.ClusterResourceQuota{}, nil).Maybe()
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 
 			requests := reconciler.findQuotasForObject(ctx, nonMatchingNamespace)
@@ -490,7 +488,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
 			mockCRQClient.On("ListAllCRQs").Return([]quotav1alpha1.ClusterResourceQuota{}, nil).Maybe()
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 
 			// Should not panic when client operations fail
@@ -516,7 +514,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
 			mockCRQClient.On("ListAllCRQs").Return([]quotav1alpha1.ClusterResourceQuota{}, nil).Maybe()
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 
 			requests := reconciler.findQuotasForObject(ctx, namespaceWithNilLabels)
@@ -526,7 +524,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		It("should handle CRQ client errors gracefully", func() {
 			// Create a mock CRQ client that returns errors
 			errorCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
-			errorCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, errors.New("simulated error")).Maybe()
+			errorCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, errors.New("simulated error")).Maybe()
 			errorCRQClient.On("ListAllCRQs").Return(nil, errors.New("simulated error")).Maybe()
 
 			reconciler.crqClient = errorCRQClient
@@ -541,7 +539,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			// Mock empty CRQ list
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
 			mockCRQClient.On("ListAllCRQs").Return([]quotav1alpha1.ClusterResourceQuota{}, nil).Maybe()
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 
 			reconciler.crqClient = mockCRQClient
 
@@ -572,7 +570,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
 			mockCRQClient.On("ListAllCRQs").Return(crqs, nil).Maybe()
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 
 			reconciler.crqClient = mockCRQClient
 
@@ -636,7 +634,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
 			mockCRQClient.On("ListAllCRQs").Return(crqs, nil).Maybe()
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(&matchingCRQ, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(&matchingCRQ, nil).Maybe()
 
 			reconciler.crqClient = mockCRQClient
 
@@ -652,7 +650,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		It("should handle concurrent reconciliation requests", func() {
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 
 			// Test concurrent access to reconciler methods
@@ -682,7 +680,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 		})
 
@@ -708,7 +706,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		It("should handle zero resource requests", func() {
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 			// Set a mock client to prevent nil pointer dereference
 			reconciler.Client = &fakeClient{}
@@ -749,7 +747,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 		})
 
@@ -779,7 +777,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 		})
 
@@ -824,7 +822,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
-			mockCRQClient.On("GetCRQByNamespace", mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
 			reconciler.crqClient = mockCRQClient
 			testNamespace = &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
@@ -838,7 +836,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 		It("should handle context cancellation", func() {
 			// Create cancelled context
-			cancelledCtx, cancel := context.WithCancel(context.Background())
+			cancelledCtx, cancel := context.WithCancel(ctx)
 			cancel()
 
 			// Should handle cancelled context gracefully
@@ -848,7 +846,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 		It("should handle timeout scenarios", func() {
 			// Create context with timeout
-			timeoutCtx, cancel := context.WithTimeout(context.Background(), 1*time.Nanosecond)
+			timeoutCtx, cancel := context.WithTimeout(ctx, 1*time.Nanosecond)
 			defer cancel()
 
 			// Should handle timeout gracefully

@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"context"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -16,6 +17,7 @@ import (
 // validateCRQResourceQuotaWithNamespace is a shared function for validating resource quotas
 // across webhooks with actual namespace object
 func validateCRQResourceQuotaWithNamespace(
+	ctx context.Context,
 	crqClient *quota.CRQClient,
 	kubernetesClient kubernetes.Interface,
 	ns *corev1.Namespace,
@@ -40,7 +42,7 @@ func validateCRQResourceQuotaWithNamespace(
 		zap.Any("namespace_labels", ns.Labels))
 
 	// Find the CRQ that applies to this namespace
-	crq, err := crqClient.GetCRQByNamespace(ns)
+	crq, err := crqClient.GetCRQByNamespace(ctx, ns)
 	if err != nil {
 		log.Error("Failed to get CRQ for namespace",
 			zap.String("namespace", ns.Name),
@@ -68,7 +70,7 @@ func validateCRQResourceQuotaWithNamespace(
 			zap.String("limit", quotaLimit.String()))
 
 		// Calculate current usage across ALL namespaces that match the CRQ selector
-		currentUsage, err := calculateCRQCurrentUsage(kubernetesClient, crq, resourceName, calculateCurrentUsage, log)
+		currentUsage, err := calculateCRQCurrentUsage(ctx, kubernetesClient, crq, resourceName, calculateCurrentUsage, log)
 		if err != nil {
 			log.Error("Failed to calculate current usage across CRQ namespaces",
 				zap.String("namespace", ns.Name),
@@ -121,6 +123,7 @@ func validateCRQResourceQuotaWithNamespace(
 // calculateCRQCurrentUsage calculates the current usage of a resource across all namespaces
 // that match the ClusterResourceQuota selector
 func calculateCRQCurrentUsage(
+	ctx context.Context,
 	kubernetesClient kubernetes.Interface,
 	crq *quotav1alpha1.ClusterResourceQuota,
 	resourceName corev1.ResourceName,
@@ -128,7 +131,7 @@ func calculateCRQCurrentUsage(
 	log *zap.Logger,
 ) (resource.Quantity, error) {
 	// Get all namespaces that match the CRQ selector
-	namespaceNames, err := namespace.GetSelectedNamespaces(kubernetesClient, crq)
+	namespaceNames, err := namespace.GetSelectedNamespaces(ctx, kubernetesClient, crq)
 	if err != nil {
 		return resource.Quantity{}, fmt.Errorf("failed to get namespaces matching CRQ selector: %w", err)
 	}

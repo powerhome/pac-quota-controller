@@ -29,6 +29,7 @@ import (
 
 var _ = Describe("NamespaceWebhook", func() {
 	var (
+		ctx               context.Context
 		webhook           *NamespaceWebhook
 		fakeClient        kubernetes.Interface
 		fakeRuntimeClient client.Client
@@ -37,6 +38,7 @@ var _ = Describe("NamespaceWebhook", func() {
 	)
 
 	BeforeEach(func() {
+		ctx = context.Background() // Entry point context for all tests
 		fakeClient = fake.NewSimpleClientset()
 		scheme := runtime.NewScheme()
 		_ = quotav1alpha1.AddToScheme(scheme)
@@ -45,6 +47,10 @@ var _ = Describe("NamespaceWebhook", func() {
 		crqClient = quota.NewCRQClient(fakeRuntimeClient)
 		logger, _ = zap.NewDevelopment()
 		webhook = NewNamespaceWebhook(fakeClient, crqClient, logger)
+	})
+
+	BeforeEach(func() {
+		// No per-test setup needed; all setup is done in BeforeAll
 	})
 
 	Describe("NewNamespaceWebhook", func() {
@@ -80,7 +86,7 @@ var _ = Describe("NamespaceWebhook", func() {
 				},
 			}
 
-			err := webhook.validateCreate(context.Background(), namespace)
+			err := webhook.validateCreate(ctx, namespace)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
@@ -93,7 +99,7 @@ var _ = Describe("NamespaceWebhook", func() {
 				},
 			}
 
-			err := webhook.validateUpdate(context.Background(), namespace)
+			err := webhook.validateUpdate(ctx, namespace)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
@@ -250,10 +256,6 @@ var _ = Describe("NamespaceWebhook", func() {
 		Describe("validateNamespaceAgainstCRQs edge cases", func() {
 			var ctx context.Context
 
-			BeforeEach(func() {
-				ctx = context.Background()
-			})
-
 			It("should handle namespace with no CRQ client", func() {
 				// Create webhook without CRQ client
 				webhookNoCRQ := NewNamespaceWebhook(fakeClient, nil, zap.NewNop())
@@ -267,7 +269,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhookNoCRQ.validateNamespaceAgainstCRQs(namespace)
+				err := webhookNoCRQ.validateNamespaceAgainstCRQs(ctx, namespace)
 				Expect(err).NotTo(HaveOccurred()) // Should pass when no CRQ client
 			})
 
@@ -317,7 +319,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhook.validateNamespaceAgainstCRQs(namespace)
+				err := webhook.validateNamespaceAgainstCRQs(ctx, namespace)
 				Expect(err).To(HaveOccurred()) // Should fail when multiple CRQs select the same namespace
 				Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
 			})
@@ -332,7 +334,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhook.validateNamespaceAgainstCRQs(namespace)
+				err := webhook.validateNamespaceAgainstCRQs(ctx, namespace)
 				Expect(err).NotTo(HaveOccurred()) // Should pass when no CRQs match
 			})
 
@@ -344,7 +346,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhook.validateNamespaceAgainstCRQs(namespace)
+				err := webhook.validateNamespaceAgainstCRQs(ctx, namespace)
 				Expect(err).NotTo(HaveOccurred()) // Should pass when namespace has no labels
 			})
 
@@ -411,7 +413,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhook.validateNamespaceAgainstCRQs(newNamespace)
+				err := webhook.validateNamespaceAgainstCRQs(ctx, newNamespace)
 				// This should pass because namespace validation doesn't check current usage
 				Expect(err).NotTo(HaveOccurred())
 			})

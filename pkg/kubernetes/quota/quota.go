@@ -24,9 +24,7 @@ func NewCRQClient(c client.Client) *CRQClient {
 }
 
 // ListAllCRQs returns all ClusterResourceQuotas in the cluster.
-func (c *CRQClient) ListAllCRQs() ([]quotav1alpha1.ClusterResourceQuota, error) {
-	ctx := context.Background()
-
+func (c *CRQClient) ListAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterResourceQuota, error) {
 	var crqList quotav1alpha1.ClusterResourceQuotaList
 	if err := c.Client.List(ctx, &crqList); err != nil {
 		return nil, fmt.Errorf("failed to list ClusterResourceQuotas: %w", err)
@@ -36,8 +34,11 @@ func (c *CRQClient) ListAllCRQs() ([]quotav1alpha1.ClusterResourceQuota, error) 
 
 // GetCRQByNamespace returns the ClusterResourceQuota that selects the given Namespace.
 // If more than one CRQ matches, it returns an error listing the matching CRQs.
-func (c *CRQClient) GetCRQByNamespace(ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error) {
-	crqs, err := c.ListAllCRQs()
+func (c *CRQClient) GetCRQByNamespace(
+	ctx context.Context,
+	ns *corev1.Namespace,
+) (*quotav1alpha1.ClusterResourceQuota, error) {
+	crqs, err := c.ListAllCRQs(ctx)
 	if err != nil {
 		return nil, err
 	}

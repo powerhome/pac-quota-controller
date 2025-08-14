@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,9 +33,10 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 		fakeRuntimeClient client.Client
 		crqClient         *quota.CRQClient
 		logger            *zap.Logger
+		ctx               context.Context
 	)
-
 	BeforeEach(func() {
+		ctx = context.Background() // Entry point context for all tests
 		fakeClient = fake.NewSimpleClientset()
 		scheme := runtime.NewScheme()
 		_ = quotav1alpha1.AddToScheme(scheme)
@@ -42,6 +44,10 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 		crqClient = quota.NewCRQClient(fakeRuntimeClient)
 		logger, _ = zap.NewDevelopment()
 		webhook = NewClusterResourceQuotaWebhook(fakeClient, crqClient, logger)
+	})
+
+	BeforeEach(func() {
+		// No per-test setup needed; all setup is done in BeforeAll
 	})
 
 	Describe("NewClusterResourceQuotaWebhook", func() {
@@ -88,7 +94,7 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 				},
 			}
 
-			err := webhook.validateCreate(crq)
+			err := webhook.validateCreate(ctx, crq)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
@@ -112,14 +118,14 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 				},
 			}
 
-			err := webhook.validateUpdate(crq)
+			err := webhook.validateUpdate(ctx, crq)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 
 	Describe("validateDelete", func() {
 		It("should validate cluster resource quota deletion", func() {
-			err := webhook.validateDelete()
+			err := webhook.validateDelete(ctx)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})

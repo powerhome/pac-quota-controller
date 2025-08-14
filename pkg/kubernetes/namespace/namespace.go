@@ -54,9 +54,9 @@ func NewLabelBasedNamespaceSelector(
 }
 
 // GetSelectedNamespaces returns namespaces that match the selector
-func (s *LabelBasedNamespaceSelector) GetSelectedNamespaces() ([]string, error) {
+func (s *LabelBasedNamespaceSelector) GetSelectedNamespaces(ctx context.Context) ([]string, error) {
 	// Get all namespaces
-	namespaceList, err := s.client.CoreV1().Namespaces().List(context.Background(), metav1.ListOptions{})
+	namespaceList, err := s.client.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
@@ -84,9 +84,10 @@ func (s *LabelBasedNamespaceSelector) GetSelectedNamespaces() ([]string, error) 
 
 // DetermineNamespaceChanges checks what namespaces have been added or removed since last reconciliation
 func (s *LabelBasedNamespaceSelector) DetermineNamespaceChanges(
+	ctx context.Context,
 	previousNamespaces []string,
 ) (added []string, removed []string, err error) {
-	currentNamespaces, err := s.GetSelectedNamespaces()
+	currentNamespaces, err := s.GetSelectedNamespaces(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get currently selected namespaces: %w", err)
 	}
@@ -127,7 +128,10 @@ func (s *LabelBasedNamespaceSelector) DetermineNamespaceChanges(
 }
 
 // ValidateCRQNamespaceConflicts validates that a CRQ doesn't conflict with existing CRQs
-func (v *NamespaceValidator) ValidateCRQNamespaceConflicts(crq *quotav1alpha1.ClusterResourceQuota) error {
+func (v *NamespaceValidator) ValidateCRQNamespaceConflicts(
+	ctx context.Context,
+	crq *quotav1alpha1.ClusterResourceQuota,
+) error {
 	if crq.Spec.NamespaceSelector == nil {
 		return nil // If no selector, nothing to check
 	}
@@ -137,7 +141,7 @@ func (v *NamespaceValidator) ValidateCRQNamespaceConflicts(crq *quotav1alpha1.Cl
 	if err != nil {
 		return fmt.Errorf("failed to create namespace selector: %w", err)
 	}
-	intendedNamespaces, err := selector.GetSelectedNamespaces()
+	intendedNamespaces, err := selector.GetSelectedNamespaces(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to select namespaces: %w", err)
 	}
@@ -146,7 +150,7 @@ func (v *NamespaceValidator) ValidateCRQNamespaceConflicts(crq *quotav1alpha1.Cl
 	}
 
 	// Check if any of the intended namespaces are already owned by other CRQs
-	conflictingCRQs, err := v.findConflictingCRQsForNamespaces(intendedNamespaces, crq.Name)
+	conflictingCRQs, err := v.findConflictingCRQsForNamespaces(ctx, intendedNamespaces, crq.Name)
 	if err != nil {
 		return fmt.Errorf("failed to check for conflicting CRQs: %w", err)
 	}
@@ -166,9 +170,9 @@ func (v *NamespaceValidator) ValidateCRQNamespaceConflicts(crq *quotav1alpha1.Cl
 }
 
 // ValidateNamespaceAgainstCRQs validates that a namespace doesn't conflict with existing CRQs
-func (v *NamespaceValidator) ValidateNamespaceAgainstCRQs(namespace *corev1.Namespace) error {
+func (v *NamespaceValidator) ValidateNamespaceAgainstCRQs(ctx context.Context, namespace *corev1.Namespace) error {
 	// Get all existing CRQs
-	allCRQs, err := v.listAllCRQs()
+	allCRQs, err := v.listAllCRQs(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list CRQs: %w", err)
 	}
@@ -198,12 +202,12 @@ func (v *NamespaceValidator) ValidateNamespaceAgainstCRQs(namespace *corev1.Name
 
 // findConflictingCRQsForNamespaces checks if any of the given namespaces are already selected by other CRQs
 func (v *NamespaceValidator) findConflictingCRQsForNamespaces(
-	namespaces []string, excludeCRQName string,
+	ctx context.Context, namespaces []string, excludeCRQName string,
 ) (map[string][]string, error) {
 	conflicts := make(map[string][]string)
 
 	// Get all existing CRQs
-	allCRQs, err := v.listAllCRQs()
+	allCRQs, err := v.listAllCRQs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list CRQs: %w", err)
 	}
@@ -211,7 +215,7 @@ func (v *NamespaceValidator) findConflictingCRQsForNamespaces(
 	// For each namespace, check if it would be selected by any existing CRQs (excluding the current one)
 	for _, namespaceName := range namespaces {
 		// Get the namespace object to check its labels
-		ns, err := v.kubernetesClient.CoreV1().Namespaces().Get(context.TODO(), namespaceName, metav1.GetOptions{})
+		ns, err := v.kubernetesClient.CoreV1().Namespaces().Get(ctx, namespaceName, metav1.GetOptions{})
 		if err != nil {
 			// If namespace doesn't exist, it's not a conflict (it will be created)
 			continue
@@ -246,11 +250,11 @@ func (v *NamespaceValidator) findConflictingCRQsForNamespaces(
 }
 
 // listAllCRQs returns all ClusterResourceQuotas in the cluster using the CRQ client
-func (v *NamespaceValidator) listAllCRQs() ([]quotav1alpha1.ClusterResourceQuota, error) {
+func (v *NamespaceValidator) listAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterResourceQuota, error) {
 	if v.crqClient == nil {
 		return []quotav1alpha1.ClusterResourceQuota{}, nil
 	}
-	return v.crqClient.ListAllCRQs()
+	return v.crqClient.ListAllCRQs(ctx)
 }
 
 // namespaceMatchesCRQ returns true if the namespace matches the CRQ's selector.
@@ -264,6 +268,7 @@ func (v *NamespaceValidator) namespaceMatchesCRQ(
 }
 
 func GetSelectedNamespaces(
+	ctx context.Context,
 	c kubernetes.Interface,
 	crq *quotav1alpha1.ClusterResourceQuota,
 ) ([]string, error) {
@@ -276,7 +281,7 @@ func GetSelectedNamespaces(
 	if err != nil {
 		return nil, fmt.Errorf("failed to create namespace selector: %w", err)
 	}
-	return selector.GetSelectedNamespaces()
+	return selector.GetSelectedNamespaces(ctx)
 }
 
 // DetermineNamespaceChanges finds which namespaces have been added or removed
@@ -326,6 +331,7 @@ func DetermineNamespaceChanges(previous, current []string) (added, removed []str
 // ValidateNamespaceAgainstCRQs validates that a namespace doesn't conflict with existing CRQs
 // This is used by the namespace webhook to ensure no namespace gets selected by multiple CRQs
 func ValidateNamespaceAgainstCRQs(
+	ctx context.Context,
 	c kubernetes.Interface,
 	crqClient *quota.CRQClient,
 	namespace *corev1.Namespace,
@@ -335,7 +341,7 @@ func ValidateNamespaceAgainstCRQs(
 	}
 
 	// Get all existing CRQs
-	allCRQs, err := crqClient.ListAllCRQs()
+	allCRQs, err := crqClient.ListAllCRQs(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list CRQs: %w", err)
 	}

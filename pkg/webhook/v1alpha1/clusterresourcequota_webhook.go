@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -121,21 +122,23 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 	}
 
 	// Validate based on operation
+
 	var err error
+	ctx := c.Request.Context()
 
 	switch admissionReview.Request.Operation {
 	case admissionv1.Create:
 		h.log.Info("Validating ClusterResourceQuota on create",
 			zap.String("name", crq.GetName()))
-		err = h.validateCreate(&crq)
+		err = h.validateCreate(ctx, &crq)
 	case admissionv1.Update:
 		h.log.Info("Validating ClusterResourceQuota on update",
 			zap.String("name", crq.GetName()))
-		err = h.validateUpdate(&crq)
+		err = h.validateUpdate(ctx, &crq)
 	case admissionv1.Delete:
 		h.log.Info("Validating ClusterResourceQuota on delete",
 			zap.String("name", crq.GetName()))
-		err = h.validateDelete()
+		err = h.validateDelete(ctx)
 	default:
 		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
@@ -162,6 +165,7 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 }
 
 func (h *ClusterResourceQuotaWebhook) validateCreate(
+	ctx context.Context,
 	crq *quotav1alpha1.ClusterResourceQuota,
 ) error {
 	if h.crqClient == nil {
@@ -169,13 +173,14 @@ func (h *ClusterResourceQuotaWebhook) validateCreate(
 	}
 
 	validator := namespace.NewNamespaceValidator(h.client, h.crqClient)
-	if err := validator.ValidateCRQNamespaceConflicts(crq); err != nil {
+	if err := validator.ValidateCRQNamespaceConflicts(ctx, crq); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (h *ClusterResourceQuotaWebhook) validateUpdate(
+	ctx context.Context,
 	crq *quotav1alpha1.ClusterResourceQuota,
 ) error {
 	if h.crqClient == nil {
@@ -183,13 +188,13 @@ func (h *ClusterResourceQuotaWebhook) validateUpdate(
 	}
 
 	validator := namespace.NewNamespaceValidator(h.client, h.crqClient)
-	if err := validator.ValidateCRQNamespaceConflicts(crq); err != nil {
+	if err := validator.ValidateCRQNamespaceConflicts(ctx, crq); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (h *ClusterResourceQuotaWebhook) validateDelete() error {
+func (h *ClusterResourceQuotaWebhook) validateDelete(_ context.Context) error {
 	// No validation needed for delete operations
 	return nil
 }

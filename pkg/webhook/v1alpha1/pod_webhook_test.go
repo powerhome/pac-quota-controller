@@ -30,6 +30,7 @@ import (
 
 var _ = Describe("PodWebhook", func() {
 	var (
+		ctx               context.Context
 		webhook           *PodWebhook
 		fakeClient        kubernetes.Interface
 		fakeRuntimeClient client.Client
@@ -40,13 +41,11 @@ var _ = Describe("PodWebhook", func() {
 	)
 
 	BeforeEach(func() {
-		// Create test namespace that will be used in tests
 		testNamespace = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-namespace",
 			},
 		}
-
 		fakeClient = fake.NewSimpleClientset(testNamespace)
 		scheme := runtime.NewScheme()
 		_ = quotav1alpha1.AddToScheme(scheme)
@@ -419,7 +418,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateCreate(pod)
+			warnings, err := webhook.validateCreate(ctx, pod)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -446,7 +445,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateUpdate(pod)
+			warnings, err := webhook.validateUpdate(ctx, pod)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -468,7 +467,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validatePodOperation(pod, "creation")
+			warnings, err := webhook.validatePodOperation(ctx, pod, "creation")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -488,13 +487,13 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validatePodOperation(pod, "update")
+			warnings, err := webhook.validatePodOperation(ctx, pod, "update")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
 
 		It("should handle nil pod", func() {
-			warnings, err := webhook.validatePodOperation(nil, "creation")
+			warnings, err := webhook.validatePodOperation(ctx, nil, "creation")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -813,9 +812,9 @@ var _ = Describe("PodWebhook", func() {
 			// Update clients with new resources
 			fakeClient = fake.NewSimpleClientset(
 				testNamespace, namespace1, namespace2, namespace3, existingPod, complexNamespace)
-			err := fakeRuntimeClient.Create(context.Background(), complexCRQ)
+			err := fakeRuntimeClient.Create(ctx, complexCRQ)
 			Expect(err).NotTo(HaveOccurred())
-			err = fakeRuntimeClient.Create(context.Background(), complexNamespace)
+			err = fakeRuntimeClient.Create(ctx, complexNamespace)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Recreate webhook with updated client
@@ -988,9 +987,9 @@ var _ = Describe("PodWebhook", func() {
 			// Update clients with new resources
 			fakeClient = fake.NewSimpleClientset(
 				testNamespace, namespace1, namespace2, namespace3, existingPod, isolatedNamespace)
-			err := fakeRuntimeClient.Create(context.Background(), noMatchCRQ)
+			err := fakeRuntimeClient.Create(ctx, noMatchCRQ)
 			Expect(err).NotTo(HaveOccurred())
-			err = fakeRuntimeClient.Create(context.Background(), isolatedNamespace)
+			err = fakeRuntimeClient.Create(ctx, isolatedNamespace)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Recreate webhook with updated client
@@ -1025,12 +1024,6 @@ var _ = Describe("PodWebhook", func() {
 		})
 
 		Describe("calculateCurrentUsage function coverage", func() {
-			var ctx context.Context
-
-			BeforeEach(func() {
-				ctx = context.Background()
-			})
-
 			It("should handle CPU requests correctly", func() {
 				// Create a pod with CPU requests
 				pod := &corev1.Pod{
@@ -1055,7 +1048,7 @@ var _ = Describe("PodWebhook", func() {
 				_, err := fakeClient.CoreV1().Pods("test-namespace").Create(ctx, pod, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage("test-namespace", "requests.cpu")
+				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("requests.cpu"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.MilliValue()).To(Equal(int64(500))) // 500m CPU
 			})
@@ -1084,7 +1077,7 @@ var _ = Describe("PodWebhook", func() {
 				_, err := fakeClient.CoreV1().Pods("test-namespace").Create(ctx, pod, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage("test-namespace", "requests.memory")
+				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("requests.memory"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(Equal(int64(256 * 1024 * 1024))) // 256Mi in bytes
 			})
@@ -1113,7 +1106,7 @@ var _ = Describe("PodWebhook", func() {
 				_, err := fakeClient.CoreV1().Pods("test-namespace").Create(ctx, pod, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage("test-namespace", "limits.cpu")
+				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("limits.cpu"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.MilliValue()).To(Equal(int64(1000))) // 1 CPU = 1000m
 			})
@@ -1142,18 +1135,18 @@ var _ = Describe("PodWebhook", func() {
 				_, err := fakeClient.CoreV1().Pods("test-namespace").Create(ctx, pod, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage("test-namespace", "limits.memory")
+				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("limits.memory"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(Equal(int64(512 * 1024 * 1024))) // 512Mi in bytes
 			})
 
 			It("should handle pods in terminal states (Succeeded)", func() {
-				testTerminalPodState(corev1.PodSucceeded, "succeeded-pod", "terminal-test-namespace",
+				testTerminalPodState(ctx, corev1.PodSucceeded, "succeeded-pod", "terminal-test-namespace",
 					&fakeClient, crqClient, logger)
 			})
 
 			It("should handle pods in terminal states (Failed)", func() {
-				testTerminalPodState(corev1.PodFailed, "failed-pod", "failed-test-namespace",
+				testTerminalPodState(ctx, corev1.PodFailed, "failed-pod", "failed-test-namespace",
 					&fakeClient, crqClient, logger)
 			})
 
@@ -1201,14 +1194,18 @@ var _ = Describe("PodWebhook", func() {
 				_, err := fakeClient.CoreV1().Pods("init-container-test-namespace").Create(ctx, pod, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage("init-container-test-namespace", "requests.cpu")
+				usage, err := webhook.calculateCurrentUsage(
+					ctx,
+					"init-container-test-namespace",
+					corev1.ResourceName("requests.cpu"),
+				)
 				Expect(err).NotTo(HaveOccurred())
 				// Should include resources from both init and regular containers: 50m + 100m = 150m
 				Expect(usage.MilliValue()).To(Equal(int64(150)))
 			})
 
 			It("should return error for unsupported resource types", func() {
-				_, err := webhook.calculateCurrentUsage("test-namespace", "unsupported.resource")
+				_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("unsupported.resource"))
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unsupported resource type"))
 			})
@@ -1244,13 +1241,13 @@ var _ = Describe("PodWebhook", func() {
 				}
 
 				// Test pod count
-				usage, err := webhook.calculateCurrentUsage("pod-count-namespace", "pods")
+				usage, err := webhook.calculateCurrentUsage(ctx, "pod-count-namespace", corev1.ResourceName("pods"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(Equal(int64(3))) // Should count 3 pods
 			})
 
 			It("should handle non-existent namespace", func() {
-				usage, err := webhook.calculateCurrentUsage("non-existent-namespace", "requests.cpu")
+				usage, err := webhook.calculateCurrentUsage(ctx, "non-existent-namespace", corev1.ResourceName("requests.cpu"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.IsZero()).To(BeTrue())
 			})
@@ -1264,7 +1261,7 @@ var _ = Describe("PodWebhook", func() {
 				}
 				Expect(fakeRuntimeClient.Create(ctx, emptyNs)).To(Succeed())
 
-				usage, err := webhook.calculateCurrentUsage("empty-namespace", "requests.cpu")
+				usage, err := webhook.calculateCurrentUsage(ctx, "empty-namespace", corev1.ResourceName("requests.cpu"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.IsZero()).To(BeTrue())
 			})
@@ -1302,7 +1299,7 @@ var _ = Describe("PodWebhook", func() {
 				_, err := fakeClient.CoreV1().Pods("zero-resource-namespace").Create(ctx, pod, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage("zero-resource-namespace", "requests.cpu")
+				usage, err := webhook.calculateCurrentUsage(ctx, "zero-resource-namespace", corev1.ResourceName("requests.cpu"))
 				Expect(err).NotTo(HaveOccurred())
 				// Should be 0 since the pod requests 0 CPU
 				Expect(usage.MilliValue()).To(Equal(int64(0)))
@@ -1347,12 +1344,16 @@ var _ = Describe("PodWebhook", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Test CPU requests
-				cpuUsage, err := webhook.calculateCurrentUsage("mixed-resource-namespace", "requests.cpu")
+				cpuUsage, err := webhook.calculateCurrentUsage(ctx, "mixed-resource-namespace", corev1.ResourceName("requests.cpu"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cpuUsage.MilliValue()).To(Equal(int64(100))) // Just this pod: 100m
 
 				// Test memory limits
-				memoryUsage, err := webhook.calculateCurrentUsage("mixed-resource-namespace", "limits.memory")
+				memoryUsage, err := webhook.calculateCurrentUsage(
+					ctx,
+					"mixed-resource-namespace",
+					corev1.ResourceName("limits.memory"),
+				)
 				Expect(err).NotTo(HaveOccurred())
 				expectedMemory := int64(256 * 1024 * 1024) // 256Mi
 				Expect(memoryUsage.Value()).To(Equal(expectedMemory))
@@ -1410,18 +1411,26 @@ var _ = Describe("PodWebhook", func() {
 				Expect(err).NotTo(HaveOccurred())
 
 				// Test CPU requests (should only count cpu-only-container)
-				cpuUsage, err := webhook.calculateCurrentUsage("multi-pattern-namespace", "requests.cpu")
+				cpuUsage, err := webhook.calculateCurrentUsage(ctx, "multi-pattern-namespace", corev1.ResourceName("requests.cpu"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cpuUsage.MilliValue()).To(Equal(int64(50))) // Just this pod: 50m
 
 				// Test memory requests (should only count memory-only-container)
-				memoryUsage, err := webhook.calculateCurrentUsage("multi-pattern-namespace", "requests.memory")
+				memoryUsage, err := webhook.calculateCurrentUsage(
+					ctx,
+					"multi-pattern-namespace",
+					corev1.ResourceName("requests.memory"),
+				)
 				Expect(err).NotTo(HaveOccurred())
 				expectedMemory := int64(64 * 1024 * 1024) // 64Mi
 				Expect(memoryUsage.Value()).To(Equal(expectedMemory))
 
 				// Test CPU limits (should only count limits-only-container)
-				cpuLimitsUsage, err := webhook.calculateCurrentUsage("multi-pattern-namespace", "limits.cpu")
+				cpuLimitsUsage, err := webhook.calculateCurrentUsage(
+					ctx,
+					"multi-pattern-namespace",
+					corev1.ResourceName("limits.cpu"),
+				)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cpuLimitsUsage.MilliValue()).To(Equal(int64(200))) // 200m
 			})
@@ -1444,11 +1453,11 @@ var _ = Describe("PodWebhook", func() {
 					}
 
 					// Mock the CalculateUsage to return an error
-					mockCalculator.On("CalculateUsage", context.Background(), "test-namespace", corev1.ResourceRequestsCPU).
+					mockCalculator.On("CalculateUsage", ctx, "test-namespace", corev1.ResourceRequestsCPU).
 						Return(resource.Quantity{}, errors.New("failed to calculate CPU usage"))
 
 					// Call calculateCurrentUsage and expect error
-					_, err := webhook.calculateCurrentUsage("test-namespace", "requests.cpu")
+					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", "requests.cpu")
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("failed to calculate CPU usage"))
 
@@ -1466,11 +1475,11 @@ var _ = Describe("PodWebhook", func() {
 					}
 
 					// Mock the CalculateUsage to return an error
-					mockCalculator.On("CalculateUsage", context.Background(), "test-namespace", corev1.ResourceLimitsMemory).
+					mockCalculator.On("CalculateUsage", ctx, "test-namespace", corev1.ResourceLimitsMemory).
 						Return(resource.Quantity{}, errors.New("memory calculation failed"))
 
 					// Call calculateCurrentUsage and expect error
-					_, err := webhook.calculateCurrentUsage("test-namespace", "limits.memory")
+					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", "limits.memory")
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("memory calculation failed"))
 
@@ -1488,11 +1497,11 @@ var _ = Describe("PodWebhook", func() {
 					}
 
 					// Mock the CalculatePodCount to return an error
-					mockCalculator.On("CalculatePodCount", context.Background(), "test-namespace").
+					mockCalculator.On("CalculatePodCount", ctx, "test-namespace").
 						Return(int64(0), errors.New("failed to count pods"))
 
 					// Call calculateCurrentUsage for pods and expect error
-					_, err := webhook.calculateCurrentUsage("test-namespace", "pods")
+					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", "pods")
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("failed to count pods"))
 
@@ -1553,7 +1562,7 @@ func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.Admissi
 }
 
 // testTerminalPodState is a helper function to test pods in terminal states (Succeeded/Failed)
-func testTerminalPodState(phase corev1.PodPhase, podName, namespaceName string,
+func testTerminalPodState(ctx context.Context, phase corev1.PodPhase, podName, namespaceName string,
 	fakeClient *kubernetes.Interface, crqClient *quota.CRQClient, logger *zap.Logger) {
 	// Create a fresh namespace for this test to ensure clean state
 	testNs := &corev1.Namespace{
@@ -1592,11 +1601,10 @@ func testTerminalPodState(phase corev1.PodPhase, podName, namespaceName string,
 			Phase: phase,
 		},
 	}
-	ctx := context.Background()
 	_, err := (*fakeClient).CoreV1().Pods(namespaceName).Create(ctx, pod, metav1.CreateOptions{})
 	Expect(err).NotTo(HaveOccurred())
 
-	usage, err := webhook.calculateCurrentUsage(namespaceName, "requests.cpu")
+	usage, err := webhook.calculateCurrentUsage(ctx, namespaceName, "requests.cpu")
 	Expect(err).NotTo(HaveOccurred())
 	// Should not include the terminal pod's resources
 	Expect(usage.Value()).To(Equal(int64(0)))

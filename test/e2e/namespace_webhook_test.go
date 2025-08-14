@@ -17,7 +17,6 @@ limitations under the License.
 package e2e
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -32,7 +31,6 @@ import (
 
 var _ = Describe("Namespace Webhook", func() {
 	var (
-		ctx        context.Context
 		suffix     string
 		testNsName string
 		crq1       *quotav1alpha1.ClusterResourceQuota
@@ -40,7 +38,6 @@ var _ = Describe("Namespace Webhook", func() {
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
 		suffix = testutils.GenerateTestSuffix()
 		testNsName = "test-ns-webhook-" + suffix
 

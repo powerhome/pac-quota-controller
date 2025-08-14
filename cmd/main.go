@@ -51,6 +51,9 @@ func main() {
 			// Initialize configuration
 			cfg := config.InitConfig()
 
+			// Initialize context
+			ctx := context.Background()
+
 			// Get the namespace the controller is running in
 			podNamespace, found := os.LookupEnv("POD_NAMESPACE")
 			if !found {
@@ -98,21 +101,21 @@ func main() {
 
 			// Start webhook server
 			go func() {
-				if err := webhookServer.Start(context.Background()); err != nil {
+				if err := webhookServer.Start(ctx); err != nil {
 					zapLogger.Error("webhook server failed", zap.Error(err))
 				}
 			}()
 
 			if webhookCertWatcher != nil {
 				go func() {
-					if err := webhookCertWatcher.Start(context.Background()); err != nil {
+					if err := webhookCertWatcher.Start(ctx); err != nil {
 						zapLogger.Error("webhook certificate watcher failed", zap.Error(err))
 					}
 				}()
 			}
 
 			// Set up graceful shutdown
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
 
 			// Handle shutdown signals

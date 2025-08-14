@@ -1,6 +1,7 @@
 package namespace
 
 import (
+	"context"
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,6 +14,14 @@ import (
 )
 
 var _ = Describe("Namespace", func() {
+	var (
+		ctx        context.Context
+		fakeClient *fake.Clientset
+	)
+	BeforeEach(func() {
+		ctx = context.Background() // Entry point context for all tests
+		fakeClient = fake.NewSimpleClientset()
+	})
 	Describe("DetermineNamespaceChanges", func() {
 		It("should detect added namespaces", func() {
 			previous := []string{"ns1", "ns2", "ns3"}
@@ -260,7 +269,6 @@ var _ = Describe("Namespace", func() {
 
 	Describe("NamespaceValidator.ValidateCRQNamespaceConflicts", func() {
 		It("should return nil when namespace selector is nil", func() {
-			fakeClient := fake.NewSimpleClientset()
 			// Create a mock CRQ client that returns empty list
 			validator := NewNamespaceValidator(fakeClient, nil)
 
@@ -270,13 +278,12 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			err := validator.ValidateCRQNamespaceConflicts(crq)
+			err := validator.ValidateCRQNamespaceConflicts(ctx, crq)
 
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should return no error for valid CRQ when no conflicts", func() {
-			fakeClient := fake.NewSimpleClientset()
 			// Create a mock CRQ client that returns empty list
 			validator := NewNamespaceValidator(fakeClient, nil)
 
@@ -288,13 +295,12 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			err := validator.ValidateCRQNamespaceConflicts(crq)
+			err := validator.ValidateCRQNamespaceConflicts(ctx, crq)
 
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should handle error when selector creation fails", func() {
-			fakeClient := fake.NewSimpleClientset()
 			validator := NewNamespaceValidator(fakeClient, nil)
 
 			crq := &quotav1alpha1.ClusterResourceQuota{
@@ -311,7 +317,7 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			err := validator.ValidateCRQNamespaceConflicts(crq)
+			err := validator.ValidateCRQNamespaceConflicts(ctx, crq)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to create namespace selector"))
@@ -319,7 +325,6 @@ var _ = Describe("Namespace", func() {
 
 		It("should handle error when namespace selection fails", func() {
 			// Create a client that will fail when listing namespaces
-			fakeClient := fake.NewSimpleClientset()
 			validator := NewNamespaceValidator(fakeClient, nil)
 
 			// Since the fake client doesn't have any namespaces, GetSelectedNamespaces will succeed
@@ -339,14 +344,13 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			err := validator.ValidateCRQNamespaceConflicts(crqInvalid)
+			err := validator.ValidateCRQNamespaceConflicts(ctx, crqInvalid)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to create namespace selector"))
 		})
 
 		It("should handle empty namespace list", func() {
-			fakeClient := fake.NewSimpleClientset()
 			validator := NewNamespaceValidator(fakeClient, nil)
 
 			crq := &quotav1alpha1.ClusterResourceQuota{
@@ -357,14 +361,13 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			err := validator.ValidateCRQNamespaceConflicts(crq)
+			err := validator.ValidateCRQNamespaceConflicts(ctx, crq)
 
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should handle case where namespaces are found but validation is skipped", func() {
 			// Create a fake client with some namespaces that match the selector
-			fakeClient := fake.NewSimpleClientset()
 			validator := NewNamespaceValidator(fakeClient, nil)
 
 			// Note: We can't easily add namespaces to fake.NewSimpleClientset() in this context
@@ -377,7 +380,7 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			err := validator.ValidateCRQNamespaceConflicts(crq)
+			err := validator.ValidateCRQNamespaceConflicts(ctx, crq)
 
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -391,7 +394,7 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			namespaces, err := GetSelectedNamespaces(nil, crq)
+			namespaces, err := GetSelectedNamespaces(ctx, nil, crq)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(namespaces).To(BeNil())
@@ -412,7 +415,7 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			namespaces, err := GetSelectedNamespaces(nil, crq)
+			namespaces, err := GetSelectedNamespaces(ctx, nil, crq)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to create namespace selector"))
@@ -435,7 +438,7 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			namespaces, err := GetSelectedNamespaces(nil, crq)
+			namespaces, err := GetSelectedNamespaces(ctx, nil, crq)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("failed to create namespace selector"))
@@ -452,7 +455,7 @@ var _ = Describe("Namespace", func() {
 				},
 			}
 
-			namespaces, err := GetSelectedNamespaces(fakeClient, crq)
+			namespaces, err := GetSelectedNamespaces(ctx, fakeClient, crq)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(namespaces).To(BeEmpty()) // No namespaces exist in fake client
@@ -538,7 +541,7 @@ var _ = Describe("Namespace", func() {
 		It("should detect namespace changes", func() {
 			previous := []string{"ns1", "ns2", "ns3"}
 
-			added, removed, err := selector.DetermineNamespaceChanges(previous)
+			added, removed, err := selector.DetermineNamespaceChanges(ctx, previous)
 
 			Expect(err).NotTo(HaveOccurred())
 			// Since no namespaces exist in fake client, all previous should be removed
@@ -549,7 +552,7 @@ var _ = Describe("Namespace", func() {
 		It("should handle empty previous list", func() {
 			previous := []string{}
 
-			added, removed, err := selector.DetermineNamespaceChanges(previous)
+			added, removed, err := selector.DetermineNamespaceChanges(ctx, previous)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(added).To(BeEmpty())
@@ -557,7 +560,7 @@ var _ = Describe("Namespace", func() {
 		})
 
 		It("should handle nil previous list", func() {
-			added, removed, err := selector.DetermineNamespaceChanges(nil)
+			added, removed, err := selector.DetermineNamespaceChanges(ctx, nil)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(added).To(BeEmpty())
@@ -590,7 +593,7 @@ var _ = Describe("Namespace", func() {
 				previous[i] = fmt.Sprintf("ns-%d", i)
 			}
 
-			added, removed, err := selector.DetermineNamespaceChanges(previous)
+			added, removed, err := selector.DetermineNamespaceChanges(ctx, previous)
 
 			Expect(err).NotTo(HaveOccurred())
 			// All previous namespaces should be removed since none exist in fake client
@@ -601,7 +604,7 @@ var _ = Describe("Namespace", func() {
 		It("should handle duplicate namespaces in previous list", func() {
 			previous := []string{"ns1", "ns2", "ns1", "ns3"}
 
-			added, removed, err := selector.DetermineNamespaceChanges(previous)
+			added, removed, err := selector.DetermineNamespaceChanges(ctx, previous)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(added).To(BeEmpty())
@@ -612,7 +615,7 @@ var _ = Describe("Namespace", func() {
 		It("should handle empty namespace names", func() {
 			previous := []string{"", "ns1", "ns2"}
 
-			added, removed, err := selector.DetermineNamespaceChanges(previous)
+			added, removed, err := selector.DetermineNamespaceChanges(ctx, previous)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(added).To(BeEmpty())

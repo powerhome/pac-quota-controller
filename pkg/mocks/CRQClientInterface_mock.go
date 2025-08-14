@@ -5,6 +5,8 @@
 package mocks
 
 import (
+	"context"
+
 	"github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	mock "github.com/stretchr/testify/mock"
 	"k8s.io/api/core/v1"
@@ -38,8 +40,8 @@ func (_m *MockCRQClientInterface) EXPECT() *MockCRQClientInterface_Expecter {
 }
 
 // GetCRQByNamespace provides a mock function for the type MockCRQClientInterface
-func (_mock *MockCRQClientInterface) GetCRQByNamespace(ns *v1.Namespace) (*v1alpha1.ClusterResourceQuota, error) {
-	ret := _mock.Called(ns)
+func (_mock *MockCRQClientInterface) GetCRQByNamespace(ctx context.Context, ns *v1.Namespace) (*v1alpha1.ClusterResourceQuota, error) {
+	ret := _mock.Called(ctx, ns)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetCRQByNamespace")
@@ -47,18 +49,18 @@ func (_mock *MockCRQClientInterface) GetCRQByNamespace(ns *v1.Namespace) (*v1alp
 
 	var r0 *v1alpha1.ClusterResourceQuota
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(*v1.Namespace) (*v1alpha1.ClusterResourceQuota, error)); ok {
-		return returnFunc(ns)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *v1.Namespace) (*v1alpha1.ClusterResourceQuota, error)); ok {
+		return returnFunc(ctx, ns)
 	}
-	if returnFunc, ok := ret.Get(0).(func(*v1.Namespace) *v1alpha1.ClusterResourceQuota); ok {
-		r0 = returnFunc(ns)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *v1.Namespace) *v1alpha1.ClusterResourceQuota); ok {
+		r0 = returnFunc(ctx, ns)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*v1alpha1.ClusterResourceQuota)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(*v1.Namespace) error); ok {
-		r1 = returnFunc(ns)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *v1.Namespace) error); ok {
+		r1 = returnFunc(ctx, ns)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -71,19 +73,25 @@ type MockCRQClientInterface_GetCRQByNamespace_Call struct {
 }
 
 // GetCRQByNamespace is a helper method to define mock.On call
+//   - ctx context.Context
 //   - ns *v1.Namespace
-func (_e *MockCRQClientInterface_Expecter) GetCRQByNamespace(ns interface{}) *MockCRQClientInterface_GetCRQByNamespace_Call {
-	return &MockCRQClientInterface_GetCRQByNamespace_Call{Call: _e.mock.On("GetCRQByNamespace", ns)}
+func (_e *MockCRQClientInterface_Expecter) GetCRQByNamespace(ctx interface{}, ns interface{}) *MockCRQClientInterface_GetCRQByNamespace_Call {
+	return &MockCRQClientInterface_GetCRQByNamespace_Call{Call: _e.mock.On("GetCRQByNamespace", ctx, ns)}
 }
 
-func (_c *MockCRQClientInterface_GetCRQByNamespace_Call) Run(run func(ns *v1.Namespace)) *MockCRQClientInterface_GetCRQByNamespace_Call {
+func (_c *MockCRQClientInterface_GetCRQByNamespace_Call) Run(run func(ctx context.Context, ns *v1.Namespace)) *MockCRQClientInterface_GetCRQByNamespace_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 *v1.Namespace
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(*v1.Namespace)
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *v1.Namespace
+		if args[1] != nil {
+			arg1 = args[1].(*v1.Namespace)
 		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -94,7 +102,7 @@ func (_c *MockCRQClientInterface_GetCRQByNamespace_Call) Return(clusterResourceQ
 	return _c
 }
 
-func (_c *MockCRQClientInterface_GetCRQByNamespace_Call) RunAndReturn(run func(ns *v1.Namespace) (*v1alpha1.ClusterResourceQuota, error)) *MockCRQClientInterface_GetCRQByNamespace_Call {
+func (_c *MockCRQClientInterface_GetCRQByNamespace_Call) RunAndReturn(run func(ctx context.Context, ns *v1.Namespace) (*v1alpha1.ClusterResourceQuota, error)) *MockCRQClientInterface_GetCRQByNamespace_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -153,8 +161,8 @@ func (_c *MockCRQClientInterface_GetNamespacesFromStatus_Call) RunAndReturn(run 
 }
 
 // ListAllCRQs provides a mock function for the type MockCRQClientInterface
-func (_mock *MockCRQClientInterface) ListAllCRQs() ([]v1alpha1.ClusterResourceQuota, error) {
-	ret := _mock.Called()
+func (_mock *MockCRQClientInterface) ListAllCRQs(ctx context.Context) ([]v1alpha1.ClusterResourceQuota, error) {
+	ret := _mock.Called(ctx)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListAllCRQs")
@@ -162,18 +170,18 @@ func (_mock *MockCRQClientInterface) ListAllCRQs() ([]v1alpha1.ClusterResourceQu
 
 	var r0 []v1alpha1.ClusterResourceQuota
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func() ([]v1alpha1.ClusterResourceQuota, error)); ok {
-		return returnFunc()
+	if returnFunc, ok := ret.Get(0).(func(context.Context) ([]v1alpha1.ClusterResourceQuota, error)); ok {
+		return returnFunc(ctx)
 	}
-	if returnFunc, ok := ret.Get(0).(func() []v1alpha1.ClusterResourceQuota); ok {
-		r0 = returnFunc()
+	if returnFunc, ok := ret.Get(0).(func(context.Context) []v1alpha1.ClusterResourceQuota); ok {
+		r0 = returnFunc(ctx)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]v1alpha1.ClusterResourceQuota)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func() error); ok {
-		r1 = returnFunc()
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -186,13 +194,20 @@ type MockCRQClientInterface_ListAllCRQs_Call struct {
 }
 
 // ListAllCRQs is a helper method to define mock.On call
-func (_e *MockCRQClientInterface_Expecter) ListAllCRQs() *MockCRQClientInterface_ListAllCRQs_Call {
-	return &MockCRQClientInterface_ListAllCRQs_Call{Call: _e.mock.On("ListAllCRQs")}
+//   - ctx context.Context
+func (_e *MockCRQClientInterface_Expecter) ListAllCRQs(ctx interface{}) *MockCRQClientInterface_ListAllCRQs_Call {
+	return &MockCRQClientInterface_ListAllCRQs_Call{Call: _e.mock.On("ListAllCRQs", ctx)}
 }
 
-func (_c *MockCRQClientInterface_ListAllCRQs_Call) Run(run func()) *MockCRQClientInterface_ListAllCRQs_Call {
+func (_c *MockCRQClientInterface_ListAllCRQs_Call) Run(run func(ctx context.Context)) *MockCRQClientInterface_ListAllCRQs_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run()
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
 	})
 	return _c
 }
@@ -202,7 +217,7 @@ func (_c *MockCRQClientInterface_ListAllCRQs_Call) Return(clusterResourceQuotas 
 	return _c
 }
 
-func (_c *MockCRQClientInterface_ListAllCRQs_Call) RunAndReturn(run func() ([]v1alpha1.ClusterResourceQuota, error)) *MockCRQClientInterface_ListAllCRQs_Call {
+func (_c *MockCRQClientInterface_ListAllCRQs_Call) RunAndReturn(run func(ctx context.Context) ([]v1alpha1.ClusterResourceQuota, error)) *MockCRQClientInterface_ListAllCRQs_Call {
 	_c.Call.Return(run)
 	return _c
 }

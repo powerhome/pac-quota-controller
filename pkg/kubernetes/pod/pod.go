@@ -2,10 +2,10 @@ package pod
 
 import (
 	"context"
-	"reflect"
 
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -198,14 +198,11 @@ func (c *PodResourceCalculator) CalculatePodCount(ctx context.Context, namespace
 // SpecEqual compares two pod specs to determine if they are equivalent.
 // This is used to detect if a pod update actually changes the resource requirements.
 func SpecEqual(oldPod, newPod *corev1.Pod) bool {
-	// Handle nil cases
 	if oldPod == nil && newPod == nil {
 		return true
 	}
 	if oldPod == nil || newPod == nil {
 		return false
 	}
-
-	// TODO: There is probably a better/more efficient way to compare pod specs
-	return reflect.DeepEqual(oldPod.Spec, newPod.Spec)
+	return equality.Semantic.DeepEqual(oldPod.Spec, newPod.Spec)
 }

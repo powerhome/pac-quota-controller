@@ -233,7 +233,7 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 	<-ctx.Done()
 
 	// Perform graceful shutdown
-	return s.shutdown()
+	return s.shutdown(ctx)
 }
 
 // startCertWatcher starts the certificate watcher if configured
@@ -318,7 +318,7 @@ func (s *GinWebhookServer) waitForServerReady(ctx context.Context, serverStarted
 			}
 			return fmt.Errorf("webhook server stopped unexpectedly")
 		case <-ctx.Done():
-			return s.handleContextCancelled()
+			return s.handleContextCancelled(ctx)
 		case <-time.After(backoff):
 			if s.isServerReady() {
 				isReady = true
@@ -338,7 +338,7 @@ func (s *GinWebhookServer) waitForServerReady(ctx context.Context, serverStarted
 }
 
 // handleContextCancelled handles context cancellation during startup
-func (s *GinWebhookServer) handleContextCancelled() error {
+func (s *GinWebhookServer) handleContextCancelled(ctx context.Context) error {
 	if s.log != nil {
 		s.log.Info("Context cancelled before server ready, shutting down")
 	}
@@ -347,7 +347,7 @@ func (s *GinWebhookServer) handleContextCancelled() error {
 		s.certWatcher.Stop()
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	return s.server.Shutdown(shutdownCtx)
 }
@@ -362,7 +362,7 @@ func (s *GinWebhookServer) calculateNextBackoff(currentBackoff, maxBackoff time.
 }
 
 // shutdown performs graceful shutdown of the server
-func (s *GinWebhookServer) shutdown() error {
+func (s *GinWebhookServer) shutdown(ctx context.Context) error {
 	if s.log != nil {
 		s.log.Info("Shutting down webhook server")
 	}
@@ -374,7 +374,7 @@ func (s *GinWebhookServer) shutdown() error {
 		s.certWatcher.Stop()
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	return s.server.Shutdown(shutdownCtx)
@@ -391,9 +391,9 @@ func (s *GinWebhookServer) MarkReady() {
 }
 
 // StartWithSignalHandler starts the server with signal handling
-func (s *GinWebhookServer) StartWithSignalHandler() error {
+func (s *GinWebhookServer) StartWithSignalHandler(ctx context.Context) error {
 	// Create context that listens for the interrupt signal from the OS
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	return s.Start(ctx)

@@ -129,17 +129,18 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 	var warnings []string
 	var err error
 
+	ctx := c.Request.Context()
 	switch admissionReview.Request.Operation {
 	case admissionv1.Create:
 		h.log.Info("Validating Pod on create",
 			zap.String("name", podObj.GetName()),
 			zap.String("namespace", podObj.GetNamespace()))
-		warnings, err = h.validateCreate(&podObj)
+		warnings, err = h.validateCreate(ctx, &podObj)
 	case admissionv1.Update:
 		h.log.Info("Validating Pod on update",
 			zap.String("name", podObj.GetName()),
 			zap.String("namespace", podObj.GetNamespace()))
-		warnings, err = h.validateUpdate(&podObj)
+		warnings, err = h.validateUpdate(ctx, &podObj)
 	default:
 		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
@@ -168,16 +169,16 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 	c.JSON(http.StatusOK, admissionReview)
 }
 
-func (h *PodWebhook) validateCreate(podObj *corev1.Pod) ([]string, error) {
-	return h.validatePodOperation(podObj, "creation")
+func (h *PodWebhook) validateCreate(ctx context.Context, podObj *corev1.Pod) ([]string, error) {
+	return h.validatePodOperation(ctx, podObj, "creation")
 }
 
-func (h *PodWebhook) validateUpdate(podObj *corev1.Pod) ([]string, error) {
-	return h.validatePodOperation(podObj, "update")
+func (h *PodWebhook) validateUpdate(ctx context.Context, podObj *corev1.Pod) ([]string, error) {
+	return h.validatePodOperation(ctx, podObj, "update")
 }
 
 // validatePodOperation is a shared function for both create and update validation
-func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) ([]string, error) {
+func (h *PodWebhook) validatePodOperation(ctx context.Context, podObj *corev1.Pod, operation string) ([]string, error) {
 	// Handle nil pod case
 	if podObj == nil {
 		h.log.Info("Skipping CRQ validation for nil pod on " + operation)
@@ -188,7 +189,7 @@ func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) 
 	podUsage := pod.CalculatePodUsage(podObj, usage.ResourceRequestsCPU)
 	if !podUsage.IsZero() {
 		// Validate CPU requests
-		if err := h.validateResourceQuota(podObj.Namespace, usage.ResourceRequestsCPU, podUsage); err != nil {
+		if err := h.validateResourceQuota(ctx, podObj.Namespace, usage.ResourceRequestsCPU, podUsage); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota CPU requests validation failed: %w", err)
 		}
 	}
@@ -196,7 +197,7 @@ func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) 
 	podUsage = pod.CalculatePodUsage(podObj, usage.ResourceRequestsMemory)
 	if !podUsage.IsZero() {
 		// Validate memory requests
-		if err := h.validateResourceQuota(podObj.Namespace, usage.ResourceRequestsMemory, podUsage); err != nil {
+		if err := h.validateResourceQuota(ctx, podObj.Namespace, usage.ResourceRequestsMemory, podUsage); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota memory requests validation failed: %w", err)
 		}
 	}
@@ -204,7 +205,7 @@ func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) 
 	podUsage = pod.CalculatePodUsage(podObj, usage.ResourceLimitsCPU)
 	if !podUsage.IsZero() {
 		// Validate CPU limits
-		if err := h.validateResourceQuota(podObj.Namespace, usage.ResourceLimitsCPU, podUsage); err != nil {
+		if err := h.validateResourceQuota(ctx, podObj.Namespace, usage.ResourceLimitsCPU, podUsage); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota CPU limits validation failed: %w", err)
 		}
 	}
@@ -212,14 +213,14 @@ func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) 
 	podUsage = pod.CalculatePodUsage(podObj, usage.ResourceLimitsMemory)
 	if !podUsage.IsZero() {
 		// Validate memory limits
-		if err := h.validateResourceQuota(podObj.Namespace, usage.ResourceLimitsMemory, podUsage); err != nil {
+		if err := h.validateResourceQuota(ctx, podObj.Namespace, usage.ResourceLimitsMemory, podUsage); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota memory limits validation failed: %w", err)
 		}
 	}
 
 	// Validate pod count (always 1 for a new pod)
 	podCount := resource.NewQuantity(1, resource.DecimalSI)
-	if err := h.validateResourceQuota(podObj.Namespace, usage.ResourcePods, *podCount); err != nil {
+	if err := h.validateResourceQuota(ctx, podObj.Namespace, usage.ResourcePods, *podCount); err != nil {
 		return nil, fmt.Errorf("ClusterResourceQuota pod count validation failed: %w", err)
 	}
 
@@ -232,28 +233,31 @@ func (h *PodWebhook) validatePodOperation(podObj *corev1.Pod, operation string) 
 
 // validateResourceQuota validates if a resource operation would exceed any applicable ClusterResourceQuota
 func (h *PodWebhook) validateResourceQuota(
+	ctx context.Context,
 	namespace string,
 	resourceName corev1.ResourceName,
 	requestedQuantity resource.Quantity,
 ) error {
 	// Fetch the actual namespace object with labels
-	ns, err := h.client.CoreV1().Namespaces().Get(context.Background(), namespace, metav1.GetOptions{})
+	ns, err := h.client.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
 	}
 
-	return validateCRQResourceQuotaWithNamespace(h.crqClient, h.client, ns, resourceName, requestedQuantity,
-		h.calculateCurrentUsage, h.log)
+	return validateCRQResourceQuotaWithNamespace(ctx, h.crqClient, h.client, ns, resourceName, requestedQuantity,
+		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
+			return h.calculateCurrentUsage(ctx, ns, rn)
+		}, h.log)
 }
 
 // calculateCurrentUsage calculates the current usage of a resource in a namespace
-func (h *PodWebhook) calculateCurrentUsage(namespace string,
+func (h *PodWebhook) calculateCurrentUsage(ctx context.Context, namespace string,
 	resourceName corev1.ResourceName) (resource.Quantity, error) {
 	switch resourceName {
 	case usage.ResourceRequestsCPU, usage.ResourceRequestsMemory, usage.ResourceLimitsCPU, usage.ResourceLimitsMemory:
-		return h.podCalculator.CalculateUsage(context.Background(), namespace, resourceName)
+		return h.podCalculator.CalculateUsage(ctx, namespace, resourceName)
 	case usage.ResourcePods:
-		count, err := h.podCalculator.CalculatePodCount(context.Background(), namespace)
+		count, err := h.podCalculator.CalculatePodCount(ctx, namespace)
 		if err != nil {
 			return resource.Quantity{}, err
 		}

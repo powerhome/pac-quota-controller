@@ -17,7 +17,6 @@ limitations under the License.
 package e2e
 
 import (
-	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -32,7 +31,6 @@ import (
 
 var _ = Describe("ClusterResourceQuota Webhook", func() {
 	var (
-		ctx     = context.Background()
 		suffix  string
 		crqName string
 	)

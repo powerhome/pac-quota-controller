@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	// No BeforeAll present in this file
 	"context"
 	"testing"
 	"time"
@@ -47,11 +48,13 @@ var _ = Describe("GinWebhookServer", func() {
 		fakeRuntimeClient client.Client
 		logger            *zap.Logger
 		cfg               *config.Config
+		ctx               context.Context
 	)
 
 	const debugLevel = "debug"
 
 	BeforeEach(func() {
+		ctx = context.Background() // Entry point context for all tests
 		fakeClient = fake.NewSimpleClientset()
 		scheme := runtime.NewScheme()
 		_ = quotav1alpha1.AddToScheme(scheme)
@@ -93,7 +96,7 @@ var _ = Describe("GinWebhookServer", func() {
 	Describe("Start", func() {
 		It("should handle cancelled context immediately", func() {
 			// Use a context that's already cancelled
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(ctx)
 			cancel() // Cancel immediately
 
 			err := server.Start(ctx)
@@ -106,7 +109,7 @@ var _ = Describe("GinWebhookServer", func() {
 			cfg.WebhookPort = 19444
 			server = NewGinWebhookServer(cfg, fakeClient, fakeRuntimeClient, logger)
 
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(ctx)
 
 			serverDone := make(chan error, 1)
 			go func() {
@@ -158,6 +161,7 @@ var _ = Describe("GinWebhookServer", func() {
 	Describe("Webhook endpoints", func() {
 		It("should have webhook routes configured", func() {
 			// Test that webhook routes are registered
+			// No BeforeAll present in this file
 			Expect(server.engine).NotTo(BeNil())
 
 			// The routes should be configured in setupRoutes

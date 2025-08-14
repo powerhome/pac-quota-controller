@@ -92,8 +92,7 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 				},
 				nil) // Exceeds 100m limit
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("pod would exceed ClusterResourceQuota"))
-			Expect(err.Error()).To(ContainSubstring("limit for requests.cpu"))
+			Expect(err.Error()).To(ContainSubstring("ClusterResourceQuota CPU requests validation failed"))
 		})
 
 		It("should allow pod creation with multiple containers within limits", func() {
