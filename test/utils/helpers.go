@@ -1,3 +1,4 @@
+// ...existing code...
 package utils
 
 import (
@@ -12,6 +13,7 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -216,6 +218,33 @@ func CreatePod(ctx context.Context, k8sClient client.Client, namespace,
 	}
 	if err := k8sClient.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
 		return nil, fmt.Errorf("failed to verify creation of pod %s: %w", podName, err)
+	}
+	return pod, nil
+}
+
+// CreatePodWithContainers creates a Pod with the specified containers and optional init containers.
+func CreatePodWithContainers(
+	ctx context.Context,
+	k8sClient client.Client,
+	namespace, name string,
+	containers []corev1.Container,
+	initContainers []corev1.Container,
+) (*corev1.Pod, error) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: corev1.PodSpec{
+			Containers:     containers,
+			InitContainers: initContainers,
+		},
+	}
+	if err := k8sClient.Create(ctx, pod); err != nil {
+		return nil, err
+	}
+	if err := k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, pod); err != nil {
+		return nil, err
 	}
 	return pod, nil
 }
@@ -470,4 +499,66 @@ func ExpectCRQUsageToMatch(actual quotav1alpha1.ResourceList, expected map[strin
 		return fmt.Errorf("CRQ usage assertion failed: resources do not match expected values")
 	}
 	return nil
+}
+
+// UpdateClusterResourceQuotaSpec updates only the spec of a ClusterResourceQuota with retry logic
+// to handle conflicts with the controller's status updates. This prevents "object has been modified"
+// errors that occur when tests update the spec while the controller is updating the status.
+func UpdateClusterResourceQuotaSpec(
+	ctx context.Context,
+	k8sClient client.Client,
+	crqName string,
+	updateFunc func(*quotav1alpha1.ClusterResourceQuota) error,
+) error {
+	// Always get the latest version of the CRQ, apply the update, and try to update once.
+	crq := &quotav1alpha1.ClusterResourceQuota{}
+	if err := k8sClient.Get(ctx, client.ObjectKey{Name: crqName}, crq); err != nil {
+		return err
+	}
+
+	// Apply the update function to modify the spec
+	if err := updateFunc(crq); err != nil {
+		return err
+	}
+
+	// Try to update - do not retry on failure
+	if err := k8sClient.Update(ctx, crq); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// CreatePVC creates a PersistentVolumeClaim in the specified namespace
+// with the given name, storage size, and optional labels.
+func CreatePVC(
+	ctx context.Context,
+	k8sClient client.Client,
+	namespace, name, storageSize string,
+	pvcLabels map[string]string,
+) (*corev1.PersistentVolumeClaim, error) {
+	pvc := &corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels:    pvcLabels,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{
+				corev1.ReadWriteOnce,
+			},
+			Resources: corev1.VolumeResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse(storageSize),
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, pvc); err != nil {
+		return nil, err
+	}
+	if err := k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, pvc); err != nil {
+		return nil, err
+	}
+	return pvc, nil
 }

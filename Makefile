@@ -93,6 +93,9 @@ test-e2e-setup:
 	@echo "[test-e2e-setup] Deploying Helm chart with e2e configuration..."
 	make helm-deploy IMG=$(IMG)
 	@echo "[test-e2e-setup] Helm chart deployed and controller is available."
+	@echo "[test-e2e-setup] Waiting for controller to be ready..."
+	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=ready pod --timeout=60s -l control-plane=controller-manager
+	@echo "[test-e2e-setup] Controller is ready."
 
 .PHONY: test-e2e-cleanup
 # Clean up Kind cluster before/after e2e tests for a fully clean environment

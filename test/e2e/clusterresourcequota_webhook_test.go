@@ -77,15 +77,20 @@ var _ = Describe("ClusterResourceQuota Webhook", func() {
 			time.Sleep(2 * time.Second) // Ensure CRQ is updated by reconciliation
 
 			By("Updating the ClusterResourceQuota spec")
-			latestCRQ := &quotav1alpha1.ClusterResourceQuota{}
-			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, latestCRQ)).To(Succeed())
-			latestCRQ.Spec.Hard = quotav1alpha1.ResourceList{
-				corev1.ResourcePods: resource.MustParse("10"),
-				corev1.ResourceCPU:  resource.MustParse("4"),
-			}
-			Expect(k8sClient.Update(ctx, latestCRQ)).To(Succeed())
+			err = testutils.UpdateClusterResourceQuotaSpec(
+				ctx, k8sClient, crqName,
+				func(crq *quotav1alpha1.ClusterResourceQuota) error {
+					crq.Spec.Hard = quotav1alpha1.ResourceList{
+						corev1.ResourcePods: resource.MustParse("10"),
+						corev1.ResourceCPU:  resource.MustParse("4"),
+					}
+					return nil
+				})
+			Expect(err).ToNot(HaveOccurred())
 
 			By("Cleaning up the ClusterResourceQuota")
+			latestCRQ := &quotav1alpha1.ClusterResourceQuota{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, latestCRQ)).To(Succeed())
 			Expect(k8sClient.Delete(ctx, latestCRQ)).To(Succeed())
 		})
 	})
@@ -93,13 +98,11 @@ var _ = Describe("ClusterResourceQuota Webhook", func() {
 	Context("Edge cases", func() {
 		It("should deny creation when multiple CRQs match the same namespace", func() {
 			By("Creating a namespace that matches the selector")
-			namespace := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "test-namespace-" + suffix,
-					Labels: map[string]string{"quota": "limited-" + suffix},
-				},
-			}
-			Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
+			namespace, err := testutils.CreateNamespace(
+				ctx, k8sClient, "test-namespace-"+suffix,
+				map[string]string{"quota": "limited-" + suffix},
+			)
+			Expect(err).ToNot(HaveOccurred())
 
 			By("Creating the first ClusterResourceQuota")
 			crq1, err := testutils.CreateClusterResourceQuota(ctx, k8sClient, "crq1-"+suffix, &metav1.LabelSelector{

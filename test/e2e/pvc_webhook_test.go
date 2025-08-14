@@ -17,8 +17,6 @@ limitations under the License.
 package e2e
 
 import (
-	"context"
-	"fmt"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -39,97 +37,57 @@ const (
 
 var _ = Describe("PVC Webhook E2E Tests", func() {
 	var (
-		ctx        context.Context
-		testNS     string
-		testNSObj  *corev1.Namespace
-		testCRQ    *quotav1alpha1.ClusterResourceQuota
-		crqName    string
-		nameSuffix string
+		testNamespace string
+		ns            *corev1.Namespace
+		crq           *quotav1alpha1.ClusterResourceQuota
+		testCRQName   string
+		testSuffix    string
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
-		nameSuffix = testutils.GenerateTestSuffix()
-		testNS = fmt.Sprintf("pvc-webhook-test-%s", nameSuffix)
-		crqName = fmt.Sprintf("pvc-webhook-crq-%s", nameSuffix)
+		testSuffix = testutils.GenerateTestSuffix()
+		testNamespace = testutils.GenerateResourceName("pod-webhook-ns")
+		testCRQName = testutils.GenerateResourceName("pod-webhook-crq")
 
-		// Create test namespace with labels
-		testNSObj = &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: testNS,
-				Labels: map[string]string{
-					"quota-test": "pvc-webhook",
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, testNSObj)).To(Succeed())
+		var err error
+		ns, err = testutils.CreateNamespace(ctx, k8sClient, testNamespace, map[string]string{
+			"pod-webhook-test": "test-label-" + testSuffix,
+		})
+		Expect(err).ToNot(HaveOccurred())
 
-		// Create ClusterResourceQuota with storage limits
-		testCRQ = &quotav1alpha1.ClusterResourceQuota{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: crqName,
+		// Ensure no other CRQs target the namespace
+		existingCRQs, err := testutils.ListClusterResourceQuotas(ctx, k8sClient, &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"pod-webhook-test": "test-label-" + testSuffix,
 			},
-			Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-				Hard: quotav1alpha1.ResourceList{
-					corev1.ResourceRequestsStorage:        resource.MustParse("2Gi"),
-					corev1.ResourcePersistentVolumeClaims: resource.MustParse("2"),
-				},
-				NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"quota-test": "pvc-webhook",
-					},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, testCRQ)).To(Succeed())
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(existingCRQs.Items).To(BeEmpty(), "Namespace already targeted by another CRQ")
 
-		// Wait for the CRQ to be reconciled by the controller
-		Eventually(func() bool {
-			crq := &quotav1alpha1.ClusterResourceQuota{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, crq); err != nil {
-				return false
-			}
-			// Check if the namespace is tracked in the CRQ status (controller has reconciled)
-			for _, nsStatus := range crq.Status.Namespaces {
-				if nsStatus.Namespace == testNS {
-					return true
-				}
-			}
-			return false
-		}, timeout, interval).Should(BeTrue(), "ClusterResourceQuota should be reconciled with namespace in status")
+		crq, err = testutils.CreateClusterResourceQuota(ctx, k8sClient, testCRQName, &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"pod-webhook-test": "test-label-" + testSuffix,
+			},
+		}, quotav1alpha1.ResourceList{
+			corev1.ResourceRequestsStorage:        resource.MustParse("2Gi"),
+			corev1.ResourcePersistentVolumeClaims: resource.MustParse("2"),
+		})
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	AfterEach(func() {
-		// Clean up test resources
-		if testCRQ != nil {
-			_ = k8sClient.Delete(ctx, testCRQ)
-		}
-		if testNSObj != nil {
-			_ = k8sClient.Delete(ctx, testNSObj)
-		}
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, ns)
+		})
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(ctx, crq)
+		})
 	})
 
 	Context("Storage Quota Validation", func() {
 		It("should allow PVC creation within storage limits", func() {
-			pvc := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pvc-allowed",
-					Namespace: testNS,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("1Gi"),
-						},
-					},
-				},
-			}
-
-			// This should succeed
-			Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
+			pvc, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, "test-pvc-allowed", "1Gi", nil)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Verify PVC was created
 			Eventually(func() error {
@@ -143,124 +101,51 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 
 		It("should block PVC creation when storage quota would be exceeded", func() {
 			// First, create a PVC that uses most of the quota
-			firstPVC := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "first-pvc",
-					Namespace: testNS,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("1.5Gi"),
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, firstPVC)).To(Succeed())
+			_, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, "first-pvc", "1.5Gi", nil)
+			Expect(err).ToNot(HaveOccurred())
 
 			// Wait for the controller to update the status
 			Eventually(func() bool {
-				crq := &quotav1alpha1.ClusterResourceQuota{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, crq); err != nil {
+				reconciledCRQ := &quotav1alpha1.ClusterResourceQuota{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: crq.Name}, reconciledCRQ); err != nil {
 					return false
 				}
 				// Check if usage has been updated
-				if used, exists := crq.Status.Total.Used[corev1.ResourceRequestsStorage]; exists {
+				if used, exists := reconciledCRQ.Status.Total.Used[corev1.ResourceRequestsStorage]; exists {
 					return !used.IsZero()
 				}
 				return false
 			}, timeout, interval).Should(BeTrue())
 
 			// Now try to create another PVC that would exceed the quota
-			secondPVC := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "second-pvc-blocked",
-					Namespace: testNS,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("1Gi"), // 1.5Gi + 1Gi > 2Gi limit
-						},
-					},
-				},
-			}
-
-			// This should fail due to quota violation
-			err := k8sClient.Create(ctx, secondPVC)
+			_, err = testutils.CreatePVC(ctx, k8sClient, ns.Name, "second-pvc-blocked", "1Gi", nil)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(SatisfyAll(
 				ContainSubstring("ClusterResourceQuota"),
-				ContainSubstring(crqName),
+				ContainSubstring(crq.Name),
 				ContainSubstring("storage"),
 				ContainSubstring("exceeded"),
 			))
 		})
 
 		It("should allow PVC creation in namespaces not matching the selector", func() {
-			// Create a namespace without the quota-test label
-			nonQuotaNS := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: fmt.Sprintf("non-quota-ns-%s", nameSuffix),
-					Labels: map[string]string{
-						"app": "test", // Different label, won't match quota selector
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, nonQuotaNS)).To(Succeed())
+			ns, err := testutils.CreateNamespace(ctx, k8sClient, "non-quota-ns-"+testSuffix, nil)
+			Expect(err).ToNot(HaveOccurred())
 			defer func() {
-				_ = k8sClient.Delete(ctx, nonQuotaNS)
+				_ = k8sClient.Delete(ctx, ns)
 			}()
 
 			// Create a large PVC in the non-quota namespace
-			pvc := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "large-pvc-no-quota",
-					Namespace: nonQuotaNS.Name,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("10Gi"), // Much larger than quota limit
-						},
-					},
-				},
-			}
-
-			// This should succeed because the namespace doesn't match the quota selector
-			Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
+			_, err = testutils.CreatePVC(ctx, k8sClient, ns.Name, "large-pvc-no-quota", "10Gi", nil)
+			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 
 	Context("PVC Updates", func() {
 		It("should validate storage quota on PVC creation that would exceed limits", func() {
 			// Create a small PVC first to partially consume quota
-			pvc1 := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pvc-small",
-					Namespace: testNS,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("500Mi"),
-						},
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pvc1)).To(Succeed())
+			pvc1, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, "test-pvc-small", "500Mi", nil)
+			Expect(err).ToNot(HaveOccurred())
 			defer func() {
 				_ = k8sClient.Delete(ctx, pvc1)
 			}()
@@ -274,29 +159,11 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 			}, timeout, interval).Should(Succeed())
 
 			// Try to create another PVC that would exceed the 2Gi quota (500Mi + 2Gi = 2.5Gi > 2Gi)
-			pvc2 := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pvc-large",
-					Namespace: testNS,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("2Gi"),
-						},
-					},
-				},
-			}
-			err := k8sClient.Create(ctx, pvc2)
-
-			// This should fail due to quota violation
+			pvc2, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, "test-pvc-large", "2Gi", nil)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(SatisfyAll(
 				ContainSubstring("ClusterResourceQuota"),
-				ContainSubstring(crqName),
+				ContainSubstring(crq.Name),
 			))
 
 			// Clean up the second PVC if it was created
@@ -308,51 +175,12 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 
 	Context("PVC Count Quota Tests", func() {
 		It("should allow PVC creation when within PVC count limits", func() {
-			// Update CRQ to have PVC count limit
-			testCRQ.Spec.Hard = quotav1alpha1.ResourceList{
-				corev1.ResourcePersistentVolumeClaims: resource.MustParse("3"),
-			}
-			err := k8sClient.Update(ctx, testCRQ)
-			Expect(err).NotTo(HaveOccurred())
-
 			// Create first PVC
-			pvc1 := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutils.GenerateResourceName("test-pvc-1"),
-					Namespace: testNS,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("1Gi"),
-						},
-					},
-				},
-			}
-			err = k8sClient.Create(ctx, pvc1)
+			pvc1, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-1"), "1Gi", nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Create second PVC - should succeed
-			pvc2 := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutils.GenerateResourceName("test-pvc-2"),
-					Namespace: testNS,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("1Gi"),
-						},
-					},
-				},
-			}
-			err = k8sClient.Create(ctx, pvc2)
+			pvc2, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-2"), "1Gi", nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Cleanup
@@ -361,59 +189,21 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 		})
 
 		It("should deny PVC creation when it would exceed PVC count limits", func() {
-			// Update CRQ to have strict PVC count limit
-			testCRQ.Spec.Hard = quotav1alpha1.ResourceList{
-				corev1.ResourcePersistentVolumeClaims: resource.MustParse("1"),
-			}
-			err := k8sClient.Update(ctx, testCRQ)
-			Expect(err).NotTo(HaveOccurred())
-
 			// Create first PVC - should succeed
-			pvc1 := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutils.GenerateResourceName("test-pvc-1"),
-					Namespace: testNS,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("1Gi"),
-						},
-					},
-				},
-			}
-			err = k8sClient.Create(ctx, pvc1)
+			_, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-1"), "1Gi", nil)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Create second PVC - should fail due to PVC count limit
-			pvc2 := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutils.GenerateResourceName("test-pvc-2"),
-					Namespace: testNS,
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					AccessModes: []corev1.PersistentVolumeAccessMode{
-						corev1.ReadWriteOnce,
-					},
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("1Gi"),
-						},
-					},
-				},
-			}
-			err = k8sClient.Create(ctx, pvc2)
+			// Create second PVC - should allow
+			_, err = testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-2"), "1Gi", nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create third PVC - should fail
+			_, err = testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-3"), "1Gi", nil)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(SatisfyAll(
 				ContainSubstring("ClusterResourceQuota"),
-				ContainSubstring(crqName),
+				ContainSubstring(crq.Name),
 			))
-
-			// Cleanup
-			Expect(k8sClient.Delete(ctx, pvc1)).To(Succeed())
 		})
 	})
 })

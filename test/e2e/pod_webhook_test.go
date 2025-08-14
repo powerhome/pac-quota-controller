@@ -26,8 +26,8 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 
 	BeforeEach(func() {
 		testSuffix = testutils.GenerateTestSuffix()
-		testNamespace = testutils.GenerateResourceName("pod-webhook-ns")
-		testCRQName = testutils.GenerateResourceName("pod-webhook-crq")
+		testNamespace = testutils.GenerateResourceName("pod-webhook-ns-" + testSuffix)
+		testCRQName = testutils.GenerateResourceName("pod-webhook-crq-" + testSuffix)
 
 		var err error
 		ns, err = testutils.CreateNamespace(ctx, k8sClient, testNamespace, map[string]string{
@@ -50,6 +50,7 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 			},
 		}, quotav1alpha1.ResourceList{
 			corev1.ResourceRequestsCPU: resource.MustParse("100m"),
+			corev1.ResourcePods:        resource.MustParse("2"),
 		})
 		Expect(err).NotTo(HaveOccurred())
 	})
@@ -94,106 +95,87 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 		})
 
 		It("should allow pod creation with multiple containers within limits", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-multi-container-" + testSuffix,
-					Namespace: testNamespace,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "container-1",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
-								},
-							},
-						},
-						{
-							Name:  "container-2",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
-								},
+			pod, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, "test-pod-multi-container-"+testSuffix,
+				[]corev1.Container{
+					{
+						Name:  "container-1",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("50m"),
 							},
 						},
 					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+					{
+						Name:  "container-2",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("50m"),
+							},
+						},
+					},
+				}, nil)
+			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(func() {
 				_ = k8sClient.Delete(ctx, pod)
 			})
 		})
 
 		It("should deny pod creation with init containers exceeding limits", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-init-container-" + testSuffix,
-					Namespace: testNamespace,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "main-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
-								},
+			_, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, "test-pod-init-container-"+testSuffix,
+				[]corev1.Container{
+					{
+						Name:  "main-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("50m"),
 							},
 						},
 					},
-					InitContainers: []corev1.Container{
-						{
-							Name:  "init-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("200m"),
-								},
+				}, []corev1.Container{
+					{
+						Name:  "init-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("200m"),
 							},
 						},
 					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).ToNot(Succeed())
+				})
+			// Should fail due to init container exceeding limit
+			Expect(err).To(HaveOccurred())
 		})
 
 		It("should allow pod creation with both main and init containers within limits", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-init-container-within-limits-" + testSuffix,
-					Namespace: testNamespace,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "main-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
-								},
+			pod, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, "test-pod-init-container-within-limits-"+testSuffix,
+				[]corev1.Container{
+					{
+						Name:  "main-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("50m"),
 							},
 						},
 					},
-					InitContainers: []corev1.Container{
-						{
-							Name:  "init-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
-								},
+				}, []corev1.Container{
+					{
+						Name:  "init-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("50m"),
 							},
 						},
 					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+				})
+			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(func() {
 				_ = k8sClient.Delete(ctx, pod)
 			})
@@ -241,37 +223,30 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 		})
 
 		It("should deny updates to pods with init containers exceeding limits", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-update-init-container-" + testSuffix,
-					Namespace: testNamespace,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "main-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("30m"),
-								},
+			pod, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, "test-pod-update-init-container-"+testSuffix,
+				[]corev1.Container{
+					{
+						Name:  "main-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("30m"),
 							},
 						},
 					},
-					InitContainers: []corev1.Container{
-						{
-							Name:  "init-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
-								},
+				}, []corev1.Container{
+					{
+						Name:  "init-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("50m"),
 							},
 						},
 					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+				})
+			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(func() {
 				_ = k8sClient.Delete(ctx, pod)
 			})
@@ -322,35 +297,29 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 		})
 
 		It("should always allow deletion of pods with multiple containers", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-delete-multi-container-" + testSuffix,
-					Namespace: testNamespace,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "container-1",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
-								},
-							},
-						},
-						{
-							Name:  "container-2",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
-								},
+			pod, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, "test-pod-delete-multi-container-"+testSuffix,
+				[]corev1.Container{
+					{
+						Name:  "container-1",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("50m"),
 							},
 						},
 					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
+					{
+						Name:  "container-2",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("50m"),
+							},
+						},
+					},
+				}, nil)
+			Expect(err).NotTo(HaveOccurred())
 			Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
 
 			// Verify deletion
@@ -363,57 +332,39 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 
 	Context("Pod Count Quota Tests", func() {
 		It("should allow pod creation when within pod count limits", func() {
-			// Update CRQ to have pod count limit
-			crq.Spec.Hard = quotav1alpha1.ResourceList{
-				corev1.ResourcePods: resource.MustParse("3"),
-			}
-			Expect(k8sClient.Update(ctx, crq)).To(Succeed())
-
 			// Create first pod
-			pod1 := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutils.GenerateResourceName("test-pod-1"),
-					Namespace: testNamespace,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("100m"),
-									corev1.ResourceMemory: resource.MustParse("128Mi"),
-								},
+			pod1, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-1"),
+				[]corev1.Container{
+					{
+						Name:  "test-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("128Mi"),
 							},
 						},
 					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod1)).To(Succeed())
+				}, nil)
+			Expect(err).NotTo(HaveOccurred())
 
 			// Create second pod - should succeed
-			pod2 := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutils.GenerateResourceName("test-pod-2"),
-					Namespace: testNamespace,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("100m"),
-									corev1.ResourceMemory: resource.MustParse("128Mi"),
-								},
+			pod2, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-2"),
+				[]corev1.Container{
+					{
+						Name:  "test-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("128Mi"),
 							},
 						},
 					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, pod2)).To(Succeed())
+				}, nil)
+			Expect(err).NotTo(HaveOccurred())
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, pod1)).To(Succeed())
@@ -421,62 +372,65 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 		})
 
 		It("should deny pod creation when it would exceed pod count limits", func() {
-			// Update CRQ to have strict pod count limit
-			crq.Spec.Hard = quotav1alpha1.ResourceList{
-				corev1.ResourcePods: resource.MustParse("1"),
-			}
-			Expect(k8sClient.Update(ctx, crq)).To(Succeed())
-
 			// Create first pod - should succeed
-			pod1 := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutils.GenerateResourceName("test-pod-1"),
-					Namespace: testNamespace,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("100m"),
-									corev1.ResourceMemory: resource.MustParse("128Mi"),
-								},
+			pod1, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-1"),
+				[]corev1.Container{
+					{
+						Name:  "test-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("128Mi"),
 							},
 						},
 					},
 				},
-			}
-			Expect(k8sClient.Create(ctx, pod1)).To(Succeed())
+				nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
 
-			// Create second pod - should fail due to pod count limit
-			pod2 := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testutils.GenerateResourceName("test-pod-2"),
-					Namespace: testNamespace,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "nginx:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("100m"),
-									corev1.ResourceMemory: resource.MustParse("128Mi"),
-								},
+			// Create second pod - should succeed
+			pod2, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-2"),
+				[]corev1.Container{
+					{
+						Name:  "test-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("128Mi"),
+							},
+						},
+					},
+				}, nil)
+			Expect(err).NotTo(HaveOccurred())
+			// Create third pod - should fail
+			_, err = testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-3"),
+				[]corev1.Container{
+					{
+						Name:  "test-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("128Mi"),
 							},
 						},
 					},
 				},
-			}
-			err := k8sClient.Create(ctx, pod2)
+				nil,
+			)
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("would exceed quota"))
+			Expect(err.Error()).To(ContainSubstring("pods limit exceeded"))
 
 			// Cleanup
 			Expect(k8sClient.Delete(ctx, pod1)).To(Succeed())
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, pod2)).To(Succeed())
 		})
 	})
 })
