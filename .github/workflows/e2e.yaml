@@ -3,8 +3,26 @@ name: E2E Tests
 on:
   pull_request:
     branches: [ main ]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'pkg/**'
+      - 'Dockerfile'
+      - 'Makefile'
   push:
     branches: [ main ]
+    paths:
+      - '**/*.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'pkg/**'
+      - 'Dockerfile'
+      - 'Makefile'
 
 jobs:
   e2e:
@@ -49,7 +67,7 @@ jobs:
           kubectl get all -n cert-manager
           kubectl describe pods -n cert-manager
           kubectl logs -l app=cert-manager -n cert-manager --tail=100 || true
-          kubectl logs -l app.kubernetes.io/instance=cert-manager -n cert-manager --tail=100 || true
+          kubectl.logs -l app.kubernetes.io/instance=cert-manager -n cert-manager --tail=100 || true
           echo "Describing CRDs..."
           kubectl get crds
           kubectl describe crd clusterresourcequotas.quota.powerapp.cloud
