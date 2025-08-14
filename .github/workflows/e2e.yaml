@@ -67,7 +67,7 @@ jobs:
           kubectl get all -n cert-manager
           kubectl describe pods -n cert-manager
           kubectl logs -l app=cert-manager -n cert-manager --tail=100 || true
-          kubectl logs -l app.kubernetes.io/instance=cert-manager -n cert-manager --tail=100 || true
+          kubectl.logs -l app.kubernetes.io/instance=cert-manager -n cert-manager --tail=100 || true
           echo "Describing CRDs..."
           kubectl get crds
           kubectl describe crd clusterresourcequotas.quota.powerapp.cloud
