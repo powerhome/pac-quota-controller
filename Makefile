@@ -318,6 +318,36 @@ ghcr-login: ## Log in to GitHub Container Registry (requires GITHUB_TOKEN)
 	@[ -n "$$GITHUB_TOKEN" ] || { echo "GITHUB_TOKEN is required. Please set it and try again."; exit 1; }
 	echo "$$GITHUB_TOKEN" | docker login ghcr.io -u "$$USER" --password-stdin
 
+#
+# Release and Chart Tagging
+#
+# Usage:
+#   make tag-release [APP_VERSION=v0.1.1] [CHART_VERSION=v0.1.1]
+#
+# Variables:
+#   APP_VERSION    - Version for the application (optional, if set must start with 'v')
+#   CHART_VERSION  - Version for the Helm chart (optional, if set must start with 'v')
+
+.PHONY: tag-release
+tag-release: ## Print the git tag and push commands for app and/or chart releases (dry run).
+	@if [ -z "$(APP_VERSION)" ] && [ -z "$(CHART_VERSION)" ]; then \
+		echo "At least one of APP_VERSION or CHART_VERSION must be set (e.g. APP_VERSION=v0.1.1 or CHART_VERSION=v0.1.1)"; exit 1; \
+	fi
+	@if [ -n "$(APP_VERSION)" ]; then \
+		if ! echo $(APP_VERSION) | grep -Eq '^v[0-9]'; then \
+			echo "APP_VERSION must start with 'v' (e.g. v0.1.1)"; exit 1; \
+		fi; \
+		echo "Would run: git tag -s $(APP_VERSION) -m 'Release $(APP_VERSION)'"; \
+		echo "Would run: git push origin $(APP_VERSION)"; \
+	fi
+	@if [ -n "$(CHART_VERSION)" ]; then \
+		if ! echo $(CHART_VERSION) | grep -Eq '^v[0-9]'; then \
+			echo "CHART_VERSION must start with 'v' (e.g. v0.1.1)"; exit 1; \
+		fi; \
+		echo "Would run: git tag -s chart-$(CHART_VERSION) -m 'Release chart $(CHART_VERSION)'"; \
+		echo "Would run: git push origin chart-$(CHART_VERSION)"; \
+	fi
+
 ##@ Helm Chart
 
 
