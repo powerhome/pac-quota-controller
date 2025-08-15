@@ -13,23 +13,27 @@ var setupLog = logf.Log.WithName("setup.config")
 
 // Config holds the controller configuration
 type Config struct {
-	MetricsAddr              string
-	MetricsCertPath          string
-	MetricsCertName          string
-	MetricsCertKey           string
-	WebhookCertPath          string
-	WebhookCertName          string
-	WebhookCertKey           string
-	WebhookPort              int
-	EnableLeaderElection     bool
-	ProbeAddr                string
-	SecureMetrics            bool
-	EnableHTTP2              bool
-	LogLevel                 string
-	LogFormat                string
-	ExcludeNamespaceLabelKey string
-	ExcludedNamespaces       []string
-	OwnNamespace             string
+	EnableHTTP2                 bool
+	EnableLeaderElection        bool
+	ExcludeNamespaceLabelKey    string
+	ExcludedNamespaces          []string
+	LeaderElectionLeaseDuration int
+	LeaderElectionNamespace     string
+	LeaderElectionRenewDeadline int
+	LeaderElectionRetryPeriod   int
+	LogFormat                   string
+	LogLevel                    string
+	MetricsAddr                 string
+	MetricsCertKey              string
+	MetricsCertName             string
+	MetricsCertPath             string
+	OwnNamespace                string
+	ProbeAddr                   string
+	SecureMetrics               bool
+	WebhookCertKey              string
+	WebhookCertName             string
+	WebhookCertPath             string
+	WebhookPort                 int
 }
 
 // setDefaults configures the default values for configuration parameters
@@ -71,22 +75,27 @@ func InitConfig() *Config {
 		}
 	}
 	return &Config{
-		MetricsAddr:              viper.GetString("metrics-bind-address"),
-		ProbeAddr:                viper.GetString("health-probe-bind-address"),
-		EnableLeaderElection:     viper.GetBool("leader-elect"),
-		SecureMetrics:            viper.GetBool("metrics-secure"),
-		WebhookCertPath:          viper.GetString("webhook-cert-path"),
-		WebhookCertName:          viper.GetString("webhook-cert-name"),
-		WebhookCertKey:           viper.GetString("webhook-cert-key"),
-		MetricsCertPath:          viper.GetString("metrics-cert-path"),
-		MetricsCertName:          viper.GetString("metrics-cert-name"),
-		MetricsCertKey:           viper.GetString("metrics-cert-key"),
-		EnableHTTP2:              viper.GetBool("enable-http2"),
-		LogLevel:                 viper.GetString("log-level"),
-		LogFormat:                viper.GetString("log-format"),
-		WebhookPort:              viper.GetInt("webhook-port"),
-		ExcludeNamespaceLabelKey: viper.GetString("exclude-namespace-label-key"),
-		ExcludedNamespaces:       excluded,
+		EnableHTTP2:                 viper.GetBool("enable-http2"),
+		EnableLeaderElection:        viper.GetBool("leader-elect"),
+		ExcludeNamespaceLabelKey:    viper.GetString("exclude-namespace-label-key"),
+		ExcludedNamespaces:          excluded,
+		LeaderElectionLeaseDuration: viper.GetInt("leader-election-lease-duration"),
+		LeaderElectionNamespace:     viper.GetString("leader-election-namespace"),
+		LeaderElectionRenewDeadline: viper.GetInt("leader-election-renew-deadline"),
+		LeaderElectionRetryPeriod:   viper.GetInt("leader-election-retry-period"),
+		LogFormat:                   viper.GetString("log-format"),
+		LogLevel:                    viper.GetString("log-level"),
+		MetricsAddr:                 viper.GetString("metrics-bind-address"),
+		MetricsCertKey:              viper.GetString("metrics-cert-key"),
+		MetricsCertName:             viper.GetString("metrics-cert-name"),
+		MetricsCertPath:             viper.GetString("metrics-cert-path"),
+		OwnNamespace:                viper.GetString("own-namespace"),
+		ProbeAddr:                   viper.GetString("health-probe-bind-address"),
+		SecureMetrics:               viper.GetBool("metrics-secure"),
+		WebhookCertKey:              viper.GetString("webhook-cert-key"),
+		WebhookCertName:             viper.GetString("webhook-cert-name"),
+		WebhookCertPath:             viper.GetString("webhook-cert-path"),
+		WebhookPort:                 viper.GetInt("webhook-port"),
 	}
 }
 
