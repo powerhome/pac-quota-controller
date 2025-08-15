@@ -14,6 +14,7 @@ webhooks:
     admissionReviewVersions: ["v1"]
     sideEffects: None
     failurePolicy: Fail
+    timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}
       caBundle: {{ .Values.webhook.customTLS.caBundle }}
@@ -37,6 +38,7 @@ webhooks:
     admissionReviewVersions: ["v1"]
     sideEffects: None
     failurePolicy: Fail
+    timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}
       caBundle: {{ .Values.webhook.customTLS.caBundle }}
@@ -44,9 +46,6 @@ webhooks:
       service:
         name: pac-quota-controller-webhook-service
         namespace: {{ .Release.Namespace }}
-        # Super annoying but kubebuilder router creates the path
-        # using the group and version, namespace doesn't contain a group
-        # so we have to double dashes
         path: /validate--v1-namespace
     rules:
       - apiGroups: [""]
@@ -63,6 +62,7 @@ webhooks:
     admissionReviewVersions: ["v1"]
     sideEffects: None
     failurePolicy: Fail
+    timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}
       caBundle: {{ .Values.webhook.customTLS.caBundle }}
@@ -86,6 +86,7 @@ webhooks:
     admissionReviewVersions: ["v1"]
     sideEffects: None
     failurePolicy: Fail
+    timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}
       caBundle: {{ .Values.webhook.customTLS.caBundle }}

@@ -94,8 +94,8 @@ var _ = Describe("Manager", Ordered, func() {
 		}
 	})
 
-	SetDefaultEventuallyTimeout(2 * time.Minute)
-	SetDefaultEventuallyPollingInterval(time.Second)
+	SetDefaultEventuallyTimeout(3 * time.Minute)         // Increased timeout for leader election
+	SetDefaultEventuallyPollingInterval(2 * time.Second) // Increased polling interval
 
 	Context("Manager", func() {
 		It("should run successfully", func() {
@@ -125,8 +125,19 @@ var _ = Describe("Manager", Ordered, func() {
 				err = k8sClient.Get(ctx, client.ObjectKey{Name: controllerPodName, Namespace: namespace}, pod)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(pod.Status.Phase).To(Equal(v1.PodRunning), "Incorrect controller-manager pod status")
+
+				// Check that all containers are ready
+				for _, container := range pod.Status.ContainerStatuses {
+					g.Expect(container.Ready).To(BeTrue(), "Container %s is not ready", container.Name)
+				}
 			}
 			Eventually(verifyControllerUp).Should(Succeed())
+
+			By("waiting for controller to acquire leadership")
+			Eventually(func(g Gomega) {
+				logs := utils.GetPodLogs(ctx, clientSet, namespace, controllerPodName)
+				g.Expect(logs).To(ContainSubstring("successfully acquired lease"), "Controller should have acquired leadership")
+			}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		})
 	})
 })

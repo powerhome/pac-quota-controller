@@ -1,3 +1,19 @@
+/*
+Copyright 2025.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package webhook
 
 import (
@@ -6,45 +22,87 @@ import (
 	"path/filepath"
 
 	"github.com/powerhome/pac-quota-controller/pkg/config"
-	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"github.com/powerhome/pac-quota-controller/pkg/webhook/certwatcher"
+	"github.com/powerhome/pac-quota-controller/pkg/webhook/server"
+	"go.uber.org/zap"
+	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var setupLog = logf.Log.WithName("setup.webhook")
+// SetupGinWebhookServer configures the Gin-based webhook server with certificate watching
+func SetupGinWebhookServer(
+	cfg *config.Config,
+	k8sClient kubernetes.Interface,
+	runtimeClient client.Client,
+	log *zap.Logger,
+) (*server.GinWebhookServer, *certwatcher.CertWatcher) {
+	// Create the Gin webhook server
+	webhookServer := server.NewGinWebhookServer(cfg, k8sClient, runtimeClient, log)
 
-// SetupWebhookServer configures the webhook server
-func SetupWebhookServer(cfg *config.Config, tlsOpts []func(*tls.Config)) (webhook.Server, *certwatcher.CertWatcher) {
-	// Start with base TLS options
-	webhookTLSOpts := tlsOpts
-	var webhookCertWatcher *certwatcher.CertWatcher
-
+	// Setup certificate watcher if certificates are provided
 	if len(cfg.WebhookCertPath) > 0 {
-		setupLog.Info("Initializing webhook certificate watcher using provided certificates",
-			"webhook-cert-path", cfg.WebhookCertPath,
-			"webhook-cert-name", cfg.WebhookCertName,
-			"webhook-cert-key", cfg.WebhookCertKey)
+		log.Info("Initializing webhook certificate watcher using provided certificates",
+			zap.String("webhook-cert-path", cfg.WebhookCertPath),
+			zap.String("webhook-cert-name", cfg.WebhookCertName),
+			zap.String("webhook-cert-key", cfg.WebhookCertKey))
 
-		var err error
-		webhookCertWatcher, err = certwatcher.New(
-			filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertName),
-			filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertKey),
-		)
-		if err != nil {
-			setupLog.Error(err, "Failed to initialize webhook certificate watcher")
-			os.Exit(1)
+		// First validate that the certificate files exist and are valid
+		certFile := filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertName)
+		keyFile := filepath.Join(cfg.WebhookCertPath, cfg.WebhookCertKey)
+
+		if !isValidCertificatePair(certFile, keyFile, log) {
+			log.Info("Certificate files are not valid or don't exist - continuing without certificate watcher")
+			return webhookServer, nil
 		}
 
-		webhookTLSOpts = append(webhookTLSOpts, func(config *tls.Config) {
-			config.GetCertificate = webhookCertWatcher.GetCertificate
-		})
+		var err error
+		webhookCertWatcher, err := certwatcher.NewCertWatcher(certFile, keyFile, log)
+		if err != nil {
+			log.Error("Failed to initialize webhook certificate watcher", zap.Error(err))
+			log.Info("Continuing without certificate watcher - server will run without TLS")
+			return webhookServer, nil
+		}
+
+		// Configure the server with certificate watcher
+		if err := webhookServer.SetupCertificateWatcher(cfg); err != nil {
+			log.Error("Failed to setup certificate watcher", zap.Error(err))
+		}
+
+		return webhookServer, webhookCertWatcher
 	}
 
-	// Ensure the webhook server listens on the configured port and all interfaces (default 9443)
-	webhookServer := webhook.NewServer(webhook.Options{
-		Port:    cfg.WebhookPort,
-		TLSOpts: webhookTLSOpts,
-	})
+	// No certificates provided, return server without certificate watcher
+	return webhookServer, nil
+}
 
-	return webhookServer, webhookCertWatcher
+// isValidCertificatePair checks if the certificate and key files exist and are valid
+func isValidCertificatePair(certFile, keyFile string, log *zap.Logger) bool {
+	// Check if files exist
+	if _, err := os.Stat(certFile); err != nil {
+		if log != nil {
+			log.Debug("Certificate file does not exist", zap.String("path", certFile), zap.Error(err))
+		}
+		return false
+	}
+
+	if _, err := os.Stat(keyFile); err != nil {
+		if log != nil {
+			log.Debug("Key file does not exist", zap.String("path", keyFile), zap.Error(err))
+		}
+		return false
+	}
+
+	// Try to load the certificate pair to validate they're proper certificates
+	_, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		if log != nil {
+			log.Debug("Failed to load certificate pair",
+				zap.String("certFile", certFile),
+				zap.String("keyFile", keyFile),
+				zap.Error(err))
+		}
+		return false
+	}
+
+	return true
 }

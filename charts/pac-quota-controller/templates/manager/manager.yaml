@@ -8,6 +8,11 @@ metadata:
     control-plane: controller-manager
 spec:
   replicas:  {{ .Values.controllerManager.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
   selector:
     matchLabels:
       {{- include "chart.selectorLabels" . | nindent 6 }}
@@ -79,7 +84,7 @@ spec:
           volumeMounts:
             {{- if .Values.metrics.enable }}
             - name: metrics-certs
-              mountPath: /tmp/k8s-metrics-server/metrics-certs # Default path for controller-runtime when certs are auto-generated
+              mountPath: /tmp/k8s-metrics-server/metrics-certs
               readOnly: true
             {{- end }}
             {{- if .Values.webhook.enable }}

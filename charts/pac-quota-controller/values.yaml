@@ -14,7 +14,6 @@ controllerManager:
     args:
       - "--leader-elect"
       - "--metrics-bind-address=:8443"
-      - "--health-probe-bind-address=:8081"
     webhookCertPath: "/tmp/k8s-webhook-server/serving-certs"
     resources:
       limits:
@@ -28,13 +27,15 @@ controllerManager:
       periodSeconds: 20
       httpGet:
         path: /healthz
-        port: 8081
+        port: 9443
+        scheme: HTTPS
     readinessProbe:
       initialDelaySeconds: 5
       periodSeconds: 10
       httpGet:
         path: /readyz
-        port: 8081
+        port: 9443
+        scheme: HTTPS
     securityContext:
       allowPrivilegeEscalation: false
       capabilities:
@@ -44,7 +45,7 @@ controllerManager:
     runAsNonRoot: true
     seccompProfile:
       type: RuntimeDefault
-  terminationGracePeriodSeconds: 10
+  terminationGracePeriodSeconds: 15
   serviceAccount:
     name: pac-quota-controller-manager
     annotations: {}

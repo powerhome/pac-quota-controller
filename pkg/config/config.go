@@ -13,22 +13,26 @@ var setupLog = logf.Log.WithName("setup.config")
 
 // Config holds the controller configuration
 type Config struct {
-	MetricsAddr              string
-	MetricsCertPath          string
-	MetricsCertName          string
-	MetricsCertKey           string
-	WebhookCertPath          string
-	WebhookCertName          string
-	WebhookCertKey           string
-	WebhookPort              int
-	EnableLeaderElection     bool
-	ProbeAddr                string
-	SecureMetrics            bool
-	EnableHTTP2              bool
-	LogLevel                 string
-	LogFormat                string
-	ExcludeNamespaceLabelKey string
-	OwnNamespace             string
+	MetricsAddr                 string
+	MetricsCertPath             string
+	MetricsCertName             string
+	MetricsCertKey              string
+	WebhookCertPath             string
+	WebhookCertName             string
+	WebhookCertKey              string
+	WebhookPort                 int
+	EnableLeaderElection        bool
+	LeaderElectionNamespace     string
+	LeaderElectionLeaseDuration int
+	LeaderElectionRenewDeadline int
+	LeaderElectionRetryPeriod   int
+	ProbeAddr                   string
+	SecureMetrics               bool
+	EnableHTTP2                 bool
+	LogLevel                    string
+	LogFormat                   string
+	ExcludeNamespaceLabelKey    string
+	OwnNamespace                string
 }
 
 // setDefaults configures the default values for configuration parameters
@@ -36,6 +40,9 @@ func setDefaults() {
 	viper.SetDefault("metrics-bind-address", ":8443")
 	viper.SetDefault("health-probe-bind-address", ":8081")
 	viper.SetDefault("leader-elect", false)
+	viper.SetDefault("leader-election-lease-duration", 15)
+	viper.SetDefault("leader-election-renew-deadline", 10)
+	viper.SetDefault("leader-election-retry-period", 2)
 	viper.SetDefault("metrics-secure", true)
 	viper.SetDefault("webhook-cert-name", "tls.crt")
 	viper.SetDefault("webhook-cert-key", "tls.key")
@@ -57,21 +64,25 @@ func InitConfig() *Config {
 	setDefaults()
 
 	return &Config{
-		MetricsAddr:              viper.GetString("metrics-bind-address"),
-		ProbeAddr:                viper.GetString("health-probe-bind-address"),
-		EnableLeaderElection:     viper.GetBool("leader-elect"),
-		SecureMetrics:            viper.GetBool("metrics-secure"),
-		WebhookCertPath:          viper.GetString("webhook-cert-path"),
-		WebhookCertName:          viper.GetString("webhook-cert-name"),
-		WebhookCertKey:           viper.GetString("webhook-cert-key"),
-		MetricsCertPath:          viper.GetString("metrics-cert-path"),
-		MetricsCertName:          viper.GetString("metrics-cert-name"),
-		MetricsCertKey:           viper.GetString("metrics-cert-key"),
-		EnableHTTP2:              viper.GetBool("enable-http2"),
-		LogLevel:                 viper.GetString("log-level"),
-		LogFormat:                viper.GetString("log-format"),
-		WebhookPort:              viper.GetInt("webhook-port"),
-		ExcludeNamespaceLabelKey: viper.GetString("exclude-namespace-label-key"),
+		MetricsAddr:                 viper.GetString("metrics-bind-address"),
+		ProbeAddr:                   viper.GetString("health-probe-bind-address"),
+		EnableLeaderElection:        viper.GetBool("leader-elect"),
+		LeaderElectionNamespace:     viper.GetString("leader-election-namespace"),
+		LeaderElectionLeaseDuration: viper.GetInt("leader-election-lease-duration"),
+		LeaderElectionRenewDeadline: viper.GetInt("leader-election-renew-deadline"),
+		LeaderElectionRetryPeriod:   viper.GetInt("leader-election-retry-period"),
+		SecureMetrics:               viper.GetBool("metrics-secure"),
+		WebhookCertPath:             viper.GetString("webhook-cert-path"),
+		WebhookCertName:             viper.GetString("webhook-cert-name"),
+		WebhookCertKey:              viper.GetString("webhook-cert-key"),
+		MetricsCertPath:             viper.GetString("metrics-cert-path"),
+		MetricsCertName:             viper.GetString("metrics-cert-name"),
+		MetricsCertKey:              viper.GetString("metrics-cert-key"),
+		EnableHTTP2:                 viper.GetBool("enable-http2"),
+		LogLevel:                    viper.GetString("log-level"),
+		LogFormat:                   viper.GetString("log-format"),
+		WebhookPort:                 viper.GetInt("webhook-port"),
+		ExcludeNamespaceLabelKey:    viper.GetString("exclude-namespace-label-key"),
 	}
 }
 
@@ -83,6 +94,14 @@ func SetupFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	cmd.Flags().String("leader-election-namespace", "",
+		"Namespace to use for leader election. If empty, uses the controller's namespace.")
+	cmd.Flags().Int("leader-election-lease-duration", 15,
+		"Duration in seconds that non-leader candidates will wait to force acquire leadership.")
+	cmd.Flags().Int("leader-election-renew-deadline", 10,
+		"Duration in seconds the leader will retry refreshing leadership before giving up.")
+	cmd.Flags().Int("leader-election-retry-period", 2,
+		"Duration in seconds the leader election clients should wait between tries of actions.")
 	cmd.Flags().Bool("metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	cmd.Flags().String("webhook-cert-path", "", "The directory that contains the webhook certificate.")

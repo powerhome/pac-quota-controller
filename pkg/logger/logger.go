@@ -7,8 +7,6 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	ctrl "sigs.k8s.io/controller-runtime"
-	ctrlzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 // SetupLogger configures the zap logger based on provided configuration
@@ -46,13 +44,4 @@ func SetupLogger(cfg *config.Config) *zap.Logger {
 
 	// Create the logger
 	return zap.New(core)
-}
-
-// ConfigureControllerRuntime sets up the controller-runtime logger to use our zap configuration
-func ConfigureControllerRuntime(zapLogger *zap.Logger) {
-	// Convert uber/zap logger to controller-runtime logger
-	encoderConfig := zap.NewProductionEncoderConfig()
-	encoder := zapcore.NewJSONEncoder(encoderConfig)
-	ctrlLogger := ctrlzap.New(ctrlzap.UseDevMode(false), ctrlzap.Encoder(encoder))
-	ctrl.SetLogger(ctrlLogger)
 }

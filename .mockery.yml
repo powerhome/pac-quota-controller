@@ -1,0 +1,25 @@
+dir: 'pkg/mocks'
+filename: '{{.InterfaceName}}_mock.go'
+force-file-write: true
+formatter: goimports
+include-auto-generated: false
+log-level: info
+structname: '{{.Mock}}{{.InterfaceName}}'
+pkgname: 'mocks'
+recursive: false
+require-template-schema-exists: true
+template: testify
+template-schema: '{{.Template}}.schema.json'
+packages:
+  github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota:
+    config:
+      all: true
+  github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace:
+    config:
+      all: true
+  github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod:
+    config:
+      all: true
+  github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage:
+    config:
+      all: true

@@ -48,8 +48,10 @@ manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and Cust
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 .PHONY: generate
-generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./..."
+generate: mockery ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
+	@echo "Generating mocks..."
+	$(MOCKERY)
+	@echo "Code generation completed"
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -63,10 +65,6 @@ vet: ## Run go vet against code.
 test: manifests generate fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
-# TODO(user): To use a different vendor for e2e tests, modify the setup under 'tests/e2e'.
-# The default setup assumes Kind is pre-installed and builds/loads the Manager Docker image locally.
-# CertManager is installed by default; skip with:
-# - CERT_MANAGER_INSTALL_SKIP=true
 KIND_CLUSTER ?= pac-quota-controller-test-e2e
 
 .PHONY: cleanup-test-e2e
@@ -76,7 +74,9 @@ cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 .PHONY: install-tools
 install-tools: ## Install development tools
 	go install github.com/onsi/ginkgo/v2/ginkgo@latest
-	go install github.com/onsi/gomega/...@latest
+
+.PHONY: deps
+deps: envtest golangci-lint mockery ## Install all development dependencies
 
 .PHONY: test-e2e-setup
 test-e2e-setup:
@@ -90,9 +90,12 @@ test-e2e-setup:
 	@echo "[test-e2e-setup] Loading image to Kind..."
 	kind load docker-image $(IMG) --name $(KIND_CLUSTER)
 	make install-cert-manager
-	@echo "[test-e2e-setup] Deploying Helm chart..."
+	@echo "[test-e2e-setup] Deploying Helm chart with e2e configuration..."
 	make helm-deploy IMG=$(IMG)
 	@echo "[test-e2e-setup] Helm chart deployed and controller is available."
+	@echo "[test-e2e-setup] Waiting for controller to be ready..."
+	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=ready pod --timeout=60s -l control-plane=controller-manager
+	@echo "[test-e2e-setup] Controller is ready."
 
 .PHONY: test-e2e-cleanup
 # Clean up Kind cluster before/after e2e tests for a fully clean environment
@@ -103,15 +106,15 @@ test-e2e-cleanup:
 .PHONY: test-e2e
 # Run e2e tests with setup/cleanup
 test-e2e: test-e2e-cleanup test-e2e-setup
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v; \
+	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
 	make test-e2e-cleanup
 
 .PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter
+lint: generate golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
 
 .PHONY: lint-fix
-lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
+lint-fix: generate golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
 .PHONY: lint-config
@@ -245,10 +248,12 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+MOCKERY ?= $(LOCALBIN)/mockery
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
 CONTROLLER_TOOLS_VERSION ?= v0.18.0
+MOCKERY_VERSION ?= v3.5.2
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
@@ -282,6 +287,11 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+.PHONY: mockery
+mockery: $(MOCKERY) ## Download mockery locally if necessary.
+$(MOCKERY): $(LOCALBIN)
+	$(call go-install-tool,$(MOCKERY),github.com/vektra/mockery/v3,$(MOCKERY_VERSION))
 
 ##@ Release
 

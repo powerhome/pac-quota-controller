@@ -2,7 +2,6 @@ package quota
 
 import (
 	"context"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,26 +13,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-func TestQuota(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Quota Package Suite")
-}
-
 var _ = Describe("CRQClient", func() {
 	var (
-		ctx       context.Context
-		k8sClient client.Client
-		crqClient *CRQClient
-		sch       *runtime.Scheme
-		crq1      *quotav1alpha1.ClusterResourceQuota
-		crq2      *quotav1alpha1.ClusterResourceQuota
-		nsDev     *corev1.Namespace
-		nsProd    *corev1.Namespace
-		nsTest    *corev1.Namespace
+		ctx           context.Context
+		runtimeClient client.Client
+		crqClient     *CRQClient
+		sch           *runtime.Scheme
+		crq1          *quotav1alpha1.ClusterResourceQuota
+		crq2          *quotav1alpha1.ClusterResourceQuota
+		nsDev         *corev1.Namespace
+		nsProd        *corev1.Namespace
+		nsTest        *corev1.Namespace
 	)
-
 	BeforeEach(func() {
-		ctx = context.Background()
+		ctx = context.Background() // Entry point context for all tests
 		sch = runtime.NewScheme()
 		Expect(corev1.AddToScheme(sch)).To(Succeed())
 		Expect(quotav1alpha1.AddToScheme(sch)).To(Succeed())
@@ -87,13 +80,13 @@ var _ = Describe("CRQClient", func() {
 	})
 
 	JustBeforeEach(func() {
-		crqClient = NewCRQClient(k8sClient)
+		crqClient = NewCRQClient(runtimeClient)
 	})
 
 	Describe("ListAllCRQs", func() {
 		Context("when CRQs exist", func() {
 			BeforeEach(func() {
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2).Build()
+				runtimeClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2).Build()
 			})
 			It("should return all CRQs", func() {
 				crqs, err := crqClient.ListAllCRQs(ctx)
@@ -104,7 +97,7 @@ var _ = Describe("CRQClient", func() {
 		})
 		Context("when no CRQs exist", func() {
 			BeforeEach(func() {
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).Build()
+				runtimeClient = fake.NewClientBuilder().WithScheme(sch).Build()
 			})
 			It("should return an empty list", func() {
 				crqs, err := crqClient.ListAllCRQs(ctx)
@@ -112,13 +105,11 @@ var _ = Describe("CRQClient", func() {
 				Expect(crqs).To(BeEmpty())
 			})
 		})
-		// Error case for c.Client.List is hard to test with fake client without specific error injection.
 	})
 
 	Describe("NamespaceMatchesCRQ", func() {
 		BeforeEach(func() {
-			// k8sClient is not strictly needed for this method as it doesn't make API calls
-			k8sClient = fake.NewClientBuilder().WithScheme(sch).Build()
+			runtimeClient = fake.NewClientBuilder().WithScheme(sch).Build()
 		})
 
 		Context("when CRQ has no namespace selector", func() {
@@ -173,10 +164,10 @@ var _ = Describe("CRQClient", func() {
 	Describe("GetCRQByNamespace", func() {
 		Context("when namespace matches exactly one CRQ", func() {
 			BeforeEach(func() {
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, nsDev, nsProd).Build()
+				runtimeClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, nsDev, nsProd).Build()
 			})
 			It("should return the matching CRQ", func() {
-				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				crq, err := crqClient.GetCRQByNamespace(ctx, nsDev)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(crq).NotTo(BeNil())
 				Expect(crq.Name).To(Equal("crq-dev"))
@@ -193,10 +184,10 @@ var _ = Describe("CRQClient", func() {
 						},
 					},
 				}
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, crqBoth, nsDev, nsProd).Build()
+				runtimeClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, crqBoth, nsDev, nsProd).Build()
 			})
 			It("should return an error", func() {
-				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				crq, err := crqClient.GetCRQByNamespace(ctx, nsDev)
 				Expect(err).To(HaveOccurred())
 				Expect(crq).To(BeNil())
 				Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
@@ -207,10 +198,10 @@ var _ = Describe("CRQClient", func() {
 
 		Context("when namespace matches no CRQs", func() {
 			BeforeEach(func() {
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, nsTest).Build()
+				runtimeClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crq1, crq2, nsTest).Build()
 			})
 			It("should return nil without error", func() {
-				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsTest)
+				crq, err := crqClient.GetCRQByNamespace(ctx, nsTest)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(crq).To(BeNil())
 			})
@@ -218,10 +209,10 @@ var _ = Describe("CRQClient", func() {
 
 		Context("when no CRQs exist in the cluster", func() {
 			BeforeEach(func() {
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsDev).Build()
+				runtimeClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(nsDev).Build()
 			})
 			It("should return nil without error", func() {
-				crq, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				crq, err := crqClient.GetCRQByNamespace(ctx, nsDev)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(crq).To(BeNil())
 			})
@@ -236,10 +227,10 @@ var _ = Describe("CRQClient", func() {
 						{Key: "env", Operator: "InvalidOperator", Values: []string{"development"}},
 					},
 				}
-				k8sClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crqInvalidSelector, nsDev).Build()
+				runtimeClient = fake.NewClientBuilder().WithScheme(sch).WithObjects(crqInvalidSelector, nsDev).Build()
 			})
 			It("should propagate the error", func() {
-				_, err := crqClient.GetCRQByNamespace(context.Background(), nsDev)
+				_, err := crqClient.GetCRQByNamespace(ctx, nsDev)
 				Expect(err).To(HaveOccurred())
 			})
 		})
@@ -248,7 +239,7 @@ var _ = Describe("CRQClient", func() {
 	Describe("GetNamespacesFromStatus", func() {
 		BeforeEach(func() {
 			// k8sClient is not strictly needed for this method
-			k8sClient = fake.NewClientBuilder().WithScheme(sch).Build()
+			runtimeClient = fake.NewClientBuilder().WithScheme(sch).Build()
 		})
 		Context("when CRQ status has namespaces", func() {
 			It("should return the list of namespace names", func() {

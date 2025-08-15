@@ -298,4 +298,154 @@ var _ = Describe("Pod", func() {
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
 	})
+
+	Describe("SpecEqual", func() {
+		It("should return true for identical pod specs", func() {
+			pod1 := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("100m"),
+								},
+							},
+						},
+					},
+				},
+			}
+			pod2 := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("100m"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			Expect(SpecEqual(pod1, pod2)).To(BeTrue())
+		})
+
+		It("should return false for different pod specs", func() {
+			pod1 := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("100m"),
+								},
+							},
+						},
+					},
+				},
+			}
+			pod2 := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("200m"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			Expect(SpecEqual(pod1, pod2)).To(BeFalse())
+		})
+
+		It("should return true for nil pods", func() {
+			Expect(SpecEqual(nil, nil)).To(BeTrue())
+		})
+
+		It("should return false when one pod is nil", func() {
+			pod1 := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+						},
+					},
+				},
+			}
+
+			Expect(SpecEqual(pod1, nil)).To(BeFalse())
+			Expect(SpecEqual(nil, pod1)).To(BeFalse())
+		})
+
+		It("should handle complex pod specs", func() {
+			pod1 := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "init-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("128Mi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("200m"),
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+								},
+							},
+						},
+					},
+				},
+			}
+			pod2 := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{
+						{
+							Name: "init-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("128Mi"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "container1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("100m"),
+									corev1.ResourceMemory: resource.MustParse("256Mi"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("200m"),
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			Expect(SpecEqual(pod1, pod2)).To(BeTrue())
+		})
+	})
 })

@@ -82,7 +82,7 @@ The `pac-quota-controller` is a Kubernetes controller that extends Kubernetes wi
 
 - `api/v1alpha1/`: CRD definitions.
 - `internal/controller/`: Controller logic.
-- `internal/webhook/`: Webhook logic.
+- `pkg/webhook/`: Webhook logic.
 - `charts/pac-quota-controller/`: Helm chart.
   - `charts/pac-quota-controller/templates/`: Helm templates.
   - `charts/pac-quota-controller/values.yaml`: Default Helm values.

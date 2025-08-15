@@ -17,28 +17,28 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/spf13/cobra"
-
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"go.uber.org/zap"
+	"k8s.io/client-go/kubernetes"
+	ctrl "sigs.k8s.io/controller-runtime"
+	zapctrl "sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/powerhome/pac-quota-controller/cmd/version"
-	"github.com/powerhome/pac-quota-controller/internal/webhook/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/powerhome/pac-quota-controller/pkg/logger"
 	"github.com/powerhome/pac-quota-controller/pkg/manager"
-	"github.com/powerhome/pac-quota-controller/pkg/metrics"
-	"github.com/powerhome/pac-quota-controller/pkg/tls"
 	"github.com/powerhome/pac-quota-controller/pkg/webhook"
 )
-
-var setupLog = logf.Log.WithName("setup")
 
 // nolint:gocyclo
 func main() {
@@ -51,10 +51,13 @@ func main() {
 			// Initialize configuration
 			cfg := config.InitConfig()
 
+			// Initialize context
+			ctx := context.Background()
+
 			// Get the namespace the controller is running in
 			podNamespace, found := os.LookupEnv("POD_NAMESPACE")
 			if !found {
-				setupLog.Error(fmt.Errorf("POD_NAMESPACE environment variable not set"), "unable to determine controller namespace")
+				fmt.Fprintf(os.Stderr, "POD_NAMESPACE environment variable not set\n")
 				os.Exit(1)
 			}
 			cfg.OwnNamespace = podNamespace
@@ -63,66 +66,90 @@ func main() {
 			zapLogger := logger.SetupLogger(cfg)
 			defer func() {
 				if err := zapLogger.Sync(); err != nil {
-					setupLog.Error(err, "Failed to sync logger")
+					zapLogger.Error("Failed to sync logger", zap.Error(err))
 				}
 			}()
-			logger.ConfigureControllerRuntime(zapLogger)
+
+			// Configure controller-runtime logger to use zap for consistent JSON formatting
+			ctrl.SetLogger(zapctrl.New(zapctrl.UseDevMode(false), zapctrl.JSONEncoder()))
 
 			// Initialize scheme
 			scheme := manager.InitScheme()
 
-			// Configure TLS options
-			tlsOptions := tls.ConfigureTLS(cfg)
-
-			// Set up metrics server
-			metricsOpts, metricsCertWatcher, err := metrics.SetupMetricsServer(cfg, tlsOptions)
-			if err != nil {
-				setupLog.Error(err, "unable to set up metrics server")
-				os.Exit(1)
-			}
-			setupLog.Info("Metrics server configured", "address", metricsOpts.BindAddress)
-
-			// Set up webhook server
-			webhookServer, webhookCertWatcher := webhook.SetupWebhookServer(cfg, tlsOptions)
-
 			// Create controller manager
-			mgr, err := manager.SetupManager(cfg, scheme, metricsOpts, webhookServer)
-
+			mgr, err := manager.SetupManager(cfg, scheme)
 			if err != nil {
-				setupLog.Error(err, "unable to start manager")
+				zapLogger.Error("unable to start manager", zap.Error(err))
 				os.Exit(1)
 			}
 
 			// Set up controllers
 			if err := manager.SetupControllers(mgr, cfg); err != nil {
-				setupLog.Error(err, "unable to set up controllers")
+				zapLogger.Error("unable to set up controllers", zap.Error(err))
 				os.Exit(1)
 			}
 
-			// Add certificate watchers to manager
-			if err := manager.AddCertWatchers(mgr, metricsCertWatcher, webhookCertWatcher); err != nil {
-				setupLog.Error(err, "unable to add certificate watchers")
+			// Create kubernetes clientset for webhook server
+			clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
+			if err != nil {
+				zapLogger.Error("unable to create kubernetes clientset", zap.Error(err))
 				os.Exit(1)
 			}
-			if err := v1alpha1.SetupClusterResourceQuotaWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to set up ClusterResourceQuota webhook")
-				os.Exit(1)
+
+			// Set up Gin webhook server with manager's client for CRQ operations
+			webhookServer, webhookCertWatcher := webhook.SetupGinWebhookServer(cfg, clientset, mgr.GetClient(), zapLogger)
+
+			// Start webhook server
+			go func() {
+				if err := webhookServer.Start(ctx); err != nil {
+					zapLogger.Error("webhook server failed", zap.Error(err))
+				}
+			}()
+
+			if webhookCertWatcher != nil {
+				go func() {
+					if err := webhookCertWatcher.Start(ctx); err != nil {
+						zapLogger.Error("webhook certificate watcher failed", zap.Error(err))
+					}
+				}()
 			}
-			if err := v1alpha1.SetupNamespaceWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to set up Namespace webhook")
-				os.Exit(1)
-			}
-			if err := v1alpha1.SetupPodWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to set up Pod webhook")
-				os.Exit(1)
-			}
-			if err := v1alpha1.SetupPersistentVolumeClaimWebhookWithManager(mgr); err != nil {
-				setupLog.Error(err, "unable to set up PersistentVolumeClaim webhook")
-				os.Exit(1)
-			}
-			setupLog.Info("Webhook configured", "port", cfg.WebhookPort)
+
+			// Set up graceful shutdown
+			ctx, cancel := context.WithCancel(ctx)
+			defer cancel()
+
+			// Handle shutdown signals
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
 			// Start the manager
-			manager.Start(mgr)
+			zapLogger.Info("Starting controller manager")
+			go func() {
+				if err := mgr.Start(ctx); err != nil {
+					zapLogger.Error("controller manager failed", zap.Error(err))
+				}
+			}()
+
+			// Log when manager is elected as leader
+			go func() {
+				<-mgr.Elected()
+				zapLogger.Info("Controller manager elected as leader and ready to process resources")
+			}()
+
+			// Wait for shutdown signal
+			zapLogger.Info("Controller manager startup completed, waiting for shutdown signal")
+			<-sigChan
+			zapLogger.Info("Received shutdown signal, starting graceful shutdown")
+
+			// Stop certificate watchers
+			if webhookCertWatcher != nil {
+				webhookCertWatcher.Stop()
+			}
+
+			// Stop webhook server by canceling context
+			cancel()
+
+			zapLogger.Info("Graceful shutdown completed")
 		},
 	}
 

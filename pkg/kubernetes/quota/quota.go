@@ -12,15 +12,7 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
-type CRQClientInterface interface {
-	ListAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterResourceQuota, error)
-	GetCRQByNamespace(ctx context.Context, ns *corev1.Namespace) (*quotav1alpha1.ClusterResourceQuota, error)
-	NamespaceMatchesCRQ(ns *corev1.Namespace, crq *quotav1alpha1.ClusterResourceQuota) (bool, error)
-	GetNamespacesFromStatus(crq *quotav1alpha1.ClusterResourceQuota) []string
-}
-
 // CRQClient encapsulates logic for working with ClusterResourceQuotas
-// using a controller-runtime client.
 type CRQClient struct {
 	Client client.Client
 }
@@ -35,7 +27,7 @@ func NewCRQClient(c client.Client) *CRQClient {
 func (c *CRQClient) ListAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterResourceQuota, error) {
 	var crqList quotav1alpha1.ClusterResourceQuotaList
 	if err := c.Client.List(ctx, &crqList); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to list ClusterResourceQuotas: %w", err)
 	}
 	return crqList.Items, nil
 }
@@ -43,7 +35,8 @@ func (c *CRQClient) ListAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterRes
 // GetCRQByNamespace returns the ClusterResourceQuota that selects the given Namespace.
 // If more than one CRQ matches, it returns an error listing the matching CRQs.
 func (c *CRQClient) GetCRQByNamespace(
-	ctx context.Context, ns *corev1.Namespace,
+	ctx context.Context,
+	ns *corev1.Namespace,
 ) (*quotav1alpha1.ClusterResourceQuota, error) {
 	crqs, err := c.ListAllCRQs(ctx)
 	if err != nil {

@@ -30,20 +30,12 @@ repos:
         files: '\.go$'
         pass_filenames: false
 
-      # Generate manifests (CRDs, RBAC, etc.)
-      - id: make-manifests
-        name: Generate Manifests (make manifests)
-        entry: make manifests
-        language: system
-        files: '^(api/|config/|internal/controller/|internal/webhook/).*\.go$'
-        pass_filenames: false
-
-      # Generate code (deepcopy, etc.)
-      - id: make-generate
-        name: Generate Code (make generate)
+      # Generate mocks using mockery
+      - id: mockery-generate
+        name: Generate Mocks (make generate)
         entry: make generate
         language: system
-        files: '^api/.*\.go$'
+        files: '^pkg/kubernetes/.*\.go$'
         pass_filenames: false
 
       # Unit tests
