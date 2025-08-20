@@ -176,12 +176,11 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.securityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
 | controllerManager.serviceAccount.annotations | object | `{}` |  |
 | controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
-| controllerManager.terminationGracePeriodSeconds | int | `15` |  |
-| crd.enable | bool | `true` |  |
-| crd.keep | bool | `true` |  |
+| controllerManager.terminationGracePeriodSeconds | int | `10` |  |
 | metrics.enable | bool | `true` |  |
 | networkPolicy.enable | string | `"enable"` |  |
 | prometheus.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |
 | webhook.enable | bool | `true` |  |
+| webhook.excludedNamespaces[0] | string | `"kube-system"` |  |
