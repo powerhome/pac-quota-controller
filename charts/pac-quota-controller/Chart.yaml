@@ -14,7 +14,3 @@ keywords:
   - kubernetes
   - quota
   - resource-management
-annotations:
-  artifacthub.io/images: |
-    - name: pac-quota-controller
-      image: ghcr.io/powerhome/pac-quota-controller:latest

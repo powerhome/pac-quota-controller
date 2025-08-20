@@ -30,4 +30,4 @@ jobs:
       - name: Package and push chart
         run: |
           helm package charts/pac-quota-controller
-          helm push pac-quota-controller-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/powerhome/pac-quota-controller/charts
+          helm push pac-quota-controller-${{ steps.version.outputs.version }}.tgz oci://ghcr.io/powerhome/pac-quota-controller
