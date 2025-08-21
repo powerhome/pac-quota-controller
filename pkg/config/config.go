@@ -125,7 +125,11 @@ func SetupFlags(cmd *cobra.Command) {
 		"pac-quota-controller.powerapp.cloud/exclude",
 		"The label key used to mark namespaces for exclusion. Any namespace with this label will be ignored.",
 	)
-	cmd.Flags().String("excluded-namespaces", "", "Comma-separated list of namespaces to exclude from reconciliation and webhook validation.")
+	cmd.Flags().String(
+		"excluded-namespaces",
+		"",
+		"Comma-separated list of namespaces to exclude from reconciliation and webhook validation.",
+	)
 
 	// Bind flags to viper
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {
