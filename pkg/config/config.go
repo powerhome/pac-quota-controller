@@ -13,26 +13,23 @@ var setupLog = logf.Log.WithName("setup.config")
 
 // Config holds the controller configuration
 type Config struct {
-	MetricsAddr                 string
-	MetricsCertPath             string
-	MetricsCertName             string
-	MetricsCertKey              string
-	WebhookCertPath             string
-	WebhookCertName             string
-	WebhookCertKey              string
-	WebhookPort                 int
-	EnableLeaderElection        bool
-	LeaderElectionNamespace     string
-	LeaderElectionLeaseDuration int
-	LeaderElectionRenewDeadline int
-	LeaderElectionRetryPeriod   int
-	ProbeAddr                   string
-	SecureMetrics               bool
-	EnableHTTP2                 bool
-	LogLevel                    string
-	LogFormat                   string
-	ExcludeNamespaceLabelKey    string
-	OwnNamespace                string
+	MetricsAddr              string
+	MetricsCertPath          string
+	MetricsCertName          string
+	MetricsCertKey           string
+	WebhookCertPath          string
+	WebhookCertName          string
+	WebhookCertKey           string
+	WebhookPort              int
+	EnableLeaderElection     bool
+	ProbeAddr                string
+	SecureMetrics            bool
+	EnableHTTP2              bool
+	LogLevel                 string
+	LogFormat                string
+	ExcludeNamespaceLabelKey string
+	ExcludedNamespaces       []string
+	OwnNamespace             string
 }
 
 // setDefaults configures the default values for configuration parameters
@@ -53,6 +50,7 @@ func setDefaults() {
 	viper.SetDefault("log-level", "info")
 	viper.SetDefault("log-format", "json")
 	viper.SetDefault("exclude-namespace-label-key", "pac-quota-controller.powerapp.cloud/exclude")
+	viper.SetDefault("excluded-namespaces", "")
 }
 
 // InitConfig initializes viper configuration with environment variables support
@@ -63,26 +61,32 @@ func InitConfig() *Config {
 	// Define defaults
 	setDefaults()
 
+	var excluded []string
+	if v := viper.GetString("excluded-namespaces"); v != "" {
+		for _, ns := range strings.Split(v, ",") {
+			ns = strings.TrimSpace(ns)
+			if ns != "" {
+				excluded = append(excluded, ns)
+			}
+		}
+	}
 	return &Config{
-		MetricsAddr:                 viper.GetString("metrics-bind-address"),
-		ProbeAddr:                   viper.GetString("health-probe-bind-address"),
-		EnableLeaderElection:        viper.GetBool("leader-elect"),
-		LeaderElectionNamespace:     viper.GetString("leader-election-namespace"),
-		LeaderElectionLeaseDuration: viper.GetInt("leader-election-lease-duration"),
-		LeaderElectionRenewDeadline: viper.GetInt("leader-election-renew-deadline"),
-		LeaderElectionRetryPeriod:   viper.GetInt("leader-election-retry-period"),
-		SecureMetrics:               viper.GetBool("metrics-secure"),
-		WebhookCertPath:             viper.GetString("webhook-cert-path"),
-		WebhookCertName:             viper.GetString("webhook-cert-name"),
-		WebhookCertKey:              viper.GetString("webhook-cert-key"),
-		MetricsCertPath:             viper.GetString("metrics-cert-path"),
-		MetricsCertName:             viper.GetString("metrics-cert-name"),
-		MetricsCertKey:              viper.GetString("metrics-cert-key"),
-		EnableHTTP2:                 viper.GetBool("enable-http2"),
-		LogLevel:                    viper.GetString("log-level"),
-		LogFormat:                   viper.GetString("log-format"),
-		WebhookPort:                 viper.GetInt("webhook-port"),
-		ExcludeNamespaceLabelKey:    viper.GetString("exclude-namespace-label-key"),
+		MetricsAddr:              viper.GetString("metrics-bind-address"),
+		ProbeAddr:                viper.GetString("health-probe-bind-address"),
+		EnableLeaderElection:     viper.GetBool("leader-elect"),
+		SecureMetrics:            viper.GetBool("metrics-secure"),
+		WebhookCertPath:          viper.GetString("webhook-cert-path"),
+		WebhookCertName:          viper.GetString("webhook-cert-name"),
+		WebhookCertKey:           viper.GetString("webhook-cert-key"),
+		MetricsCertPath:          viper.GetString("metrics-cert-path"),
+		MetricsCertName:          viper.GetString("metrics-cert-name"),
+		MetricsCertKey:           viper.GetString("metrics-cert-key"),
+		EnableHTTP2:              viper.GetBool("enable-http2"),
+		LogLevel:                 viper.GetString("log-level"),
+		LogFormat:                viper.GetString("log-format"),
+		WebhookPort:              viper.GetInt("webhook-port"),
+		ExcludeNamespaceLabelKey: viper.GetString("exclude-namespace-label-key"),
+		ExcludedNamespaces:       excluded,
 	}
 }
 
@@ -121,6 +125,7 @@ func SetupFlags(cmd *cobra.Command) {
 		"pac-quota-controller.powerapp.cloud/exclude",
 		"The label key used to mark namespaces for exclusion. Any namespace with this label will be ignored.",
 	)
+	cmd.Flags().String("excluded-namespaces", "", "Comma-separated list of namespaces to exclude from reconciliation and webhook validation.")
 
 	// Bind flags to viper
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {

@@ -33,7 +33,7 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-            {{- range .Values.webhook.excludedNamespaces }}
+            {{- range .Values.excludedNamespaces }}
             - {{ . | quote }}
             {{- end }}
             - {{ .Release.Namespace | quote }}
@@ -60,7 +60,7 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-            {{- range .Values.webhook.excludedNamespaces }}
+            {{- range .Values.excludedNamespaces }}
             - {{ . | quote }}
             {{- end }}
             - {{ .Release.Namespace | quote }}
@@ -87,7 +87,7 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-            {{- range .Values.webhook.excludedNamespaces }}
+            {{- range .Values.excludedNamespaces }}
             - {{ . | quote }}
             {{- end }}
             - {{ .Release.Namespace | quote }}
@@ -114,7 +114,7 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-            {{- range .Values.webhook.excludedNamespaces }}
+            {{- range .Values.excludedNamespaces }}
             - {{ . | quote }}
             {{- end }}
             - {{ .Release.Namespace | quote }}

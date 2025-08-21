@@ -9,7 +9,7 @@ A Helm chart for PAC Quota Controller - Managing cluster resource quotas across 
 ## TL;DR
 
 ```console
-helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
+helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
 ## Introduction
@@ -33,7 +33,8 @@ You can configure which registry to use by modifying the `controllerManager.cont
 - Kubernetes 1.19+
 - Helm 3.8.0+
 
-## Installation
+## Installing
+
 You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
 
 This chart is the single source of truth for deploying PAC Quota Controller. All manifests (CRDs, RBAC, webhooks, cert-manager, etc.) are managed here. Do not use Kustomize or Kubebuilder-generated manifests for deployment or testing.
@@ -41,7 +42,7 @@ This chart is the single source of truth for deploying PAC Quota Controller. All
 To install the chart with the release name `pac-quota-controller`:
 
 ```sh
-helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system --create-namespace
+helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
 ### Private Images
@@ -69,7 +70,7 @@ kubectl create secret docker-registry ghcr-creds \
 To upgrade the chart:
 
 ```sh
-helm upgrade pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller-chart --version <version> -n pac-quota-controller-system
+helm upgrade pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller --version <version> -n pac-quota-controller-system
 ```
 
 ## Uninstalling the Chart
@@ -177,10 +178,10 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.serviceAccount.annotations | object | `{}` |  |
 | controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
 | controllerManager.terminationGracePeriodSeconds | int | `10` |  |
+| excludedNamespaces[0] | string | `"kube-system"` |  |
 | metrics.enable | bool | `true` |  |
-| networkPolicy.enable | string | `"enable"` |  |
+| networkPolicy.enable | bool | `true` |  |
 | prometheus.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |
 | webhook.enable | bool | `true` |  |
-| webhook.excludedNamespaces[0] | string | `"kube-system"` |  |

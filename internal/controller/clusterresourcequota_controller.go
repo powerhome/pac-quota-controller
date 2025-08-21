@@ -109,13 +109,19 @@ type ClusterResourceQuotaReconciler struct {
 	StorageCalculator        *storage.StorageResourceCalculator
 	OwnNamespace             string
 	ExcludeNamespaceLabelKey string
+	ExcludedNamespaces       []string
 }
 
 // isNamespaceExcluded checks if a namespace should be ignored by the controller.
-// It checks if the namespace is the controller's own namespace or if it has the exclusion label.
+// It checks if the namespace is the controller's own namespace, in the excluded list, or has the exclusion label.
 func (r *ClusterResourceQuotaReconciler) isNamespaceExcluded(ns *corev1.Namespace) bool {
 	if ns.Name == r.OwnNamespace {
 		return true
+	}
+	for _, excluded := range r.ExcludedNamespaces {
+		if ns.Name == excluded {
+			return true
+		}
 	}
 	if r.ExcludeNamespaceLabelKey == "" {
 		return false

@@ -274,7 +274,12 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				Client:                   fakeClient,
 				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
 				OwnNamespace:             "pac-quota-controller-system",
+				ExcludedNamespaces:       []string{"excluded-ns", "another-excluded-ns"},
 			}
+		})
+		It("should identify a namespace in the excludedNamespaces list", func() {
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "excluded-ns"}}
+			Expect(reconciler.isNamespaceExcluded(ns)).To(BeTrue())
 		})
 
 		It("should identify its own namespace as excluded", func() {

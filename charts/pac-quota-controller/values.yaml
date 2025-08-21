@@ -72,6 +72,6 @@ networkPolicy:
 webhook:
   enable: true
   dryRunOnly: false
-  # List of namespaces to exclude from webhook validation
-  excludedNamespaces:
-    - kube-system
+
+excludedNamespaces:
+  - kube-system

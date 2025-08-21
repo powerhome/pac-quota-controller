@@ -84,6 +84,7 @@ func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
 		Scheme:                   mgr.GetScheme(),
 		ComputeCalculator:        computeCalculator,
 		ExcludeNamespaceLabelKey: cfg.ExcludeNamespaceLabelKey,
+		ExcludedNamespaces:       cfg.ExcludedNamespaces,
 		OwnNamespace:             cfg.OwnNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error("unable to create controller", zap.Error(err), zap.String("controller", "ClusterResourceQuota"))
