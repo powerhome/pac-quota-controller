@@ -1,3 +1,11 @@
+{{- define "pacQuota.excludedNamespaces" -}}
+  {{- $default := list "kube-system" .Release.Namespace }}
+  {{- $user := .Values.excludedNamespaces | default (list) }}
+  {{- $all := concat $default $user }}
+  {{- $deduped := uniq $all }}
+  {{- $deduped | toYaml | nindent 0 -}}
+{{- end }}
+
 {{- define "chart.name" -}}
 {{- if .Chart }}
   {{- if .Chart.Name }}

@@ -33,10 +33,9 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-            {{- range .Values.excludedNamespaces }}
+            {{- range (include "pacQuota.excludedNamespaces" . | fromYaml) }}
             - {{ . | quote }}
             {{- end }}
-            - {{ .Release.Namespace | quote }}
   - name: vnamespace-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None

@@ -45,9 +45,7 @@ spec:
             {{- if .Values.controllerManager.excludeNamespaceLabelKey }}
             - --exclude-namespace-label-key={{ .Values.controllerManager.excludeNamespaceLabelKey }}
             {{- end }}
-            {{- if .Values.controllerManager.excludedNamespaces }}
-            - --excluded-namespaces={{ join "," .Values.controllerManager.excludedNamespaces }}
-            {{- end }}
+            - --excluded-namespaces={{ include "pacQuota.excludedNamespaces" . | fromYaml | join "," }}
             {{- if .Values.webhook.dryRunOnly }}
             - --webhook-dry-run-only=true
             {{- end }}
