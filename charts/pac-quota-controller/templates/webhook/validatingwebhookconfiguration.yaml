@@ -33,9 +33,9 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-            {{- range (include "pacQuota.excludedNamespaces" . | fromYaml) }}
-            - {{ . | quote }}
-            {{- end }}
+          {{- range (include "pacQuota.excludedNamespacesList" . | splitList " ") }}
+          - {{ . | quote }}
+          {{- end }}
   - name: vnamespace-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
@@ -59,10 +59,9 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-            {{- range .Values.excludedNamespaces }}
-            - {{ . | quote }}
-            {{- end }}
-            - {{ .Release.Namespace | quote }}
+          {{- range (include "pacQuota.excludedNamespacesList" . | splitList " ") }}
+          - {{ . | quote }}
+          {{- end }}
   - name: vpod-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
@@ -86,10 +85,9 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-            {{- range .Values.excludedNamespaces }}
-            - {{ . | quote }}
-            {{- end }}
-            - {{ .Release.Namespace | quote }}
+          {{- range (include "pacQuota.excludedNamespacesList" . | splitList " ") }}
+          - {{ . | quote }}
+          {{- end }}
   - name: vpersistentvolumeclaim-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
@@ -113,8 +111,7 @@ webhooks:
         - key: kubernetes.io/metadata.name
           operator: NotIn
           values:
-            {{- range .Values.excludedNamespaces }}
-            - {{ . | quote }}
-            {{- end }}
-            - {{ .Release.Namespace | quote }}
+          {{- range (include "pacQuota.excludedNamespacesList" . | splitList " ") }}
+          - {{ . | quote }}
+          {{- end }}
 {{- end }}

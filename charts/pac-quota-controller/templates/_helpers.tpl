@@ -1,9 +1,24 @@
-{{- define "pacQuota.excludedNamespaces" -}}
+
+{{/*
+Returns a deduplicated YAML list of excluded namespaces (for use in values blocks)
+*/}}
+{{- define "pacQuota.excludedNamespacesList" -}}
   {{- $default := list "kube-system" .Release.Namespace }}
   {{- $user := .Values.excludedNamespaces | default (list) }}
   {{- $all := concat $default $user }}
   {{- $deduped := uniq $all }}
-  {{- $deduped | toYaml | nindent 0 -}}
+  {{- join " " $deduped -}}
+{{- end }}
+
+{{/*
+Returns a deduplicated, comma-separated string of excluded namespaces (for CLI args)
+*/}}
+{{- define "pacQuota.excludedNamespacesString" -}}
+  {{- $default := list "kube-system" .Release.Namespace }}
+  {{- $user := .Values.excludedNamespaces | default (list) }}
+  {{- $all := concat $default $user }}
+  {{- $deduped := uniq $all }}
+  {{- join "," $deduped -}}
 {{- end }}
 
 {{- define "chart.name" -}}
