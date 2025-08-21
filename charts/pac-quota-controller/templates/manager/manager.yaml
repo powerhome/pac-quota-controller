@@ -39,16 +39,19 @@ spec:
       containers:
         - name: manager
           args:
-            {{- range .Values.controllerManager.container.args }}
-            - {{ . }}
-            {{- end }}
-            {{- if .Values.controllerManager.excludeNamespaceLabelKey }}
-            - --exclude-namespace-label-key={{ .Values.controllerManager.excludeNamespaceLabelKey }}
-            {{- end }}
-            {{- if .Values.webhook.dryRunOnly }}
-            - --webhook-dry-run-only=true
-            {{- end }}
-            - --webhook-cert-path={{ .Values.controllerManager.container.webhookCertPath }}
+        {{- range .Values.controllerManager.container.args }}
+        - {{ . }}
+        {{- end }}
+        {{- if .Values.controllerManager.excludeNamespaceLabelKey }}
+        - --exclude-namespace-label-key={{ .Values.controllerManager.excludeNamespaceLabelKey }}
+        {{- end }}
+        {{- if .Values.controllerManager.excludedNamespaces }}
+        - --excluded-namespaces={{ join "," .Values.controllerManager.excludedNamespaces }}
+        {{- end }}
+        {{- if .Values.webhook.dryRunOnly }}
+        - --webhook-dry-run-only=true
+        {{- end }}
+        - --webhook-cert-path={{ .Values.controllerManager.container.webhookCertPath }}
           ports:
           - containerPort: 9443
             name: webhook-server
