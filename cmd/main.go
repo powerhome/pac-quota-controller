@@ -54,14 +54,6 @@ func main() {
 			// Initialize context
 			ctx := context.Background()
 
-			// Get the namespace the controller is running in
-			podNamespace, found := os.LookupEnv("POD_NAMESPACE")
-			if !found {
-				fmt.Fprintf(os.Stderr, "POD_NAMESPACE environment variable not set\n")
-				os.Exit(1)
-			}
-			cfg.OwnNamespace = podNamespace
-
 			// Set up logging
 			zapLogger := logger.SetupLogger(cfg)
 			defer func() {

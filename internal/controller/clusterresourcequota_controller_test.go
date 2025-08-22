@@ -34,8 +34,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
+
+var testOwnNamespace string = "pac-quota-controller-system"
 
 // --- Fakes for error path testing ---
 // Only for forcing errors in the kubeclient
@@ -152,10 +155,6 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		var testNamespace *corev1.Namespace
 
 		BeforeEach(func() {
-			reconciler = &ClusterResourceQuotaReconciler{
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
-				OwnNamespace:             "pac-quota-controller-system",
-			}
 			testNamespace = &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-namespace",
@@ -163,6 +162,11 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 						"team": "test",
 					},
 				},
+			}
+			c := fake.NewClientBuilder().WithObjects(testNamespace).Build()
+			reconciler = &ClusterResourceQuotaReconciler{
+				Client:                   c,
+				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
 			}
 		})
 
@@ -200,9 +204,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 		It("should exclude the controller's own namespace and namespaces with the exclusion label", func() {
 			// Test own namespace exclusion
+			reconciler.ExcludedNamespaces = append(reconciler.ExcludedNamespaces, testOwnNamespace)
 			ownNamespace := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: reconciler.OwnNamespace,
+					Name: testOwnNamespace,
 					Labels: map[string]string{
 						"team": "test",
 					},
@@ -273,14 +278,19 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			reconciler = &ClusterResourceQuotaReconciler{
 				Client:                   fakeClient,
 				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
-				OwnNamespace:             "pac-quota-controller-system",
+				ExcludedNamespaces:       []string{"excluded-ns", "another-excluded-ns"},
 			}
+		})
+		It("should identify a namespace in the excludedNamespaces list", func() {
+			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "excluded-ns"}}
+			Expect(reconciler.isNamespaceExcluded(ns)).To(BeTrue())
 		})
 
 		It("should identify its own namespace as excluded", func() {
+			reconciler.ExcludedNamespaces = append(reconciler.ExcludedNamespaces, testOwnNamespace)
 			ownNamespace := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: reconciler.OwnNamespace,
+					Name: testOwnNamespace,
 				},
 			}
 			Expect(reconciler.isNamespaceExcluded(ownNamespace)).To(BeTrue())
@@ -308,9 +318,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		})
 
 		It("should return no requests for an excluded namespace", func() {
+			reconciler.ExcludedNamespaces = append(reconciler.ExcludedNamespaces, testOwnNamespace)
 			excludedNamespace := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: reconciler.OwnNamespace,
+					Name: testOwnNamespace,
 				},
 			}
 			requests := reconciler.findQuotasForObject(ctx, excludedNamespace)
@@ -318,9 +329,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		})
 
 		It("should return no requests for an object in an excluded namespace", func() {
+			reconciler.ExcludedNamespaces = append(reconciler.ExcludedNamespaces, testOwnNamespace)
 			excludedNamespace := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: reconciler.OwnNamespace,
+					Name: testOwnNamespace,
 				},
 			}
 			pod := &corev1.Pod{
@@ -331,18 +343,6 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 			requests := reconciler.findQuotasForObject(ctx, pod)
 			Expect(requests).To(BeEmpty())
-		})
-
-		It("should identify its own namespace as excluded, even if it matches the selector and has no exclusion label", func() {
-			ownNamespace := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: reconciler.OwnNamespace,
-					Labels: map[string]string{
-						"team": "test",
-					},
-				},
-			}
-			Expect(reconciler.isNamespaceExcluded(ownNamespace)).To(BeTrue())
 		})
 	})
 
@@ -464,7 +464,6 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			reconciler = &ClusterResourceQuotaReconciler{
 				Client:                   basicClient,
 				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
-				OwnNamespace:             "pac-quota-controller-system",
 			}
 			testNamespace = &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
@@ -584,10 +583,6 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		var testNamespace *corev1.Namespace
 
 		BeforeEach(func() {
-			reconciler = &ClusterResourceQuotaReconciler{
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
-				OwnNamespace:             "pac-quota-controller-system",
-			}
 			testNamespace = &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-namespace",
@@ -596,12 +591,17 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 					},
 				},
 			}
+			c := fake.NewClientBuilder().WithObjects(testNamespace).Build()
+			reconciler = &ClusterResourceQuotaReconciler{
+				Client:                   c,
+				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
+			}
 		})
 
 		It("should handle large number of CRQs efficiently", func() {
 			// Create 100 CRQs
 			var crqs []quotav1alpha1.ClusterResourceQuota
-			for i := 0; i < 100; i++ {
+			for i := range 100 {
 				crq := quotav1alpha1.ClusterResourceQuota{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: fmt.Sprintf("crq-%d", i),
@@ -674,9 +674,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		var reconciler *ClusterResourceQuotaReconciler
 
 		BeforeEach(func() {
+			c := fake.NewClientBuilder().Build()
 			reconciler = &ClusterResourceQuotaReconciler{
+				Client:                   c,
 				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
-				OwnNamespace:             "pac-quota-controller-system",
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
@@ -741,9 +742,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		var reconciler *ClusterResourceQuotaReconciler
 
 		BeforeEach(func() {
+			c := fake.NewClientBuilder().Build()
 			reconciler = &ClusterResourceQuotaReconciler{
+				Client:                   c,
 				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
-				OwnNamespace:             "pac-quota-controller-system",
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
@@ -771,9 +773,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		var reconciler *ClusterResourceQuotaReconciler
 
 		BeforeEach(func() {
+			c := fake.NewClientBuilder().Build()
 			reconciler = &ClusterResourceQuotaReconciler{
+				Client:                   c,
 				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
-				OwnNamespace:             "pac-quota-controller-system",
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
@@ -816,14 +819,6 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		var testNamespace *corev1.Namespace
 
 		BeforeEach(func() {
-			reconciler = &ClusterResourceQuotaReconciler{
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
-				OwnNamespace:             "pac-quota-controller-system",
-			}
-			// Set a mock CRQ client to prevent nil pointer dereference
-			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
-			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
-			reconciler.crqClient = mockCRQClient
 			testNamespace = &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-namespace",
@@ -832,6 +827,15 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 					},
 				},
 			}
+			c := fake.NewClientBuilder().WithObjects(testNamespace).Build()
+			reconciler = &ClusterResourceQuotaReconciler{
+				Client:                   c,
+				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
+			}
+			// Set a mock CRQ client to prevent nil pointer dereference
+			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(nil, nil).Maybe()
+			reconciler.crqClient = mockCRQClient
 		})
 
 		It("should handle context cancellation", func() {

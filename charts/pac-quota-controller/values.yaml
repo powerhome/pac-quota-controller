@@ -53,10 +53,6 @@ controllerManager:
 rbac:
   enable: true
 
-crd:
-  enable: true
-  keep: true
-
 metrics:
   enable: true
 
@@ -71,8 +67,11 @@ certmanager:
   # Please install cert-manager separately in your cluster. See README for details.
 
 networkPolicy:
-  enable: enable
+  enable: true
 
 webhook:
   enable: true
   dryRunOnly: false
+
+excludedNamespaces:
+  - kube-system

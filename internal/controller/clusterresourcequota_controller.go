@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -52,7 +53,6 @@ var log = logf.Log.WithName("clusterresourcequota-controller")
 // Pods going from pending to running or from running to pending
 // are not considered terminal and do not trigger reconciliation.
 // AKA should be accounted for the resource usage
-
 type resourceUpdatePredicate struct {
 	predicate.Funcs
 }
@@ -107,14 +107,14 @@ type ClusterResourceQuotaReconciler struct {
 	crqClient                quota.CRQClientInterface
 	ComputeCalculator        *pod.PodResourceCalculator
 	StorageCalculator        *storage.StorageResourceCalculator
-	OwnNamespace             string
 	ExcludeNamespaceLabelKey string
+	ExcludedNamespaces       []string
 }
 
 // isNamespaceExcluded checks if a namespace should be ignored by the controller.
-// It checks if the namespace is the controller's own namespace or if it has the exclusion label.
+// It checks if the namespace is the controller's own namespace, in the excluded list, or has the exclusion label.
 func (r *ClusterResourceQuotaReconciler) isNamespaceExcluded(ns *corev1.Namespace) bool {
-	if ns.Name == r.OwnNamespace {
+	if slices.Contains(r.ExcludedNamespaces, ns.Name) {
 		return true
 	}
 	if r.ExcludeNamespaceLabelKey == "" {
@@ -198,7 +198,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	crq *quotav1alpha1.ClusterResourceQuota,
 	namespaces []string,
 ) (quotav1alpha1.ResourceList, []quotav1alpha1.ResourceQuotaStatusByNamespace) {
-	log.Info("Calculating resource usage...", "crq", crq.Name)
+	log.Info("Calculating resource usage", "crq", crq.Name)
 
 	totalUsage := make(quotav1alpha1.ResourceList)
 	usageByNamespace := make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))
@@ -488,7 +488,7 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		r.ComputeCalculator = pod.NewPodResourceCalculator(clientset)
 	}
 
-	log.Info("Setting up ClusterResourceQuota controller", "ownNamespace", r.OwnNamespace)
+	log.Info("Setting up ClusterResourceQuota controller")
 
 	// Predicate to filter out updates to status subresource
 	// This prevents reconcile loops caused by status updates
@@ -497,25 +497,22 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	resourcePredicate := resourceUpdatePredicate{}
 
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&quotav1alpha1.ClusterResourceQuota{}).
-		// Watch for changes to Namespaces and trigger reconciliation for associated CRQs using the unified handler.
-		Watches(
-			&corev1.Namespace{},
-			handler.EnqueueRequestsFromMapFunc(r.findQuotasForObject),
-		)
+		For(&quotav1alpha1.ClusterResourceQuota{})
 
-	// Watch for changes to tracked resources and trigger reconciliation for associated CRQs using the unified handler.
-	// TODO: Add more resources as needed.
-	watchedObjectTypes := []client.Object{
-		&corev1.Pod{},
-		&corev1.PersistentVolumeClaim{},
+		// Watch for changes to tracked resources and trigger reconciliation for associated CRQs
+	watchedObjectTypes := []struct {
+		obj   client.Object
+		preds []predicate.Predicate
+	}{
+		{&corev1.Namespace{}, nil},
+		{&corev1.Pod{}, []predicate.Predicate{resourcePredicate}},
+		{&corev1.PersistentVolumeClaim{}, nil},
 	}
-
-	for _, objType := range watchedObjectTypes {
+	for _, w := range watchedObjectTypes {
 		b = b.Watches(
-			objType,
+			w.obj,
 			handler.EnqueueRequestsFromMapFunc(r.findQuotasForObject),
-			builder.WithPredicates(resourcePredicate),
+			builder.WithPredicates(w.preds...),
 		)
 	}
 
