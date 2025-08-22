@@ -34,18 +34,12 @@ func SetupManager(
 	cfg *config.Config,
 	scheme *k8sruntime.Scheme,
 ) (ctrl.Manager, error) {
-	// Determine leader election namespace
-	leaderElectionNamespace := cfg.LeaderElectionNamespace
-	if leaderElectionNamespace == "" {
-		leaderElectionNamespace = cfg.OwnNamespace
-	}
 
 	// Setup manager options
 	options := ctrl.Options{
-		Scheme:                  scheme,
-		LeaderElection:          cfg.EnableLeaderElection,
-		LeaderElectionID:        "81307769.powerapp.cloud",
-		LeaderElectionNamespace: leaderElectionNamespace,
+		Scheme:           scheme,
+		LeaderElection:   cfg.EnableLeaderElection,
+		LeaderElectionID: "81307769.powerapp.cloud",
 	}
 
 	// Configure leader election timing if enabled
@@ -85,7 +79,6 @@ func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
 		ComputeCalculator:        computeCalculator,
 		ExcludeNamespaceLabelKey: cfg.ExcludeNamespaceLabelKey,
 		ExcludedNamespaces:       cfg.ExcludedNamespaces,
-		OwnNamespace:             cfg.OwnNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error("unable to create controller", zap.Error(err), zap.String("controller", "ClusterResourceQuota"))
 		return err

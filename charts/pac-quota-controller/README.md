@@ -177,7 +177,7 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.securityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
 | controllerManager.serviceAccount.annotations | object | `{}` |  |
 | controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
-| controllerManager.terminationGracePeriodSeconds | int | `10` |  |
+| controllerManager.terminationGracePeriodSeconds | int | `15` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
 | metrics.enable | bool | `true` |  |
 | networkPolicy.enable | bool | `true` |  |
