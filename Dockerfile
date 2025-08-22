@@ -22,7 +22,7 @@ COPY pkg/ pkg/
 # was called. For example, if we run 'make docker-build' in a local environment with an Apple Silicon M1
 # system, the Docker BUILDPLATFORM argument will be linux/arm64, whereas for Apple x86 it will be linux/amd64.
 # By leaving GOARCH empty, we ensure that the container and the binary it ships will have the same platform.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o manager cmd/main.go
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -ldflags="-s -w" -o manager cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
