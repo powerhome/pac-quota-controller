@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 	corev1 "k8s.io/api/core/v1"
@@ -81,13 +80,9 @@ func (c *ServiceResourceCalculator) countServicesByType(ctx context.Context, nam
 		corev1.ServiceTypeNodePort:     0,
 		corev1.ServiceTypeLoadBalancer: 0,
 	}
-	// DEBUG: Print all services being counted
-	fmt.Printf("[DEBUG] Counting services in namespace %s:\n", namespace)
 	for _, svc := range serviceList.Items {
-		fmt.Printf("[DEBUG]   SERVICE: %s/%s type=%s\n", svc.Namespace, svc.Name, svc.Spec.Type)
 		byType[svc.Spec.Type]++
 	}
 	total = int64(len(serviceList.Items))
-	fmt.Printf("[DEBUG] Total services counted: %d\n", total)
 	return total, byType, nil
 }

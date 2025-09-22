@@ -19,7 +19,6 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"os/exec"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -72,13 +71,4 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	By("Dumping pac-quota-controller logs before cluster teardown")
-	// Try to get logs from all pods in the pac-quota-controller-system namespace
-	cmd := exec.Command("kubectl", "-n", "pac-quota-controller-system", "logs", "-l", "app.kubernetes.io/name=pac-quota-controller", "--tail=1000", "--ignore-errors=true")
-	logs, err := cmd.CombinedOutput()
-	if err == nil {
-		GinkgoWriter.Printf("\n--- pac-quota-controller logs ---\n%s\n", string(logs))
-	} else {
-		GinkgoWriter.Printf("\n[WARN] Failed to get pac-quota-controller logs: %v\n", err)
-	}
 })

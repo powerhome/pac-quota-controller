@@ -181,7 +181,6 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	log.Info("Found namespaces matching selection criteria", "count", len(selectedNamespaces), "namespaces", selectedNamespaces)
-	fmt.Printf("[DEBUG] selectedNamespaces after selector: %#v\n", selectedNamespaces)
 
 	// Calculate aggregated resource usage across all selected namespaces
 	totalUsage, usageByNamespace := r.calculateAndAggregateUsage(ctx, crq, selectedNamespaces)

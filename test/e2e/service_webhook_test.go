@@ -34,8 +34,6 @@ var _ = Describe("Service Quota Webhook", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-
-
 		crq, err = testutils.CreateClusterResourceQuota(ctx, k8sClient, testCRQName, &metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				uniqueLabelKey: uniqueLabelValue,
@@ -46,8 +44,6 @@ var _ = Describe("Service Quota Webhook", func() {
 			corev1.ResourceName("services.nodeports"):     resource.MustParse("1"),
 		})
 		Expect(err).NotTo(HaveOccurred())
-
-
 
 		// Wait for CRQ status to include the test namespace before proceeding
 		By("Waiting for CRQ status to include the test namespace")

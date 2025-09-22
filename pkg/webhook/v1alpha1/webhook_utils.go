@@ -150,12 +150,6 @@ func calculateCRQCurrentUsage(
 		return resource.Quantity{}, fmt.Errorf("failed to get namespaces matching CRQ selector: %w", err)
 	}
 
-	// DEBUG: Print the namespaces selected by the CRQ's selector
-	log.Info("DEBUG: Namespaces selected by CRQ selector",
-		zap.String("crq", crq.Name),
-		zap.Strings("selected_namespaces", namespaceNames),
-		zap.String("resource", string(resourceName)))
-
 	log.Info("Calculating usage across CRQ namespaces",
 		zap.String("crq", crq.Name),
 		zap.String("resource", string(resourceName)),
