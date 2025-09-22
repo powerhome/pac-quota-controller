@@ -26,7 +26,9 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -107,6 +109,7 @@ type ClusterResourceQuotaReconciler struct {
 	crqClient                quota.CRQClientInterface
 	ComputeCalculator        *pod.PodResourceCalculator
 	StorageCalculator        *storage.StorageResourceCalculator
+	ServiceCalculator        services.ServiceResourceCalculatorInterface
 	ExcludeNamespaceLabelKey string
 	ExcludedNamespaces       []string
 }
@@ -178,12 +181,17 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	log.Info("Found namespaces matching selection criteria", "count", len(selectedNamespaces), "namespaces", selectedNamespaces)
+	fmt.Printf("[DEBUG] selectedNamespaces after selector: %#v\n", selectedNamespaces)
 
 	// Calculate aggregated resource usage across all selected namespaces
 	totalUsage, usageByNamespace := r.calculateAndAggregateUsage(ctx, crq, selectedNamespaces)
 
 	// Update the status of the ClusterResourceQuota
 	if err := r.updateStatus(ctx, crq, totalUsage, usageByNamespace); err != nil {
+		if errors.IsNotFound(err) {
+			log.Info("CRQ not found during status update, likely deleted. Skipping status update.", "name", crq.Name)
+			return ctrl.Result{}, nil
+		}
 		log.Error(err, "Failed to update ClusterResourceQuota status")
 		return ctrl.Result{}, err
 	}
@@ -280,6 +288,11 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 		}
 
 		for _, nsName := range namespaces {
+			// If nsName is empty, skip usage calculation for this entry
+			if nsName == "" {
+				log.Info("Skipping usage calculation for empty namespace name")
+				continue
+			}
 			var currentUsage resource.Quantity
 
 			// Dispatch to the correct calculation function based on the resource type
@@ -323,12 +336,23 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 }
 
 // calculateObjectCount calculates the usage for object count quotas.
-func (r *ClusterResourceQuotaReconciler) calculateObjectCount(_ context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
-	// TODO: Implement listing and counting for the specific object type (e.g., Pods, Services).
-	// This will involve creating a client.ObjectList for the correct type and listing
-	// it with a namespace filter.
-	log.Info("Placeholder: Calculating object count", "resource", resourceName, "namespace", ns)
-	return resource.MustParse("0")
+func (r *ClusterResourceQuotaReconciler) calculateObjectCount(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+	switch resourceName {
+	case usage.ResourceServices, usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
+		if r.ServiceCalculator == nil {
+			log.Error(nil, "ServiceCalculator is nil", "namespace", ns, "resource", resourceName)
+			return resource.MustParse("0")
+		}
+		usage, err := r.ServiceCalculator.CalculateUsage(ctx, ns, resourceName)
+		if err != nil {
+			log.Error(err, "Failed to calculate service usage", "resource", resourceName, "namespace", ns)
+			return resource.MustParse("0")
+		}
+		return usage
+	default:
+		log.Info("Unsupported object count resource for calculateObjectCount", "resource", resourceName, "namespace", ns)
+		return resource.MustParse("0")
+	}
 }
 
 // calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
@@ -423,6 +447,11 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 		log.Error(err, "Failed to get ClusterResourceQuota for namespace")
 		return nil
 	}
+	if crq != nil {
+		log.Info("Found ClusterResourceQuota for namespace", "crq", crq.Name, "namespace", ns.Name)
+	} else {
+		log.Info("No ClusterResourceQuota found for namespace", "namespace", ns.Name)
+	}
 
 	if crq != nil {
 		return []reconcile.Request{
@@ -487,19 +516,20 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	if r.ComputeCalculator == nil {
 		r.ComputeCalculator = pod.NewPodResourceCalculator(clientset)
 	}
+	if r.ServiceCalculator == nil {
+		r.ServiceCalculator = services.NewServiceResourceCalculator(clientset)
+	}
 
 	log.Info("Setting up ClusterResourceQuota controller")
 
 	// Predicate to filter out updates to status subresource
 	// This prevents reconcile loops caused by status updates
-	// Not sure about this one, but seems to reduce noise
-	// Couldn't find much examples of this in the wild
 	resourcePredicate := resourceUpdatePredicate{}
 
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&quotav1alpha1.ClusterResourceQuota{})
 
-		// Watch for changes to tracked resources and trigger reconciliation for associated CRQs
+	// Watch for changes to tracked resources and trigger reconciliation for associated CRQs
 	watchedObjectTypes := []struct {
 		obj   client.Object
 		preds []predicate.Predicate
@@ -507,6 +537,7 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		{&corev1.Namespace{}, nil},
 		{&corev1.Pod{}, []predicate.Predicate{resourcePredicate}},
 		{&corev1.PersistentVolumeClaim{}, nil},
+		{&corev1.Service{}, nil},
 	}
 	for _, w := range watchedObjectTypes {
 		b = b.Watches(

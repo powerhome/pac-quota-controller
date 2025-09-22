@@ -117,6 +117,14 @@ var (
 	// Count resources
 	ResourcePods                   = corev1.ResourcePods
 	ResourcePersistentVolumeClaims = corev1.ResourcePersistentVolumeClaims
+	ResourceConfigMaps             = corev1.ResourceConfigMaps
+	ResourceReplicationControllers = corev1.ResourceReplicationControllers
+	ResourceSecrets                = corev1.ResourceSecrets
+
+	// Count services
+	ResourceServices              = corev1.ResourceServices
+	ResourceServicesLoadBalancers = corev1.ResourceServicesLoadBalancers
+	ResourceServicesNodePorts     = corev1.ResourceServicesNodePorts
 )
 
 // Common resource calculation utilities

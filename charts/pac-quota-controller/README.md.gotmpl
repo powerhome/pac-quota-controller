@@ -14,11 +14,39 @@
 helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
+
 ## Introduction
 
 This chart bootstraps a [PAC Quota Controller](https://github.com/powerhome/pac-quota-controller) deployment on a [Kubernetes](https://kubernetes.io) cluster using the [Helm](https://helm.sh) package manager.
 
 The PAC Quota Controller extends Kubernetes with a ClusterResourceQuota custom resource that allows defining resource quotas that span multiple namespaces.
+
+### Object Count Quotas (Native & Extended Resources)
+
+You can specify object count quotas for native and extended Kubernetes resources using the `hard` field in the ClusterResourceQuota spec. Examples:
+
+```yaml
+spec:
+  hard:
+    pods: "10"                       # Pod count
+    services: "5"                    # Service count
+    services.loadbalancers: "2"      # Service type=LoadBalancer count
+    ingresses: "3"                   # Ingress count
+    configmaps: "20"                 # ConfigMap count
+    # ...and so on for all supported resource types
+```
+
+Supported extended resource keys include:
+
+- `services.loadbalancers` (Service objects with type=LoadBalancer)
+- `services.nodeports` (Service objects with type=NodePort)
+- `ingresses` (Ingress objects)
+- `services.externalname` (Service objects with type=ExternalName)
+- `services.clusterip` (Service objects with type=ClusterIP)
+
+Subtype quotas (e.g., `services.loadbalancers`) cannot exceed the total for the parent resource (e.g., `services`).
+
+Custom CRDs are not supported for object count quotas.
 
 ### Container Images
 

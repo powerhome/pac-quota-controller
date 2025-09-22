@@ -1,17 +1,32 @@
 package v1alpha1
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 
 	"go.uber.org/zap"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/gin-gonic/gin"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+)
+
+type operation string
+
+const (
+	OperationCreate operation = "creation"
+	OperationUpdate operation = "update"
+	OperationDelete operation = "deletion"
 )
 
 // validateCRQResourceQuotaWithNamespace is a shared function for validating resource quotas
@@ -26,7 +41,6 @@ func validateCRQResourceQuotaWithNamespace(
 	calculateCurrentUsage func(string, corev1.ResourceName) (resource.Quantity, error),
 	log *zap.Logger,
 ) error {
-	// If no CRQ client is available, skip validation
 	if crqClient == nil {
 		log.Info("Skipping CRQ validation - no CRQ client available",
 			zap.String("namespace", ns.Name),
@@ -136,6 +150,12 @@ func calculateCRQCurrentUsage(
 		return resource.Quantity{}, fmt.Errorf("failed to get namespaces matching CRQ selector: %w", err)
 	}
 
+	// DEBUG: Print the namespaces selected by the CRQ's selector
+	log.Info("DEBUG: Namespaces selected by CRQ selector",
+		zap.String("crq", crq.Name),
+		zap.Strings("selected_namespaces", namespaceNames),
+		zap.String("resource", string(resourceName)))
+
 	log.Info("Calculating usage across CRQ namespaces",
 		zap.String("crq", crq.Name),
 		zap.String("resource", string(resourceName)),
@@ -167,4 +187,27 @@ func calculateCRQCurrentUsage(
 		zap.Strings("namespaces", namespaceNames))
 
 	return *totalUsage, nil
+}
+
+func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.AdmissionReview) *admissionv1.AdmissionReview {
+	body, _ := json.Marshal(admissionReview)
+	req, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	engine.ServeHTTP(w, req)
+
+	var response admissionv1.AdmissionReview
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		// If unmarshaling fails, create a default response
+		response = admissionv1.AdmissionReview{
+			Response: &admissionv1.AdmissionResponse{
+				Allowed: false,
+				Result: &metav1.Status{
+					Message: "Failed to parse response",
+				},
+			},
+		}
+	}
+	return &response
 }

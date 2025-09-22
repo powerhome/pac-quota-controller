@@ -170,18 +170,18 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 }
 
 func (h *PodWebhook) validateCreate(ctx context.Context, podObj *corev1.Pod) ([]string, error) {
-	return h.validatePodOperation(ctx, podObj, "creation")
+	return h.validatePodOperation(ctx, podObj, OperationCreate)
 }
 
 func (h *PodWebhook) validateUpdate(ctx context.Context, podObj *corev1.Pod) ([]string, error) {
-	return h.validatePodOperation(ctx, podObj, "update")
+	return h.validatePodOperation(ctx, podObj, OperationUpdate)
 }
 
 // validatePodOperation is a shared function for both create and update validation
-func (h *PodWebhook) validatePodOperation(ctx context.Context, podObj *corev1.Pod, operation string) ([]string, error) {
+func (h *PodWebhook) validatePodOperation(ctx context.Context, podObj *corev1.Pod, operation operation) ([]string, error) {
 	// Handle nil pod case
 	if podObj == nil {
-		h.log.Info("Skipping CRQ validation for nil pod on " + operation)
+		h.log.Info("Skipping CRQ validation for nil pod on " + string(operation))
 		return nil, nil
 	}
 
@@ -227,7 +227,8 @@ func (h *PodWebhook) validatePodOperation(ctx context.Context, podObj *corev1.Po
 	h.log.Info("Pod CRQ validation passed",
 		zap.String("pod", podObj.Name),
 		zap.String("namespace", podObj.Namespace),
-		zap.String("operation", operation))
+		zap.String("operation", string(operation)),
+	)
 	return nil, nil
 }
 

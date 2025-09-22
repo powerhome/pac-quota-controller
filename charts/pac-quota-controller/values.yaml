@@ -1,5 +1,26 @@
 controllerManager:
-  # Optionally specify imagePullSecrets for pulling private images
+  #
+  # Object Count Quotas (Native & Extended Resources)
+  #
+  # You can specify object count quotas for native and extended Kubernetes resources using the 'hard' field in the ClusterResourceQuota spec.
+  # Examples:
+  #
+  #   hard:
+  #     pods: "10"                       # Pod count
+  #     services: "5"                    # Service count
+  #     services.loadbalancers: "2"      # Service type=LoadBalancer count
+  #     ingresses: "3"                    # Ingress count
+  #     configmaps: "20"                 # ConfigMap count
+  #     # ...and so on for all supported resource types
+  #
+  # Supported extended resource keys include:
+  #   - services.loadbalancers (Service objects with type=LoadBalancer)
+  #   - services.nodeports (Service objects with type=NodePort)
+  #   - ingresses (Ingress objects)
+  #
+  # Subtype quotas (e.g., services.loadbalancers) cannot exceed the total for the parent resource (e.g., services).
+  #
+  # Custom CRDs are not supported for object count quotas.
   # imagePullSecrets:
   #   - name: ghcr-creds
   replicas: 1

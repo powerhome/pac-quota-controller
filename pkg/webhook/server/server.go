@@ -54,6 +54,7 @@ type GinWebhookServer struct {
 	pvcHandler       *v1alpha1.PersistentVolumeClaimWebhook
 	crqHandler       *v1alpha1.ClusterResourceQuotaWebhook
 	namespaceHandler *v1alpha1.NamespaceWebhook
+	serviceHandler   *v1alpha1.ServiceWebhook
 
 	k8sClient     kubernetes.Interface
 	runtimeClient client.Client
@@ -191,6 +192,12 @@ func (s *GinWebhookServer) setupRoutes() {
 	}
 	s.podHandler = v1alpha1.NewPodWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate--v1-pod", s.podHandler.Handle)
+
+	if s.log != nil {
+		s.log.Info("Setting up service webhook")
+	}
+	s.serviceHandler = v1alpha1.NewServiceWebhook(s.k8sClient, crqClient, s.log)
+	s.engine.POST("/validate--v1-service", s.serviceHandler.Handle)
 
 	if s.log != nil {
 		s.log.Info("Setting up PVC webhook")

@@ -59,9 +59,12 @@ spec:
                 description: |-
                   Hard is the set of desired hard limits for each named resource.
                   For example:
-                  'pods': '10'
-                  'requests.cpu': '1'
-                  'requests.memory': 1Gi
+                  'pods': '10' (Pod count)
+                  'services': '5' (Service count)
+                  'services.loadbalancers': '2' (Service type=LoadBalancer count)
+                  'ingresses': '3' (Ingress count)
+                  'configmaps': '20' (ConfigMap count)
+                  ...and so on for all supported native and extended resource types.
                 type: object
               namespaceSelector:
                 description: |-

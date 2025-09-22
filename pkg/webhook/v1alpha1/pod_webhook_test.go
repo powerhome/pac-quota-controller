@@ -115,7 +115,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -142,7 +142,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Update)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Update)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -184,7 +184,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			admissionReview.Request.Kind = metav1.GroupVersionKind{
 				Group:   "apps",
 				Version: "v1",
@@ -215,7 +215,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Delete)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Delete)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeFalse())
@@ -233,7 +233,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -269,7 +269,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -300,7 +300,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -327,7 +327,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -348,7 +348,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -362,7 +362,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			admissionReview.Request.Kind = metav1.GroupVersionKind{
 				Group:   "apps",
 				Version: "v1",
@@ -389,7 +389,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Delete)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Delete)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeFalse())
@@ -516,7 +516,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -537,7 +537,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -571,7 +571,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(pod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -707,7 +707,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(newPod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeFalse())
@@ -738,7 +738,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(newPod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -765,7 +765,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(newPod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -842,7 +842,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(newPod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -877,7 +877,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(multiContainerPod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(multiContainerPod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			// 200m (existing) + 80m + 80m = 360m > 300m limit
@@ -917,7 +917,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(initContainerPod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(initContainerPod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			// Should use max(init: 150m, main: 100m) = 150m
@@ -947,7 +947,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(memoryPod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(memoryPod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			// 200Mi (existing) + 150Mi = 350Mi > 300Mi limit
@@ -1017,7 +1017,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			admissionReview := createAdmissionReview(newPod, admissionv1.Create)
+			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
@@ -1515,7 +1515,7 @@ var _ = Describe("PodWebhook", func() {
 
 // Helper functions for testing
 
-func createAdmissionReview(pod *corev1.Pod, operation admissionv1.Operation) *admissionv1.AdmissionReview {
+func createPodAdmissionReview(pod *corev1.Pod, operation admissionv1.Operation) *admissionv1.AdmissionReview {
 	raw, _ := json.Marshal(pod)
 	return &admissionv1.AdmissionReview{
 		Request: &admissionv1.AdmissionRequest{
@@ -1536,29 +1536,6 @@ func createAdmissionReview(pod *corev1.Pod, operation admissionv1.Operation) *ad
 			},
 		},
 	}
-}
-
-func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.AdmissionReview) *admissionv1.AdmissionReview {
-	body, _ := json.Marshal(admissionReview)
-	req, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-
-	engine.ServeHTTP(w, req)
-
-	var response admissionv1.AdmissionReview
-	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
-		// If unmarshaling fails, create a default response
-		response = admissionv1.AdmissionReview{
-			Response: &admissionv1.AdmissionResponse{
-				Allowed: false,
-				Result: &metav1.Status{
-					Message: "Failed to parse response",
-				},
-			},
-		}
-	}
-	return &response
 }
 
 // testTerminalPodState is a helper function to test pods in terminal states (Succeeded/Failed)

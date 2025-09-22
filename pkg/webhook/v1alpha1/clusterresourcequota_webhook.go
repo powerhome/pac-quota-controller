@@ -1,19 +1,3 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package v1alpha1
 
 import (
@@ -24,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -32,13 +17,15 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
 )
 
 // ClusterResourceQuotaWebhook handles webhook requests for ClusterResourceQuota resources
 type ClusterResourceQuotaWebhook struct {
-	client    kubernetes.Interface
-	crqClient *quota.CRQClient
-	log       *zap.Logger
+	client            kubernetes.Interface
+	crqClient         *quota.CRQClient
+	serviceCalculator services.ServiceResourceCalculatorInterface
+	log               *zap.Logger
 }
 
 // NewClusterResourceQuotaWebhook creates a new ClusterResourceQuotaWebhook
@@ -48,9 +35,10 @@ func NewClusterResourceQuotaWebhook(
 	log *zap.Logger,
 ) *ClusterResourceQuotaWebhook {
 	return &ClusterResourceQuotaWebhook{
-		client:    k8sClient,
-		crqClient: crqClient,
-		log:       log,
+		client:            k8sClient,
+		crqClient:         crqClient,
+		serviceCalculator: services.NewServiceResourceCalculator(k8sClient),
+		log:               log,
 	}
 }
 
@@ -176,6 +164,39 @@ func (h *ClusterResourceQuotaWebhook) validateCreate(
 	if err := validator.ValidateCRQNamespaceConflicts(ctx, crq); err != nil {
 		return err
 	}
+
+	// Validate service object count quotas for all supported service resource types
+	if crq.Spec.Hard != nil && crq.Spec.NamespaceSelector != nil {
+		selector, err := namespace.NewLabelBasedNamespaceSelector(h.client, crq.Spec.NamespaceSelector)
+		if err != nil {
+			return fmt.Errorf("failed to create namespace selector: %w", err)
+		}
+		selectedNamespaces, err := selector.GetSelectedNamespaces(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get selected namespaces: %w", err)
+		}
+		for resourceName := range crq.Spec.Hard {
+			switch resourceName {
+			case "services", "services.loadbalancers", "services.nodeports", "services.clusterips", "services.externalnames":
+				var totalUsage resource.Quantity
+				for _, ns := range selectedNamespaces {
+					usageQty, err := h.serviceCalculator.CalculateUsage(ctx, ns, resourceName)
+					if err != nil {
+						return fmt.Errorf("failed to calculate usage for %s in namespace %s: %w", resourceName, ns, err)
+					}
+					if totalUsage.IsZero() {
+						totalUsage = usageQty.DeepCopy()
+					} else {
+						totalUsage.Add(usageQty)
+					}
+				}
+				hardQty := crq.Spec.Hard[resourceName]
+				if totalUsage.Cmp(hardQty) > 0 {
+					return fmt.Errorf("quota exceeded for %s: used %s, hard limit %s", resourceName, totalUsage.String(), hardQty.String())
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -190,6 +211,39 @@ func (h *ClusterResourceQuotaWebhook) validateUpdate(
 	validator := namespace.NewNamespaceValidator(h.client, h.crqClient)
 	if err := validator.ValidateCRQNamespaceConflicts(ctx, crq); err != nil {
 		return err
+	}
+
+	// Validate service object count quotas for all supported service resource types
+	if crq.Spec.Hard != nil && crq.Spec.NamespaceSelector != nil {
+		selector, err := namespace.NewLabelBasedNamespaceSelector(h.client, crq.Spec.NamespaceSelector)
+		if err != nil {
+			return fmt.Errorf("failed to create namespace selector: %w", err)
+		}
+		selectedNamespaces, err := selector.GetSelectedNamespaces(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get selected namespaces: %w", err)
+		}
+		for resourceName := range crq.Spec.Hard {
+			switch resourceName {
+			case "services", "services.loadbalancers", "services.nodeports", "services.clusterips", "services.externalnames":
+				var totalUsage resource.Quantity
+				for _, ns := range selectedNamespaces {
+					usageQty, err := h.serviceCalculator.CalculateUsage(ctx, ns, resourceName)
+					if err != nil {
+						return fmt.Errorf("failed to calculate usage for %s in namespace %s: %w", resourceName, ns, err)
+					}
+					if totalUsage.IsZero() {
+						totalUsage = usageQty.DeepCopy()
+					} else {
+						totalUsage.Add(usageQty)
+					}
+				}
+				hardQty := crq.Spec.Hard[resourceName]
+				if totalUsage.Cmp(hardQty) > 0 {
+					return fmt.Errorf("quota exceeded for %s: used %s, hard limit %s", resourceName, totalUsage.String(), hardQty.String())
+				}
+			}
+		}
 	}
 	return nil
 }

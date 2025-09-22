@@ -114,4 +114,30 @@ webhooks:
           {{- range (include "pacQuota.excludedNamespacesList" . | splitList " ") }}
           - {{ . | quote }}
           {{- end }}
+  - name: vservice-v1alpha1.powerapp.cloud
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 30
+    clientConfig:
+      {{- if not .Values.certmanager.enable }}
+      caBundle: {{ .Values.webhook.customTLS.caBundle }}
+      {{- end }}
+      service:
+        name: pac-quota-controller-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /validate--v1-service
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["services"]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+          {{- range (include "pacQuota.excludedNamespacesList" . | splitList " ") }}
+          - {{ . | quote }}
+          {{- end }}
 {{- end }}
