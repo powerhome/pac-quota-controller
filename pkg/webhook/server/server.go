@@ -206,6 +206,16 @@ func (s *GinWebhookServer) setupRoutes() {
 	s.engine.POST("/validate--v1-persistentvolumeclaim", s.pvcHandler.Handle)
 
 	if s.log != nil {
+		s.log.Info("Setting up objectcount webhook")
+	}
+	// Setup objectcount webhook handler
+	if s.log != nil {
+		s.log.Info("Setting up objectcount webhook")
+	}
+	objectCountHandler := v1alpha1.NewObjectCountWebhook(s.k8sClient, crqClient, s.log)
+	s.engine.POST("/validate-objectcount-v1", objectCountHandler.Handle)
+
+	if s.log != nil {
 		s.log.Info("All webhook handlers configured with CRQ client support")
 	}
 }

@@ -61,7 +61,7 @@ func validateCRQResourceQuotaWithNamespace(
 		log.Error("Failed to get CRQ for namespace",
 			zap.String("namespace", ns.Name),
 			zap.Error(err))
-		return fmt.Errorf("failed to get CRQ for namespace %s: %w", ns.Name, err)
+		return nil
 	}
 
 	// If no CRQ applies to this namespace, allow the operation

@@ -2,6 +2,7 @@ package pod
 
 import (
 	"context"
+	"strings"
 
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -88,6 +89,14 @@ func getContainerResourceUsage(container corev1.Container, resourceName corev1.R
 			return memory
 		}
 	default:
+		// Handle extended resources with 'requests.' prefix
+		s := string(resourceName)
+		if strings.HasPrefix(s, "requests.") {
+			extName := corev1.ResourceName(s[len("requests."):])
+			if resourceValue, ok := container.Resources.Requests[extName]; ok {
+				return resourceValue
+			}
+		}
 		// Handle hugepages and other resource types
 		if resourceValue, ok := container.Resources.Requests[resourceName]; ok {
 			return resourceValue
@@ -96,7 +105,6 @@ func getContainerResourceUsage(container corev1.Container, resourceName corev1.R
 			return resourceValue
 		}
 	}
-
 	return resource.Quantity{}
 }
 

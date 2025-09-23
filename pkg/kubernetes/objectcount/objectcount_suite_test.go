@@ -1,4 +1,4 @@
-package pod
+package objectcount
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestPod(t *testing.T) {
+func TestObjectCountCalculator(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Pod Package Suite")
+	RunSpecs(t, "ObjectCountCalculator Suite")
 }

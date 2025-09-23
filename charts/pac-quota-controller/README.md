@@ -1,6 +1,6 @@
 # pac-quota-controller
 
-![Version: 0.1.2](https://img.shields.io/badge/Version-0.1.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.2](https://img.shields.io/badge/AppVersion-0.1.2-informational?style=flat-square)
+![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
 
 A Helm chart for PAC Quota Controller - Managing cluster resource quotas across namespaces
 
@@ -18,12 +18,60 @@ This chart bootstraps a [PAC Quota Controller](https://github.com/powerhome/pac-
 
 The PAC Quota Controller extends Kubernetes with a ClusterResourceQuota custom resource that allows defining resource quotas that span multiple namespaces.
 
+### Object Count Quotas (Native & Extended Resources)
+
+You can specify object count quotas for native and extended Kubernetes resources using the `hard` field in the ClusterResourceQuota spec.
+
+#### Supported object count resources
+
+- `pods`                                 (Pod count)
+- `services`                             (Service count)
+- `services.loadbalancers`               (Service type=LoadBalancer count)
+- `services.nodeports`                   (Service type=NodePort count)
+- `configmaps`                           (ConfigMap count)
+- `secrets`                              (Secret count)
+- `persistentvolumeclaims`               (PVC count)
+- `replicationcontrollers`               (ReplicationController count)
+- `deployments.apps`                     (Deployment count)
+- `statefulsets.apps`                    (StatefulSet count)
+- `daemonsets.apps`                      (DaemonSet count)
+- `jobs.batch`                           (Job count)
+- `cronjobs.batch`                       (CronJob count)
+- `horizontalpodautoscalers.autoscaling` (HPA count)
+- `ingresses.networking.k8s.io`          (Ingress count)
+
+Subtype quotas (e.g., `services.loadbalancers`) cannot exceed the total for the parent resource (e.g., `services`).
+
+Custom CRDs are not supported for object count quotas.
+
+#### Example
+
+```yaml
+spec:
+  hard:
+    pods: "10"                                 # Pod count
+    services: "5"                              # Service count
+    services.loadbalancers: "2"                # Service type=LoadBalancer count
+    services.nodeports: "3"                    # Service type=NodePort count
+    configmaps: "20"                           # ConfigMap count
+    secrets: "15"                              # Secret count
+    persistentvolumeclaims: "8"                # PVC count
+    replicationcontrollers: "4"                # ReplicationController count
+    deployments.apps: "6"                      # Deployment count
+    statefulsets.apps: "2"                     # StatefulSet count
+    daemonsets.apps: "2"                       # DaemonSet count
+    jobs.batch: "5"                            # Job count
+    cronjobs.batch: "3"                        # CronJob count
+    horizontalpodautoscalers.autoscaling: "2"  # HPA count
+    ingresses.networking.k8s.io: "3"           # Ingress count
+```
+
 ### Container Images
 
 This chart can use container images from GitHub Container Registry:
 
 ```console
-ghcr.io/powerhome/pac-quota-controller:0.1.2
+ghcr.io/powerhome/pac-quota-controller:0.2.0
 ```
 
 You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.

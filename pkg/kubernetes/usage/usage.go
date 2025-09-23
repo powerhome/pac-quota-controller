@@ -95,33 +95,42 @@ func (r *UsageResult) GetTotalUsage(resourceName corev1.ResourceName) resource.Q
 
 // Core resource names used across the application
 var (
-	// CPU resources
+	// Core compute resources
 	ResourceRequestsCPU = corev1.ResourceRequestsCPU
 	ResourceLimitsCPU   = corev1.ResourceLimitsCPU
 	ResourceCPU         = corev1.ResourceCPU
 
-	// Memory resources
+	// Core memory resources
 	ResourceRequestsMemory = corev1.ResourceRequestsMemory
 	ResourceLimitsMemory   = corev1.ResourceLimitsMemory
 	ResourceMemory         = corev1.ResourceMemory
 
-	// Storage resources
+	// Core storage resources
 	ResourceRequestsStorage = corev1.ResourceRequestsStorage
 	ResourceStorage         = corev1.ResourceStorage
 
-	// Ephemeral storage
+	// Ephemeral storage resources
 	ResourceRequestsEphemeralStorage = corev1.ResourceRequestsEphemeralStorage
 	ResourceLimitsEphemeralStorage   = corev1.ResourceLimitsEphemeralStorage
 	ResourceEphemeralStorage         = corev1.ResourceEphemeralStorage
 
-	// Count resources
+	// Core countable resources
 	ResourcePods                   = corev1.ResourcePods
 	ResourcePersistentVolumeClaims = corev1.ResourcePersistentVolumeClaims
 	ResourceConfigMaps             = corev1.ResourceConfigMaps
 	ResourceReplicationControllers = corev1.ResourceReplicationControllers
 	ResourceSecrets                = corev1.ResourceSecrets
 
-	// Count services
+	// Additional Kubernetes resource counts
+	ResourceDeployments              = corev1.ResourceName("deployments.apps")
+	ResourceStatefulSets             = corev1.ResourceName("statefulsets.apps")
+	ResourceDaemonSets               = corev1.ResourceName("daemonsets.apps")
+	ResourceJobs                     = corev1.ResourceName("jobs.batch")
+	ResourceCronJobs                 = corev1.ResourceName("cronjobs.batch")
+	ResourceHorizontalPodAutoscalers = corev1.ResourceName("horizontalpodautoscalers.autoscaling")
+	ResourceIngresses                = corev1.ResourceName("ingresses.networking.k8s.io")
+
+	// Service-related resources
 	ResourceServices              = corev1.ResourceServices
 	ResourceServicesLoadBalancers = corev1.ResourceServicesLoadBalancers
 	ResourceServicesNodePorts     = corev1.ResourceServicesNodePorts

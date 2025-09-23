@@ -3,20 +3,25 @@ controllerManager:
   # Object Count Quotas (Native & Extended Resources)
   #
   # You can specify object count quotas for native and extended Kubernetes resources using the 'hard' field in the ClusterResourceQuota spec.
-  # Examples:
   #
-  #   hard:
-  #     pods: "10"                       # Pod count
-  #     services: "5"                    # Service count
-  #     services.loadbalancers: "2"      # Service type=LoadBalancer count
-  #     ingresses: "3"                    # Ingress count
-  #     configmaps: "20"                 # ConfigMap count
-  #     # ...and so on for all supported resource types
+  # Example configuration for all supported object count resources:
   #
-  # Supported extended resource keys include:
-  #   - services.loadbalancers (Service objects with type=LoadBalancer)
-  #   - services.nodeports (Service objects with type=NodePort)
-  #   - ingresses (Ingress objects)
+  # hard:
+  #   pods: "10"                                 # Pod count
+  #   services: "5"                              # Service count
+  #   services.loadbalancers: "2"                # Service type=LoadBalancer count
+  #   services.nodeports: "3"                    # Service type=NodePort count
+  #   configmaps: "20"                           # ConfigMap count
+  #   secrets: "15"                              # Secret count
+  #   persistentvolumeclaims: "8"                # PVC count
+  #   replicationcontrollers: "4"                # ReplicationController count
+  #   deployments.apps: "6"                      # Deployment count
+  #   statefulsets.apps: "2"                     # StatefulSet count
+  #   daemonsets.apps: "2"                       # DaemonSet count
+  #   jobs.batch: "5"                            # Job count
+  #   cronjobs.batch: "3"                        # CronJob count
+  #   horizontalpodautoscalers.autoscaling: "2"  # HPA count
+  #   ingresses.networking.k8s.io: "3"           # Ingress count
   #
   # Subtype quotas (e.g., services.loadbalancers) cannot exceed the total for the parent resource (e.g., services).
   #

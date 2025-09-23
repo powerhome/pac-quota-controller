@@ -140,4 +140,46 @@ webhooks:
           {{- range (include "pacQuota.excludedNamespacesList" . | splitList " ") }}
           - {{ . | quote }}
           {{- end }}
+  - name: vobjectcount-v1alpha1.powerapp.cloud
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    timeoutSeconds: 30
+    clientConfig:
+      {{- if not .Values.certmanager.enable }}
+      caBundle: {{ .Values.webhook.customTLS.caBundle }}
+      {{- end }}
+      service:
+        name: pac-quota-controller-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /validate-objectcount-v1
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["configmaps", "secrets", "replicationcontrollers"]
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "statefulsets", "daemonsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs", "cronjobs"]
+      - apiGroups: ["autoscaling"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["horizontalpodautoscalers"]
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["ingresses"]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values:
+          {{- range (include "pacQuota.excludedNamespacesList" . | splitList " ") }}
+          - {{ . | quote }}
+          {{- end }}
 {{- end }}

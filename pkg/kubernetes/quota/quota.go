@@ -25,6 +25,9 @@ func NewCRQClient(c client.Client) *CRQClient {
 
 // ListAllCRQs returns all ClusterResourceQuotas in the cluster.
 func (c *CRQClient) ListAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterResourceQuota, error) {
+	if c.Client == nil {
+		return nil, fmt.Errorf("CRQClient is not configured")
+	}
 	var crqList quotav1alpha1.ClusterResourceQuotaList
 	if err := c.Client.List(ctx, &crqList); err != nil {
 		return nil, fmt.Errorf("failed to list ClusterResourceQuotas: %w", err)

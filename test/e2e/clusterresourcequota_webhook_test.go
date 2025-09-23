@@ -56,7 +56,6 @@ var _ = Describe("ClusterResourceQuota Webhook", func() {
 			Expect(k8sClient.Delete(ctx, crq)).To(Succeed())
 		})
 	})
-
 	Context("Update scenarios", func() {
 		It("should update a ClusterResourceQuota spec successfully", func() {
 			By("Creating a ClusterResourceQuota with initial spec")
