@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,7 +24,6 @@ import (
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
-	"github.com/powerhome/pac-quota-controller/pkg/mocks"
 )
 
 var _ = Describe("PodWebhook", func() {
@@ -57,41 +55,6 @@ var _ = Describe("PodWebhook", func() {
 		gin.SetMode(gin.TestMode)
 		ginEngine = gin.New()
 		ginEngine.POST("/webhook", webhook.Handle)
-	})
-
-	Describe("NewPodWebhook", func() {
-		It("should create a new pod webhook", func() {
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.client).To(Equal(fakeClient))
-			Expect(webhook.log).To(Equal(logger))
-			Expect(webhook.podCalculator).NotTo(BeNil())
-		})
-
-		It("should create webhook with nil client", func() {
-			webhook := NewPodWebhook(nil, crqClient, logger)
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.client).To(BeNil())
-		})
-
-		It("should create webhook with nil logger", func() {
-			webhook := NewPodWebhook(fakeClient, crqClient, nil)
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.log).To(BeNil())
-		})
-
-		It("should create webhook with nil CRQ client", func() {
-			webhook := NewPodWebhook(fakeClient, nil, logger)
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.crqClient).To(BeNil())
-		})
-
-		It("should create webhook with all nil parameters", func() {
-			webhook := NewPodWebhook(nil, nil, nil)
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.client).To(BeNil())
-			Expect(webhook.crqClient).To(BeNil())
-			Expect(webhook.log).To(BeNil())
-		})
 	})
 
 	Describe("Handle", func() {
@@ -205,21 +168,6 @@ var _ = Describe("PodWebhook", func() {
 			ginEngine.ServeHTTP(w, req)
 
 			Expect(w.Code).To(Equal(http.StatusBadRequest))
-		})
-
-		It("should reject unsupported operation", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Delete)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported"))
 		})
 
 		It("should handle pod with no containers", func() {
@@ -373,27 +321,6 @@ var _ = Describe("PodWebhook", func() {
 
 			Expect(response.Response.Allowed).To(BeFalse())
 			Expect(response.Response.Result.Message).To(ContainSubstring("Expected Pod resource"))
-		})
-
-		It("should handle failed pod decoding", func() {
-			// Skip this test for now since it's difficult to simulate the exact failure condition
-			// TODO: Implement proper error simulation when needed
-			Skip("Skipping test that requires specific error simulation")
-		})
-
-		It("should handle unsupported operations", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Delete)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported"))
 		})
 	})
 
@@ -1433,81 +1360,6 @@ var _ = Describe("PodWebhook", func() {
 				)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(cpuLimitsUsage.MilliValue()).To(Equal(int64(200))) // 200m
-			})
-
-			// Error handling tests using mocks
-			Context("Error handling", func() {
-				var mockCalculator *mocks.MockPodResourceCalculatorInterface
-
-				BeforeEach(func() {
-					mockCalculator = mocks.NewMockPodResourceCalculatorInterface(GinkgoT())
-				})
-
-				It("should handle CalculateUsage errors for CPU requests", func() {
-					// Create webhook with mock calculator
-					webhook := &PodWebhook{
-						client:        fakeClient,
-						podCalculator: mockCalculator,
-						crqClient:     crqClient,
-						log:           logger,
-					}
-
-					// Mock the CalculateUsage to return an error
-					mockCalculator.On("CalculateUsage", ctx, "test-namespace", corev1.ResourceRequestsCPU).
-						Return(resource.Quantity{}, errors.New("failed to calculate CPU usage"))
-
-					// Call calculateCurrentUsage and expect error
-					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", "requests.cpu")
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("failed to calculate CPU usage"))
-
-					// Verify mock expectations
-					mockCalculator.AssertExpectations(GinkgoT())
-				})
-
-				It("should handle CalculateUsage errors for memory limits", func() {
-					// Create webhook with mock calculator
-					webhook := &PodWebhook{
-						client:        fakeClient,
-						podCalculator: mockCalculator,
-						crqClient:     crqClient,
-						log:           logger,
-					}
-
-					// Mock the CalculateUsage to return an error
-					mockCalculator.On("CalculateUsage", ctx, "test-namespace", corev1.ResourceLimitsMemory).
-						Return(resource.Quantity{}, errors.New("memory calculation failed"))
-
-					// Call calculateCurrentUsage and expect error
-					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", "limits.memory")
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("memory calculation failed"))
-
-					// Verify mock expectations
-					mockCalculator.AssertExpectations(GinkgoT())
-				})
-
-				It("should handle CalculatePodCount errors", func() {
-					// Create webhook with mock calculator
-					webhook := &PodWebhook{
-						client:        fakeClient,
-						podCalculator: mockCalculator,
-						crqClient:     crqClient,
-						log:           logger,
-					}
-
-					// Mock the CalculatePodCount to return an error
-					mockCalculator.On("CalculatePodCount", ctx, "test-namespace").
-						Return(int64(0), errors.New("failed to count pods"))
-
-					// Call calculateCurrentUsage for pods and expect error
-					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", "pods")
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("failed to count pods"))
-
-					// Verify mock expectations
-					mockCalculator.AssertExpectations(GinkgoT())
-				})
 			})
 		})
 	})

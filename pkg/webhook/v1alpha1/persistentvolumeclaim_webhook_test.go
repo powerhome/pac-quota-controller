@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,7 +24,6 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
-	"github.com/powerhome/pac-quota-controller/pkg/mocks"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,7 +32,6 @@ import (
 const (
 	premiumSSDStorageClass          = "premium-ssd"
 	fastSSDStorageClassResourceName = "fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims"
-	premiumSSDStorageClassRequests  = "premium-ssd.storageclass.storage.k8s.io/requests.storage"
 )
 
 var _ = Describe("PersistentVolumeClaimWebhook", func() {
@@ -118,7 +115,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pvc",
-					Namespace: "test-namespace",
+					Namespace: testNamespace.Name,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					Resources: corev1.VolumeResourceRequirements{
@@ -139,7 +136,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pvc",
-					Namespace: "test-namespace",
+					Namespace: testNamespace.Name,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					Resources: corev1.VolumeResourceRequirements{
@@ -160,7 +157,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pvc",
-					Namespace: "test-namespace",
+					Namespace: testNamespace.Name,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					Resources: corev1.VolumeResourceRequirements{
@@ -179,7 +176,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pvc",
-					Namespace: "test-namespace",
+					Namespace: testNamespace.Name,
 				},
 			}
 
@@ -200,7 +197,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pvc",
-					Namespace: "test-namespace",
+					Namespace: testNamespace.Name,
 				},
 			}
 
@@ -256,7 +253,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pvc",
-					Namespace: "test-namespace",
+					Namespace: testNamespace.Name,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					Resources: corev1.VolumeResourceRequirements{
@@ -277,7 +274,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pvc",
-					Namespace: "test-namespace",
+					Namespace: testNamespace.Name,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					Resources: corev1.VolumeResourceRequirements{
@@ -298,7 +295,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pvc",
-					Namespace: "test-namespace",
+					Namespace: testNamespace.Name,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					Resources: corev1.VolumeResourceRequirements{
@@ -317,7 +314,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pvc",
-					Namespace: "test-namespace",
+					Namespace: testNamespace.Name,
 				},
 				Spec: corev1.PersistentVolumeClaimSpec{
 					Resources: corev1.VolumeResourceRequirements{
@@ -333,7 +330,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 	Describe("validateResourceQuota", func() {
 		It("should validate storage quota successfully when within limits", func() {
-			err := webhook.validateResourceQuota(ctx, "test-namespace", corev1.ResourceStorage, resource.MustParse("1Gi"))
+			err := webhook.validateResourceQuota(ctx, testNamespace.Name, corev1.ResourceStorage, resource.MustParse("1Gi"))
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -560,7 +557,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				pvc := &corev1.PersistentVolumeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-pvc",
-						Namespace: "test-namespace",
+						Namespace: testNamespace.Name,
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
 						Resources: corev1.VolumeResourceRequirements{
@@ -570,10 +567,10 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 						},
 					},
 				}
-				_, err := k8sClient.CoreV1().PersistentVolumeClaims("test-namespace").Create(ctx, pvc, metav1.CreateOptions{})
+				_, err := k8sClient.CoreV1().PersistentVolumeClaims(testNamespace.Name).Create(ctx, pvc, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", usage.ResourceRequestsStorage)
+				usage, err := webhook.calculateCurrentUsage(ctx, testNamespace.Name, usage.ResourceRequestsStorage)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(Equal(int64(10 * 1024 * 1024 * 1024))) // 10Gi in bytes
 			})
@@ -584,7 +581,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				pvc := &corev1.PersistentVolumeClaim{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "test-pvc-premium",
-						Namespace: "test-namespace",
+						Namespace: testNamespace.Name,
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
 						StorageClassName: &storageClass,
@@ -595,17 +592,17 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 						},
 					},
 				}
-				_, err := k8sClient.CoreV1().PersistentVolumeClaims("test-namespace").Create(ctx, pvc, metav1.CreateOptions{})
+				_, err := k8sClient.CoreV1().PersistentVolumeClaims(testNamespace.Name).Create(ctx, pvc, metav1.CreateOptions{})
 				Expect(err).NotTo(HaveOccurred())
 
-				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace",
+				usage, err := webhook.calculateCurrentUsage(ctx, testNamespace.Name,
 					corev1.ResourceName("premium-ssd.storageclass.storage.k8s.io/requests.storage"))
 				Expect(err).NotTo(HaveOccurred())
 				Expect(usage.Value()).To(Equal(int64(20 * 1024 * 1024 * 1024))) // 20Gi in bytes
 			})
 
 			It("should return error for unsupported resource types", func() {
-				_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("unsupported.resource"))
+				_, err := webhook.calculateCurrentUsage(ctx, testNamespace.Name, corev1.ResourceName("unsupported.resource"))
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("unsupported resource type"))
 			})
@@ -622,7 +619,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      fmt.Sprintf("count-pvc-%d", i),
-							Namespace: "test-namespace",
+							Namespace: testNamespace.Name,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							Resources: corev1.VolumeResourceRequirements{
@@ -632,14 +629,14 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 							},
 						},
 					}
-					_, err := k8sClient.CoreV1().PersistentVolumeClaims("test-namespace").Create(ctx, pvc, metav1.CreateOptions{})
+					_, err := k8sClient.CoreV1().PersistentVolumeClaims(testNamespace.Name).Create(ctx, pvc, metav1.CreateOptions{})
 					Expect(err).NotTo(HaveOccurred())
 				}
 
 				// Test PVC count
-				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("persistentvolumeclaims"))
+				usage, err := webhook.calculateCurrentUsage(ctx, testNamespace.Name, corev1.ResourceName("persistentvolumeclaims"))
 				Expect(err).NotTo(HaveOccurred())
-				Expect(usage.Value()).To(BeNumerically(">", 0)) // Should count the PVCs
+				Expect(usage.Value()).To(BeNumerically("==", 3)) // Should count the PVCs
 			})
 
 			It("should handle storage class specific PVC count", func() {
@@ -649,7 +646,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					pvc := &corev1.PersistentVolumeClaim{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      fmt.Sprintf("fast-pvc-%d", i),
-							Namespace: "test-namespace",
+							Namespace: testNamespace.Name,
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							StorageClassName: &storageClass,
@@ -660,386 +657,285 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 							},
 						},
 					}
-					_, err := k8sClient.CoreV1().PersistentVolumeClaims("test-namespace").Create(ctx, pvc, metav1.CreateOptions{})
+					_, err := k8sClient.CoreV1().PersistentVolumeClaims(testNamespace.Name).Create(ctx, pvc, metav1.CreateOptions{})
 					Expect(err).NotTo(HaveOccurred())
 				}
 
 				// Test storage class specific PVC count
 				usage, err := webhook.calculateCurrentUsage(
 					ctx,
-					"test-namespace",
+					testNamespace.Name,
 					corev1.ResourceName(fastSSDStorageClassResourceName),
 				)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(usage.Value()).To(BeNumerically(">", 0)) // Should count the PVCs with specific storage class
+				Expect(usage.Value()).To(BeNumerically("==", 2)) // Should count the PVCs with specific storage class
 			})
 
-			// Error handling tests using mocks
-			Context("Error handling", func() {
-				var mockCalculator *mocks.MockStorageResourceCalculatorInterface
+			Describe("validateStorageQuota edge cases", func() {
+				var namespace *corev1.Namespace
+				var crq *quotav1alpha1.ClusterResourceQuota
+				var ctx context.Context
 
 				BeforeEach(func() {
-					mockCalculator = mocks.NewMockStorageResourceCalculatorInterface(GinkgoT())
-				})
-
-				It("should handle CalculateUsage errors for storage requests", func() {
-					// Create webhook with mock calculator
-					webhook := &PersistentVolumeClaimWebhook{
-						client:            k8sClient,
-						storageCalculator: mockCalculator,
-						crqClient:         crqClient,
-						log:               zap.NewNop(),
-					}
-
-					// Mock the CalculateUsage to return an error
-					mockCalculator.On("CalculateUsage", ctx, "test-namespace", usage.ResourceRequestsStorage).
-						Return(resource.Quantity{}, errors.New("failed to calculate storage usage"))
-					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", usage.ResourceRequestsStorage)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("failed to calculate storage usage"))
-
-					// Verify mock expectations
-					mockCalculator.AssertExpectations(GinkgoT())
-				})
-
-				It("should handle CalculatePVCCount errors", func() {
-					// Create webhook with mock calculator
-					webhook := &PersistentVolumeClaimWebhook{
-						client:            k8sClient,
-						storageCalculator: mockCalculator,
-						crqClient:         crqClient,
-						log:               zap.NewNop(),
-					}
-
-					// Mock the CalculatePVCCount to return an error
-					mockCalculator.On("CalculatePVCCount", ctx, "test-namespace").
-						Return(int64(0), errors.New("failed to count PVCs"))
-
-					// Call calculateCurrentUsage for PVCs and expect error
-					ctx := ctx
-					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", usage.ResourcePersistentVolumeClaims)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("failed to count PVCs"))
-
-					// Verify mock expectations
-					mockCalculator.AssertExpectations(GinkgoT())
-				})
-
-				It("should handle CalculateStorageClassUsage errors", func() {
-					// Create webhook with mock calculator
-					webhook := &PersistentVolumeClaimWebhook{
-						client:            k8sClient,
-						storageCalculator: mockCalculator,
-						crqClient:         crqClient,
-						log:               zap.NewNop(),
-					}
-
-					// Mock the CalculateStorageClassUsage to return an error
-					mockCalculator.On("CalculateStorageClassUsage", ctx, "test-namespace", premiumSSDStorageClass).
-						Return(resource.Quantity{}, errors.New("storage class usage calculation failed"))
-
-					// Call calculateCurrentUsage for storage class specific resource and expect error
-					ctx := ctx
-					_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName(premiumSSDStorageClassRequests))
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("storage class usage calculation failed"))
-
-					// Verify mock expectations
-					mockCalculator.AssertExpectations(GinkgoT())
-				})
-
-				It("should handle CalculateStorageClassCount errors", func() {
-					// Create webhook with mock calculator
-					webhook := &PersistentVolumeClaimWebhook{
-						client:            k8sClient,
-						storageCalculator: mockCalculator,
-						crqClient:         crqClient,
-						log:               zap.NewNop(),
-					}
-
-					// Mock the CalculateStorageClassCount to return an error
-					mockCalculator.On("CalculateStorageClassCount", ctx, "test-namespace", "fast-ssd").
-						Return(int64(0), errors.New("storage class count failed"))
-
-					// Call calculateCurrentUsage for storage class PVC count and expect error
-					_, err := webhook.calculateCurrentUsage(
-						ctx,
-						"test-namespace",
-						corev1.ResourceName(fastSSDStorageClassResourceName),
-					)
-					Expect(err).To(HaveOccurred())
-					Expect(err.Error()).To(ContainSubstring("storage class count failed"))
-
-					// Verify mock expectations
-					mockCalculator.AssertExpectations(GinkgoT())
-				})
-			})
-		})
-
-		Describe("validateStorageQuota edge cases", func() {
-			var namespace *corev1.Namespace
-			var crq *quotav1alpha1.ClusterResourceQuota
-			var ctx context.Context
-
-			BeforeEach(func() {
-				namespace = &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "storage-test-ns",
-						Labels: map[string]string{
-							"test-label": "storage-validation",
-						},
-					},
-				}
-				Expect(fakeRuntimeClient.Create(ctx, namespace)).To(Succeed())
-				// Also create in k8sClient for storage calculator
-				_, err := k8sClient.CoreV1().Namespaces().Create(ctx, namespace, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				crq = &quotav1alpha1.ClusterResourceQuota{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "storage-test-crq",
-					},
-					Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-						NamespaceSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{
+					namespace = &corev1.Namespace{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "storage-test-ns",
+							Labels: map[string]string{
 								"test-label": "storage-validation",
 							},
 						},
-						Hard: quotav1alpha1.ResourceList{
-							"requests.storage": resource.MustParse("100Gi"),
-							"premium-ssd.storageclass.storage.k8s.io/requests.storage": resource.MustParse("50Gi"),
-						},
-					},
-				}
-				Expect(fakeRuntimeClient.Create(ctx, crq)).To(Succeed())
-			})
+					}
+					Expect(fakeRuntimeClient.Create(ctx, namespace)).To(Succeed())
+					// Also create in k8sClient for storage calculator
+					_, err := k8sClient.CoreV1().Namespaces().Create(ctx, namespace, metav1.CreateOptions{})
+					Expect(err).NotTo(HaveOccurred())
 
-			It("should validate storage class specific quotas", func() {
-				storageClass := premiumSSDStorageClass
-				pvc := &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "premium-test-pvc",
-						Namespace: "storage-test-ns",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						StorageClassName: &storageClass,
-						Resources: corev1.VolumeResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resource.MustParse("60Gi"), // Exceeds storage class quota
-							},
-						},
-					},
-				}
-
-				err := webhook.validateStorageQuota(ctx, pvc)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("premium-ssd.storageclass.storage.k8s.io/requests.storage"))
-			})
-
-			It("should validate general storage quota when storage class quota passes", func() {
-				storageClass := premiumSSDStorageClass
-				pvc := &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "general-test-pvc",
-						Namespace: "storage-test-ns",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						StorageClassName: &storageClass,
-						Resources: corev1.VolumeResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resource.MustParse("30Gi"), // Within storage class quota but test general
-							},
-						},
-					},
-				}
-
-				// Add existing PVCs to push general storage over limit
-				for i := 0; i < 5; i++ {
-					existingPVC := &corev1.PersistentVolumeClaim{
+					crq = &quotav1alpha1.ClusterResourceQuota{
 						ObjectMeta: metav1.ObjectMeta{
-							Name:      fmt.Sprintf("existing-pvc-%d", i),
+							Name: "storage-test-crq",
+						},
+						Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"test-label": "storage-validation",
+								},
+							},
+							Hard: quotav1alpha1.ResourceList{
+								"requests.storage": resource.MustParse("100Gi"),
+								"premium-ssd.storageclass.storage.k8s.io/requests.storage": resource.MustParse("50Gi"),
+							},
+						},
+					}
+					Expect(fakeRuntimeClient.Create(ctx, crq)).To(Succeed())
+				})
+
+				It("should validate storage class specific quotas", func() {
+					storageClass := premiumSSDStorageClass
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "premium-test-pvc",
+							Namespace: "storage-test-ns",
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							StorageClassName: &storageClass,
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("60Gi"), // Exceeds storage class quota
+								},
+							},
+						},
+					}
+
+					err := webhook.validateStorageQuota(ctx, pvc)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("premium-ssd.storageclass.storage.k8s.io/requests.storage"))
+				})
+
+				It("should validate general storage quota when storage class quota passes", func() {
+					storageClass := premiumSSDStorageClass
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "general-test-pvc",
+							Namespace: "storage-test-ns",
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							StorageClassName: &storageClass,
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("30Gi"), // Within storage class quota but test general
+								},
+							},
+						},
+					}
+
+					// Add existing PVCs to push general storage over limit
+					for i := 0; i < 5; i++ {
+						existingPVC := &corev1.PersistentVolumeClaim{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      fmt.Sprintf("existing-pvc-%d", i),
+								Namespace: "storage-test-ns",
+							},
+							Spec: corev1.PersistentVolumeClaimSpec{
+								Resources: corev1.VolumeResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceStorage: resource.MustParse("20Gi"),
+									},
+								},
+							},
+						}
+						_, err := k8sClient.CoreV1().PersistentVolumeClaims("storage-test-ns").Create(
+							ctx, existingPVC, metav1.CreateOptions{})
+						Expect(err).NotTo(HaveOccurred())
+					}
+
+					err := webhook.validateStorageQuota(ctx, pvc)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("requests.storage"))
+				})
+
+				It("should handle PVC without storage class", func() {
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "no-storage-class-pvc",
 							Namespace: "storage-test-ns",
 						},
 						Spec: corev1.PersistentVolumeClaimSpec{
 							Resources: corev1.VolumeResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceStorage: resource.MustParse("20Gi"),
+									corev1.ResourceStorage: resource.MustParse("5Gi"),
 								},
 							},
 						},
 					}
-					_, err := k8sClient.CoreV1().PersistentVolumeClaims("storage-test-ns").Create(
-						ctx, existingPVC, metav1.CreateOptions{})
-					Expect(err).NotTo(HaveOccurred())
-				}
 
-				err := webhook.validateStorageQuota(ctx, pvc)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("requests.storage"))
-			})
+					err := webhook.validateStorageQuota(ctx, pvc)
+					Expect(err).NotTo(HaveOccurred()) // Should pass with general storage quota
+				})
 
-			It("should handle PVC without storage class", func() {
-				pvc := &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "no-storage-class-pvc",
-						Namespace: "storage-test-ns",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						Resources: corev1.VolumeResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resource.MustParse("5Gi"),
+				It("should handle missing storage requests", func() {
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "no-storage-requests-pvc",
+							Namespace: "storage-test-ns",
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							Resources: corev1.VolumeResourceRequirements{
+								// No requests specified
 							},
 						},
-					},
-				}
+					}
 
-				err := webhook.validateStorageQuota(ctx, pvc)
-				Expect(err).NotTo(HaveOccurred()) // Should pass with general storage quota
+					err := webhook.validateStorageQuota(ctx, pvc)
+					Expect(err).NotTo(HaveOccurred()) // Should pass when no storage requested
+				})
 			})
 
-			It("should handle missing storage requests", func() {
-				pvc := &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "no-storage-requests-pvc",
-						Namespace: "storage-test-ns",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						Resources: corev1.VolumeResourceRequirements{
-							// No requests specified
-						},
-					},
-				}
+			Describe("validateUpdate edge cases", func() {
+				var namespace *corev1.Namespace
+				var crq *quotav1alpha1.ClusterResourceQuota
+				var ctx context.Context
 
-				err := webhook.validateStorageQuota(ctx, pvc)
-				Expect(err).NotTo(HaveOccurred()) // Should pass when no storage requested
-			})
-		})
-
-		Describe("validateUpdate edge cases", func() {
-			var namespace *corev1.Namespace
-			var crq *quotav1alpha1.ClusterResourceQuota
-			var ctx context.Context
-
-			BeforeEach(func() {
-				namespace = &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "update-test-ns",
-						Labels: map[string]string{
-							"test-label": "update-validation",
-						},
-					},
-				}
-				Expect(fakeRuntimeClient.Create(ctx, namespace)).To(Succeed())
-				// Also create in k8sClient for storage calculator
-				_, err := k8sClient.CoreV1().Namespaces().Create(ctx, namespace, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				crq = &quotav1alpha1.ClusterResourceQuota{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "update-test-crq",
-					},
-					Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-						NamespaceSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{
+				BeforeEach(func() {
+					namespace = &corev1.Namespace{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "update-test-ns",
+							Labels: map[string]string{
 								"test-label": "update-validation",
 							},
 						},
-						Hard: quotav1alpha1.ResourceList{
-							"requests.storage": resource.MustParse("50Gi"),
-						},
-					},
-				}
-				Expect(fakeRuntimeClient.Create(ctx, crq)).To(Succeed())
-			})
+					}
+					Expect(fakeRuntimeClient.Create(ctx, namespace)).To(Succeed())
+					// Also create in k8sClient for storage calculator
+					_, err := k8sClient.CoreV1().Namespaces().Create(ctx, namespace, metav1.CreateOptions{})
+					Expect(err).NotTo(HaveOccurred())
 
-			It("should allow updates that don't increase storage", func() {
-				// Create original PVC
-				pvc := &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "update-pvc",
-						Namespace: "update-test-ns",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						Resources: corev1.VolumeResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resource.MustParse("10Gi"),
+					crq = &quotav1alpha1.ClusterResourceQuota{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "update-test-crq",
+						},
+						Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									"test-label": "update-validation",
+								},
+							},
+							Hard: quotav1alpha1.ResourceList{
+								"requests.storage": resource.MustParse("50Gi"),
 							},
 						},
-					},
-				}
-				Expect(fakeRuntimeClient.Create(ctx, pvc)).To(Succeed())
+					}
+					Expect(fakeRuntimeClient.Create(ctx, crq)).To(Succeed())
+				})
 
-				// Simulate update with same storage
-				updatedPVC := pvc.DeepCopy()
-				// Just change labels, not storage
-				updatedPVC.Labels = map[string]string{"updated": "true"}
-
-				err := webhook.validateUpdate(ctx, updatedPVC)
-				Expect(err).NotTo(HaveOccurred())
-			})
-
-			It("should validate updates that increase storage", func() {
-				// Create original PVC
-				pvc := &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "expand-pvc",
-						Namespace: "update-test-ns",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						Resources: corev1.VolumeResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resource.MustParse("10Gi"),
+				It("should allow updates that don't increase storage", func() {
+					// Create original PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "update-pvc",
+							Namespace: "update-test-ns",
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("10Gi"),
+								},
 							},
 						},
-					},
-				}
-				_, err := k8sClient.CoreV1().PersistentVolumeClaims("update-test-ns").Create(ctx, pvc, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
+					}
+					Expect(fakeRuntimeClient.Create(ctx, pvc)).To(Succeed())
 
-				// Fill up quota with another PVC
-				otherPVC := &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "other-pvc",
-						Namespace: "update-test-ns",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						Resources: corev1.VolumeResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resource.MustParse("35Gi"), // Total would be 45Gi
+					// Simulate update with same storage
+					updatedPVC := pvc.DeepCopy()
+					// Just change labels, not storage
+					updatedPVC.Labels = map[string]string{"updated": "true"}
+
+					err := webhook.validateUpdate(ctx, updatedPVC)
+					Expect(err).NotTo(HaveOccurred())
+				})
+
+				It("should validate updates that increase storage", func() {
+					// Create original PVC
+					pvc := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "expand-pvc",
+							Namespace: "update-test-ns",
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("10Gi"),
+								},
 							},
 						},
-					},
-				}
-				_, err = k8sClient.CoreV1().PersistentVolumeClaims("update-test-ns").Create(ctx, otherPVC, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
+					}
+					_, err := k8sClient.CoreV1().PersistentVolumeClaims("update-test-ns").Create(ctx, pvc, metav1.CreateOptions{})
+					Expect(err).NotTo(HaveOccurred())
 
-				// Try to expand beyond quota
-				updatedPVC := pvc.DeepCopy()
-				// Would make total 55Gi > 50Gi
-				updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("20Gi")
-
-				err = webhook.validateUpdate(ctx, updatedPVC)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("requests.storage"))
-			})
-
-			It("should handle update with nil PVC", func() {
-				newPVC := &corev1.PersistentVolumeClaim{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "nil-test-pvc",
-						Namespace: "update-test-ns",
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						Resources: corev1.VolumeResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceStorage: resource.MustParse("5Gi"),
+					// Fill up quota with another PVC
+					otherPVC := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "other-pvc",
+							Namespace: "update-test-ns",
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("35Gi"), // Total would be 45Gi
+								},
 							},
 						},
-					},
-				}
+					}
+					_, err = k8sClient.CoreV1().PersistentVolumeClaims("update-test-ns").Create(ctx, otherPVC, metav1.CreateOptions{})
+					Expect(err).NotTo(HaveOccurred())
 
-				err := webhook.validateUpdate(ctx, newPVC)
-				Expect(err).NotTo(HaveOccurred()) // Should validate as normal
+					// Try to expand beyond quota
+					updatedPVC := pvc.DeepCopy()
+					// Would make total 55Gi > 50Gi
+					updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("20Gi")
+
+					err = webhook.validateUpdate(ctx, updatedPVC)
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("requests.storage"))
+				})
+
+				It("should handle update with nil PVC", func() {
+					newPVC := &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "nil-test-pvc",
+							Namespace: "update-test-ns",
+						},
+						Spec: corev1.PersistentVolumeClaimSpec{
+							Resources: corev1.VolumeResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceStorage: resource.MustParse("5Gi"),
+								},
+							},
+						},
+					}
+
+					err := webhook.validateUpdate(ctx, newPVC)
+					Expect(err).NotTo(HaveOccurred()) // Should validate as normal
+				})
 			})
 		})
 	})

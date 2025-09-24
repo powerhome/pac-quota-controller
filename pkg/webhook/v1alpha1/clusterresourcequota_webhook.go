@@ -24,7 +24,7 @@ import (
 type ClusterResourceQuotaWebhook struct {
 	client            kubernetes.Interface
 	crqClient         *quota.CRQClient
-	serviceCalculator services.ServiceResourceCalculatorInterface
+	serviceCalculator services.ServiceResourceCalculator
 	log               *zap.Logger
 }
 
@@ -37,7 +37,7 @@ func NewClusterResourceQuotaWebhook(
 	return &ClusterResourceQuotaWebhook{
 		client:            k8sClient,
 		crqClient:         crqClient,
-		serviceCalculator: services.NewServiceResourceCalculator(k8sClient),
+		serviceCalculator: *services.NewServiceResourceCalculator(k8sClient),
 		log:               log,
 	}
 }
@@ -123,17 +123,9 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 		h.log.Info("Validating ClusterResourceQuota on update",
 			zap.String("name", crq.GetName()))
 		err = h.validateUpdate(ctx, &crq)
-	case admissionv1.Delete:
-		h.log.Info("Validating ClusterResourceQuota on delete",
-			zap.String("name", crq.GetName()))
-		err = h.validateDelete(ctx)
 	default:
 		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
-		admissionReview.Response.Allowed = false
-		admissionReview.Response.Result = &metav1.Status{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("Operation %s is not supported for ClusterResourceQuota", admissionReview.Request.Operation),
-		}
+		admissionReview.Response.Allowed = true
 		c.JSON(http.StatusOK, admissionReview)
 		return
 	}
@@ -152,7 +144,8 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 	c.JSON(http.StatusOK, admissionReview)
 }
 
-func (h *ClusterResourceQuotaWebhook) validateCreate(
+// validateOperation is a shared helper for create/update validation
+func (h *ClusterResourceQuotaWebhook) validateOperation(
 	ctx context.Context,
 	crq *quotav1alpha1.ClusterResourceQuota,
 ) error {
@@ -192,63 +185,29 @@ func (h *ClusterResourceQuotaWebhook) validateCreate(
 				}
 				hardQty := crq.Spec.Hard[resourceName]
 				if totalUsage.Cmp(hardQty) > 0 {
-					return fmt.Errorf("quota exceeded for %s: used %s, hard limit %s", resourceName, totalUsage.String(), hardQty.String())
+					return fmt.Errorf(
+						"quota exceeded for %s: used %s, hard limit %s",
+						resourceName,
+						totalUsage.String(),
+						hardQty.String(),
+					)
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func (h *ClusterResourceQuotaWebhook) validateCreate(
+	ctx context.Context,
+	crq *quotav1alpha1.ClusterResourceQuota,
+) error {
+	return h.validateOperation(ctx, crq)
 }
 
 func (h *ClusterResourceQuotaWebhook) validateUpdate(
 	ctx context.Context,
 	crq *quotav1alpha1.ClusterResourceQuota,
 ) error {
-	if h.crqClient == nil {
-		return fmt.Errorf("CRQ client not available for validation")
-	}
-
-	validator := namespace.NewNamespaceValidator(h.client, h.crqClient)
-	if err := validator.ValidateCRQNamespaceConflicts(ctx, crq); err != nil {
-		return err
-	}
-
-	// Validate service object count quotas for all supported service resource types
-	if crq.Spec.Hard != nil && crq.Spec.NamespaceSelector != nil {
-		selector, err := namespace.NewLabelBasedNamespaceSelector(h.client, crq.Spec.NamespaceSelector)
-		if err != nil {
-			return fmt.Errorf("failed to create namespace selector: %w", err)
-		}
-		selectedNamespaces, err := selector.GetSelectedNamespaces(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get selected namespaces: %w", err)
-		}
-		for resourceName := range crq.Spec.Hard {
-			switch resourceName {
-			case "services", "services.loadbalancers", "services.nodeports", "services.clusterips", "services.externalnames":
-				var totalUsage resource.Quantity
-				for _, ns := range selectedNamespaces {
-					usageQty, err := h.serviceCalculator.CalculateUsage(ctx, ns, resourceName)
-					if err != nil {
-						return fmt.Errorf("failed to calculate usage for %s in namespace %s: %w", resourceName, ns, err)
-					}
-					if totalUsage.IsZero() {
-						totalUsage = usageQty.DeepCopy()
-					} else {
-						totalUsage.Add(usageQty)
-					}
-				}
-				hardQty := crq.Spec.Hard[resourceName]
-				if totalUsage.Cmp(hardQty) > 0 {
-					return fmt.Errorf("quota exceeded for %s: used %s, hard limit %s", resourceName, totalUsage.String(), hardQty.String())
-				}
-			}
-		}
-	}
-	return nil
-}
-
-func (h *ClusterResourceQuotaWebhook) validateDelete(_ context.Context) error {
-	// No validation needed for delete operations
-	return nil
+	return h.validateOperation(ctx, crq)
 }

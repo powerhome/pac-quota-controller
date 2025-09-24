@@ -47,7 +47,6 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	h.log.Info("Received request for ObjectCountWebhook", zap.String("resource", admissionReview.Request.Resource.Resource))
 
 	// Check for malformed requests (like {}) that don't have proper AdmissionReview structure
 	if admissionReview.Kind == "" && admissionReview.APIVersion == "" && admissionReview.Request == nil {
@@ -122,16 +121,28 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 	c.JSON(http.StatusOK, admissionReview)
 }
 
-func (h *ObjectCountWebhook) validateCreate(ctx context.Context, namespace string, resourceName corev1.ResourceName) ([]string, error) {
+func (h *ObjectCountWebhook) validateCreate(
+	ctx context.Context,
+	namespace string,
+	resourceName corev1.ResourceName) ([]string, error) {
 	return h.validateObjectOperation(ctx, namespace, resourceName, "creation")
 }
 
-func (h *ObjectCountWebhook) validateUpdate(ctx context.Context, namespace string, resourceName corev1.ResourceName) ([]string, error) {
+func (h *ObjectCountWebhook) validateUpdate(
+	ctx context.Context,
+	namespace string,
+	resourceName corev1.ResourceName,
+) ([]string, error) {
 	return h.validateObjectOperation(ctx, namespace, resourceName, "update")
 }
 
 // validateObjectOperation is a shared function for both create and update validation
-func (h *ObjectCountWebhook) validateObjectOperation(ctx context.Context, namespace string, resourceName corev1.ResourceName, operation string) ([]string, error) {
+func (h *ObjectCountWebhook) validateObjectOperation(
+	ctx context.Context,
+	namespace string,
+	resourceName corev1.ResourceName,
+	operation string,
+) ([]string, error) {
 	if resourceName == "" {
 		h.log.Info("Skipping CRQ validation for nil object on " + operation)
 		return nil, nil

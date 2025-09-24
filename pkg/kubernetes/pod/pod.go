@@ -21,9 +21,6 @@ type PodResourceCalculator struct {
 	usage.BaseResourceCalculator
 }
 
-// Ensure PodResourceCalculator implements PodResourceCalculatorInterface
-var _ PodResourceCalculatorInterface = &PodResourceCalculator{}
-
 // NewPodResourceCalculator creates a new PodResourceCalculator
 func NewPodResourceCalculator(c kubernetes.Interface) *PodResourceCalculator {
 	return &PodResourceCalculator{
@@ -90,6 +87,9 @@ func getContainerResourceUsage(container corev1.Container, resourceName corev1.R
 		}
 	default:
 		// Handle extended resources with 'requests.' prefix
+		// As the CRQ Hard Spec requires the resource name to be in the format 'requests.<resource>'
+		// https://kubernetes.io/docs/concepts/policy/resource-quotas/#quota-for-extended-resources
+		// We need to remove the prefix, as the pod requests is a nested key
 		s := string(resourceName)
 		if strings.HasPrefix(s, "requests.") {
 			extName := corev1.ResourceName(s[len("requests."):])
@@ -121,7 +121,10 @@ func (c *PodResourceCalculator) CalculateUsage(
 		if err != nil {
 			return resource.Quantity{}, err
 		}
-		return *resource.NewQuantity(podCount, resource.DecimalSI), nil
+		return *resource.NewQuantity(
+			podCount,
+			resource.DecimalSI,
+		), nil
 	}
 
 	podList, err := c.Client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})

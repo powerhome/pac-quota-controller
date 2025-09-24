@@ -12,12 +12,16 @@ import (
 )
 
 // CountServices returns the total number of services and a breakdown by type in the namespace (public interface).
-func (c *ServiceResourceCalculator) CountServices(ctx context.Context, namespace string) (int64, map[corev1.ServiceType]int64, error) {
+func (c *ServiceResourceCalculator) CountServices(
+	ctx context.Context,
+	namespace string,
+) (
+	int64,
+	map[corev1.ServiceType]int64,
+	error,
+) {
 	return c.countServicesByType(ctx, namespace)
 }
-
-// Ensure ServiceResourceCalculator implements usage.ResourceCalculatorInterface
-var _ usage.ResourceCalculatorInterface = &ServiceResourceCalculator{}
 
 // ServiceResourceCalculator provides methods for counting services and subtypes in a namespace.
 type ServiceResourceCalculator struct {
@@ -36,7 +40,14 @@ var resourceNameToServiceType = map[corev1.ResourceName]corev1.ServiceType{
 }
 
 // CalculateUsage returns the usage count for a specific service type resource in the namespace.
-func (c *ServiceResourceCalculator) CalculateUsage(ctx context.Context, namespace string, resourceName corev1.ResourceName) (resource.Quantity, error) {
+func (c *ServiceResourceCalculator) CalculateUsage(
+	ctx context.Context,
+	namespace string,
+	resourceName corev1.ResourceName,
+) (
+	resource.Quantity,
+	error,
+) {
 	total, byType, err := c.countServicesByType(ctx, namespace)
 	if err != nil {
 		return resource.Quantity{}, err
@@ -57,21 +68,37 @@ func (c *ServiceResourceCalculator) CalculateUsage(ctx context.Context, namespac
 }
 
 // CalculateTotalUsage calculates the total usage for all supported service count resources in a namespace.
-func (c *ServiceResourceCalculator) CalculateTotalUsage(ctx context.Context, namespace string) (map[corev1.ResourceName]resource.Quantity, error) {
+func (c *ServiceResourceCalculator) CalculateTotalUsage(
+	ctx context.Context,
+	namespace string,
+) (
+	map[corev1.ResourceName]resource.Quantity,
+	error,
+) {
 	total, byType, err := c.countServicesByType(ctx, namespace)
 	if err != nil {
 		return nil, err
 	}
 	result := map[corev1.ResourceName]resource.Quantity{
-		usage.ResourceServices:              *resource.NewQuantity(total, resource.DecimalSI),
-		usage.ResourceServicesLoadBalancers: *resource.NewQuantity(byType[corev1.ServiceTypeLoadBalancer], resource.DecimalSI),
-		usage.ResourceServicesNodePorts:     *resource.NewQuantity(byType[corev1.ServiceTypeNodePort], resource.DecimalSI),
+		usage.ResourceServices: *resource.NewQuantity(total, resource.DecimalSI),
+		usage.ResourceServicesLoadBalancers: *resource.NewQuantity(
+			byType[corev1.ServiceTypeLoadBalancer],
+			resource.DecimalSI,
+		),
+		usage.ResourceServicesNodePorts: *resource.NewQuantity(byType[corev1.ServiceTypeNodePort], resource.DecimalSI),
 	}
 	return result, nil
 }
 
 // CountServices returns the total number of services and a breakdown by type in the namespace.
-func (c *ServiceResourceCalculator) countServicesByType(ctx context.Context, namespace string) (total int64, byType map[corev1.ServiceType]int64, err error) {
+func (c *ServiceResourceCalculator) countServicesByType(
+	ctx context.Context,
+	namespace string,
+) (
+	total int64,
+	byType map[corev1.ServiceType]int64,
+	err error,
+) {
 	serviceList, err := c.Client.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return 0, nil, err

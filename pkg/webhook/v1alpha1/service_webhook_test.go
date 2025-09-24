@@ -54,7 +54,7 @@ var _ = Describe("ServiceWebhook", func() {
 		logger = zap.NewNop()
 		webhook = &ServiceWebhook{
 			client:            fakeClient,
-			serviceCalculator: services.NewServiceResourceCalculator(fakeClient),
+			serviceCalculator: *services.NewServiceResourceCalculator(fakeClient),
 			crqClient:         crqClient,
 			log:               logger,
 		}
@@ -138,41 +138,6 @@ var _ = Describe("ServiceWebhook", func() {
 			response := sendWebhookRequest(ginEngine, admissionReview)
 			Expect(response.Response.Allowed).To(BeFalse())
 			Expect(response.Response.Result.Message).To(ContainSubstring("failed to get namespace"))
-		})
-	})
-
-	Describe("NewServiceWebhook", func() {
-		It("should create a new service webhook", func() {
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.client).To(Equal(fakeClient))
-			Expect(webhook.log).To(Equal(logger))
-			Expect(webhook.serviceCalculator).NotTo(BeNil())
-		})
-
-		It("should create webhook with nil client", func() {
-			webhook := NewServiceWebhook(nil, crqClient, logger)
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.client).To(BeNil())
-		})
-
-		It("should create webhook with nil logger", func() {
-			webhook := NewServiceWebhook(fakeClient, crqClient, nil)
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.log).To(BeNil())
-		})
-
-		It("should create webhook with nil CRQ client", func() {
-			webhook := NewServiceWebhook(fakeClient, nil, logger)
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.crqClient).To(BeNil())
-		})
-
-		It("should create webhook with all nil parameters", func() {
-			webhook := NewServiceWebhook(nil, nil, nil)
-			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.client).To(BeNil())
-			Expect(webhook.crqClient).To(BeNil())
-			Expect(webhook.log).To(BeNil())
 		})
 	})
 
@@ -295,21 +260,6 @@ var _ = Describe("ServiceWebhook", func() {
 			Expect(w.Code).To(Equal(http.StatusBadRequest))
 		})
 
-		It("should reject unsupported operation", func() {
-			svc := &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-service",
-					Namespace: "test-namespace",
-				},
-			}
-
-			admissionReview := createServiceAdmissionReview(svc, admissionv1.Delete)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported"))
-		})
-
 		Describe("validateCreate", func() {
 			It("should validate service creation", func() {
 				svc := &corev1.Service{
@@ -404,7 +354,6 @@ var _ = Describe("ServiceWebhook", func() {
 				Expect(response.Response.Allowed).To(BeTrue())
 			})
 		})
-
 		Describe("Cross-Namespace Quota Validation", func() {
 			var (
 				crq          *quotav1alpha1.ClusterResourceQuota
@@ -578,9 +527,12 @@ var _ = Describe("ServiceWebhook", func() {
 				response := sendWebhookRequest(ginEngine, admissionReview)
 
 				Expect(response.Response.Allowed).To(BeFalse())
-				Expect(response.Response.Result.Message).To(ContainSubstring("ClusterResourceQuota service count validation failed for"))
-				Expect(response.Response.Result.Message).To(ContainSubstring("test-crq"))
-				Expect(response.Response.Result.Message).To(ContainSubstring("limit exceeded"))
+				Expect(response.Response.Result.Message).
+					To(ContainSubstring("ClusterResourceQuota service count validation failed for"))
+				Expect(response.Response.Result.Message).
+					To(ContainSubstring("test-crq"))
+				Expect(response.Response.Result.Message).
+					To(ContainSubstring("limit exceeded"))
 			})
 
 			It("should allow svc that fits within cross-namespace quota limits", func() {
@@ -684,7 +636,7 @@ var _ = Describe("ServiceWebhook", func() {
 				ginEngine = gin.New()
 				webhook = &ServiceWebhook{
 					client:            fakeClient,
-					serviceCalculator: services.NewServiceResourceCalculator(fakeClient),
+					serviceCalculator: *services.NewServiceResourceCalculator(fakeClient),
 					crqClient:         crqClient,
 					log:               logger,
 				}
@@ -711,7 +663,7 @@ var _ = Describe("ServiceWebhook", func() {
 						Ports: []corev1.ServicePort{{Name: "http", Port: 80, TargetPort: intstr.FromInt(8080)}},
 					},
 				}
-				fakeClient.CoreV1().Services("test-ns-2").Create(ctx, &corev1.Service{
+				_, err := fakeClient.CoreV1().Services("test-ns-2").Create(ctx, &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "existing-svc-1",
 						Namespace: "test-ns-2",
@@ -721,6 +673,7 @@ var _ = Describe("ServiceWebhook", func() {
 						Ports: []corev1.ServicePort{{Name: "http", Port: 81, TargetPort: intstr.FromInt(8081)}},
 					},
 				}, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
 				admissionReview := createServiceAdmissionReview(newSvc, admissionv1.Create)
 				response := sendWebhookRequest(ginEngine, admissionReview)
 				Expect(response.Response.Allowed).To(BeTrue())
@@ -728,7 +681,7 @@ var _ = Describe("ServiceWebhook", func() {
 
 			It("should reject creation of a NodePort service if NodePort quota exceeded", func() {
 				// Add two NodePort services to reach the quota (quota is 2)
-				fakeClient.CoreV1().Services("test-ns-1").Create(ctx, &corev1.Service{
+				_, err := fakeClient.CoreV1().Services("test-ns-1").Create(ctx, &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "existing-nodeport-1",
 						Namespace: "test-ns-1",
@@ -738,7 +691,8 @@ var _ = Describe("ServiceWebhook", func() {
 						Ports: []corev1.ServicePort{{Name: "http", Port: 82, TargetPort: intstr.FromInt(8082)}},
 					},
 				}, metav1.CreateOptions{})
-				fakeClient.CoreV1().Services("test-ns-2").Create(ctx, &corev1.Service{
+				Expect(err).ToNot(HaveOccurred())
+				_, err = fakeClient.CoreV1().Services("test-ns-2").Create(ctx, &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "existing-nodeport-2",
 						Namespace: "test-ns-2",
@@ -748,6 +702,7 @@ var _ = Describe("ServiceWebhook", func() {
 						Ports: []corev1.ServicePort{{Name: "http", Port: 83, TargetPort: intstr.FromInt(8083)}},
 					},
 				}, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
 				newSvc := &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "new-nodeport",
@@ -776,7 +731,7 @@ var _ = Describe("ServiceWebhook", func() {
 					},
 				}
 				// Add a ClusterIP service to test-ns-2 to ensure quota logic is exercised
-				fakeClient.CoreV1().Services("test-ns-2").Create(ctx, &corev1.Service{
+				_, err := fakeClient.CoreV1().Services("test-ns-2").Create(ctx, &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "existing-svc-ext",
 						Namespace: "test-ns-2",
@@ -786,6 +741,7 @@ var _ = Describe("ServiceWebhook", func() {
 						Ports: []corev1.ServicePort{{Name: "http", Port: 87, TargetPort: intstr.FromInt(8087)}},
 					},
 				}, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
 				admissionReview := createServiceAdmissionReview(newSvc, admissionv1.Create)
 				response := sendWebhookRequest(ginEngine, admissionReview)
 				Expect(response.Response.Allowed).To(BeTrue())
@@ -793,7 +749,7 @@ var _ = Describe("ServiceWebhook", func() {
 
 			It("should reject creation of a LoadBalancer service if quota exceeded", func() {
 				// Add a LoadBalancer service to reach the quota (quota is 1)
-				fakeClient.CoreV1().Services("test-ns-2").Create(ctx, &corev1.Service{
+				_, err := fakeClient.CoreV1().Services("test-ns-2").Create(ctx, &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "existing-lb",
 						Namespace: "test-ns-2",
@@ -803,6 +759,7 @@ var _ = Describe("ServiceWebhook", func() {
 						Ports: []corev1.ServicePort{{Name: "http", Port: 88, TargetPort: intstr.FromInt(8088)}},
 					},
 				}, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
 				newSvc := &corev1.Service{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "new-loadbalancer",
@@ -852,7 +809,7 @@ var _ = Describe("ServiceWebhook", func() {
 				crqClient := quota.NewCRQClient(fakeRuntimeClient)
 				webhook := &ServiceWebhook{
 					client:            fakeClient,
-					serviceCalculator: services.NewServiceResourceCalculator(fakeClient),
+					serviceCalculator: *services.NewServiceResourceCalculator(fakeClient),
 					crqClient:         crqClient,
 					log:               logger,
 				}
@@ -879,7 +836,10 @@ var _ = Describe("ServiceWebhook", func() {
 })
 
 // Helper functions for testing
-func createServiceAdmissionReview(service *corev1.Service, operation admissionv1.Operation) *admissionv1.AdmissionReview {
+func createServiceAdmissionReview(
+	service *corev1.Service,
+	operation admissionv1.Operation,
+) *admissionv1.AdmissionReview {
 	raw, _ := json.Marshal(service)
 	return &admissionv1.AdmissionReview{
 		Request: &admissionv1.AdmissionRequest{

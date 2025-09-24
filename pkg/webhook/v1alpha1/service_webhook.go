@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -17,6 +16,7 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -24,7 +24,7 @@ import (
 // It enforces object count quotas for services and subtypes.
 type ServiceWebhook struct {
 	client            kubernetes.Interface
-	serviceCalculator services.ServiceResourceCalculatorInterface
+	serviceCalculator services.ServiceResourceCalculator
 	crqClient         *quota.CRQClient
 	log               *zap.Logger
 }
@@ -33,7 +33,7 @@ type ServiceWebhook struct {
 func NewServiceWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *ServiceWebhook {
 	return &ServiceWebhook{
 		client:            k8sClient,
-		serviceCalculator: services.NewServiceResourceCalculator(k8sClient),
+		serviceCalculator: *services.NewServiceResourceCalculator(k8sClient),
 		crqClient:         crqClient,
 		log:               log,
 	}
@@ -109,27 +109,17 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 	var warnings []string
 	var err error
 	ctx := c.Request.Context()
-	switch admissionReview.Request.Operation {
-	case admissionv1.Create:
-		h.log.Info("Validating Service on create",
-			zap.String("name", svc.GetName()),
-			zap.String("namespace", svc.GetNamespace()))
-		warnings, err = h.validateCreate(ctx, &svc)
-	case admissionv1.Update:
-		h.log.Info("Validating Service on update",
-			zap.String("name", svc.GetName()),
-			zap.String("namespace", svc.GetNamespace()))
-		warnings, err = h.validateUpdate(ctx, &svc)
-	default:
-		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
-		admissionReview.Response.Allowed = false
-		admissionReview.Response.Result = &metav1.Status{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("Operation %s is not supported for Service", admissionReview.Request.Operation),
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
-	}
+	warnings, err = handleWebhookOperation(
+		h.log,
+		admissionReview.Request.Operation,
+		svc.GetName(),
+		svc.GetNamespace(),
+		func() ([]string, error) { return h.validateCreate(ctx, &svc) },
+		func() ([]string, error) { return h.validateUpdate(ctx, &svc) },
+		c,
+		&admissionReview,
+		"Service",
+	)
 
 	if err != nil {
 		h.log.Error("Validation failed", zap.Error(err))
@@ -157,7 +147,11 @@ func (h *ServiceWebhook) validateUpdate(ctx context.Context, svc *corev1.Service
 }
 
 // validateServiceOperation is a shared function for both create and update validation
-func (h *ServiceWebhook) validateServiceOperation(ctx context.Context, svc *corev1.Service, operation string) ([]string, error) {
+func (h *ServiceWebhook) validateServiceOperation(
+	ctx context.Context,
+	svc *corev1.Service,
+	operation string,
+) ([]string, error) {
 	if svc == nil {
 		h.log.Info("Skipping CRQ validation for nil service on " + operation)
 		return nil, nil

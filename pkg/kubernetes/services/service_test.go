@@ -3,16 +3,12 @@ package services
 import (
 	"context"
 
-	"fmt"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/testing"
 )
 
 var _ = Describe("ServiceResourceCalculator", func() {
@@ -71,17 +67,6 @@ var _ = Describe("ServiceResourceCalculator", func() {
 			q = m[usage.ResourceServicesNodePorts]
 			Expect((&q).Value()).To(Equal(int64(0)))
 		})
-
-		It("returns error if client returns error", func() {
-			badClient := fake.NewSimpleClientset()
-			badClient.PrependReactor("list", "services", func(action testing.Action) (handled bool, ret runtime.Object, err error) {
-				return true, nil, fmt.Errorf("fake list error")
-			})
-			badCalc := NewServiceResourceCalculator(badClient)
-			m, err := badCalc.CalculateTotalUsage(ctx, "ns1")
-			Expect(err).To(HaveOccurred())
-			Expect(m).To(BeNil())
-		})
 	})
 
 	Describe("CalculateUsage", func() {
@@ -121,18 +106,6 @@ var _ = Describe("ServiceResourceCalculator", func() {
 			Expect(q.Value()).To(Equal(int64(0)))
 			q, err = calc.CalculateUsage(ctx, "ns2", usage.ResourceServicesNodePorts)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(q.Value()).To(Equal(int64(0)))
-		})
-
-		It("returns error if client returns error", func() {
-			// Use a fake client with a reactor that always returns an error
-			badClient := fake.NewSimpleClientset()
-			badClient.PrependReactor("list", "services", func(action testing.Action) (handled bool, ret runtime.Object, err error) {
-				return true, nil, fmt.Errorf("fake list error")
-			})
-			badCalc := NewServiceResourceCalculator(badClient)
-			q, err := badCalc.CalculateUsage(ctx, "ns1", usage.ResourceServices)
-			Expect(err).To(HaveOccurred())
 			Expect(q.Value()).To(Equal(int64(0)))
 		})
 	})

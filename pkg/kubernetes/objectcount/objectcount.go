@@ -1,5 +1,4 @@
 // Package objectcount provides resource calculators for generic object count resources.
-// Implements usage.ResourceCalculatorInterface for deployments, statefulsets, daemonsets, jobs, cronjobs, hpas, ingresses, configmaps, secrets, replicationcontrollers.
 package objectcount
 
 import (
@@ -24,11 +23,15 @@ func NewObjectCountCalculator(client kubernetes.Interface) *ObjectCountCalculato
 }
 
 // CalculateUsage returns the count of the specified resource in the namespace.
-func (c *ObjectCountCalculator) CalculateUsage(ctx context.Context, namespace string, resourceName corev1.ResourceName) (resource.Quantity, error) {
+func (c *ObjectCountCalculator) CalculateUsage(
+	ctx context.Context,
+	namespace string,
+	resourceName corev1.ResourceName) (resource.Quantity, error) {
 	var count int64
 	var err error
 
 	switch resourceName {
+	// There is always a kube-root-ca.crt configmap in each namespace
 	case "configmaps":
 		list, e := c.Client.CoreV1().ConfigMaps(namespace).List(ctx, metav1.ListOptions{})
 		count, err = int64(len(list.Items)), e
@@ -70,7 +73,10 @@ func (c *ObjectCountCalculator) CalculateUsage(ctx context.Context, namespace st
 }
 
 // CalculateTotalUsage returns a map with the count for the configured resource in the namespace.
-func (c *ObjectCountCalculator) CalculateTotalUsage(ctx context.Context, resourceName corev1.ResourceName, namespace string) (map[corev1.ResourceName]resource.Quantity, error) {
+func (c *ObjectCountCalculator) CalculateTotalUsage(
+	ctx context.Context,
+	resourceName corev1.ResourceName,
+	namespace string) (map[corev1.ResourceName]resource.Quantity, error) {
 	usage := make(map[corev1.ResourceName]resource.Quantity)
 	q, err := c.CalculateUsage(ctx, namespace, resourceName)
 	if err != nil {

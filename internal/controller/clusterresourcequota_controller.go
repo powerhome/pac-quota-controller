@@ -1,19 +1,3 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package controller
 
 import (
@@ -115,7 +99,7 @@ type ClusterResourceQuotaReconciler struct {
 	crqClient                quota.CRQClientInterface
 	ComputeCalculator        *pod.PodResourceCalculator
 	StorageCalculator        *storage.StorageResourceCalculator
-	ServiceCalculator        services.ServiceResourceCalculatorInterface
+	ServiceCalculator        *services.ServiceResourceCalculator
 	ExcludeNamespaceLabelKey string
 	ExcludedNamespaces       []string
 }
@@ -241,12 +225,12 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 			for _, nsName := range namespaces {
 				var currentUsage resource.Quantity
 				if r.StorageCalculator != nil {
-					usage, err := r.StorageCalculator.CalculateStorageClassUsage(ctx, nsName, storageClass)
+					storageUsage, err := r.StorageCalculator.CalculateStorageClassUsage(ctx, nsName, storageClass)
 					if err != nil {
 						log.Error(err, "Failed to calculate storage class usage", "resource", resourceName, "namespace", nsName, "storageClass", storageClass)
 						currentUsage = resource.MustParse("0")
 					} else {
-						currentUsage = usage
+						currentUsage = storageUsage
 					}
 				} else {
 					log.Error(nil, "StorageCalculator is nil", "namespace", nsName, "resource", resourceName)
@@ -346,22 +330,22 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(ctx context.Contex
 			log.Error(nil, "ServiceCalculator is nil", "namespace", ns, "resource", resourceName)
 			return resource.MustParse("0")
 		}
-		usage, err := r.ServiceCalculator.CalculateUsage(ctx, ns, resourceName)
+		serviceCount, err := r.ServiceCalculator.CalculateUsage(ctx, ns, resourceName)
 		if err != nil {
 			log.Error(err, "Failed to calculate service usage", "resource", resourceName, "namespace", ns)
 			return resource.MustParse("0")
 		}
-		return usage
+		return serviceCount
 	case usage.ResourceConfigMaps, usage.ResourceSecrets, usage.ResourceReplicationControllers,
 		usage.ResourceDeployments, usage.ResourceStatefulSets, usage.ResourceDaemonSets,
 		usage.ResourceJobs, usage.ResourceCronJobs, usage.ResourceHorizontalPodAutoscalers, usage.ResourceIngresses:
 		calc := objectcount.NewObjectCountCalculator(r.KubeClient)
-		usage, err := calc.CalculateUsage(ctx, ns, resourceName)
+		objectCount, err := calc.CalculateUsage(ctx, ns, resourceName)
 		if err != nil {
 			log.Error(err, "Failed to calculate object count usage", "resource", resourceName, "namespace", ns)
 			return resource.MustParse("0")
 		}
-		return usage
+		return objectCount
 	default:
 		log.Info("Unsupported object count resource for calculateObjectCount", "resource", resourceName, "namespace", ns)
 		return resource.MustParse("0")
@@ -370,12 +354,12 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(ctx context.Contex
 
 // calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
 func (r *ClusterResourceQuotaReconciler) calculateComputeResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
-	usage, err := r.ComputeCalculator.CalculateUsage(ctx, ns, resourceName)
+	computeUsage, err := r.ComputeCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
 		log.Error(err, "Failed to calculate compute resources", "resource", resourceName, "namespace", ns)
 		return resource.MustParse("0")
 	}
-	return usage
+	return computeUsage
 }
 
 // calculateStorageResources calculates the usage for storage resource quotas.
@@ -385,12 +369,12 @@ func (r *ClusterResourceQuotaReconciler) calculateStorageResources(ctx context.C
 		return resource.MustParse("0")
 	}
 
-	usage, err := r.StorageCalculator.CalculateUsage(ctx, ns, resourceName)
+	storageUsage, err := r.StorageCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
 		log.Error(err, "Failed to calculate storage resources", "resource", resourceName, "namespace", ns)
 		return resource.MustParse("0")
 	}
-	return usage
+	return storageUsage
 }
 
 // updateStatus updates the status of the ClusterResourceQuota object.

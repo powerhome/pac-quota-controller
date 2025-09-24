@@ -28,7 +28,7 @@ spec:
           ClusterResourceQuota is the Schema for the clusterresourcequotas API.
           It extends the standard Kubernetes ResourceQuota by allowing it to be applied across multiple
           namespaces that match a label selector.
-          
+
           Supported object count resources (for use in the 'hard' and 'used' fields):
             - pods
             - services
@@ -45,7 +45,7 @@ spec:
             - cronjobs.batch
             - horizontalpodautoscalers.autoscaling
             - ingresses.networking.k8s.io
-          
+
           You may specify quotas for any of these resources. See the Helm chart documentation for details and examples.
         properties:
           apiVersion:
@@ -93,7 +93,7 @@ spec:
                   'cronjobs.batch': '3' (CronJob count)
                   'horizontalpodautoscalers.autoscaling': '2' (HPA count)
                   'ingresses.networking.k8s.io': '3' (Ingress count)
-                
+
                   ...and so on for all supported native and extended resource types.
                 type: object
               namespaceSelector:

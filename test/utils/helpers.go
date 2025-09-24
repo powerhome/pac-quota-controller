@@ -658,7 +658,13 @@ func NewCronJob(name, namespace string) *batchv1.CronJob {
 				Spec: batchv1.JobSpec{
 					Template: corev1.PodTemplateSpec{
 						Spec: corev1.PodSpec{
-							Containers:    []corev1.Container{{Name: "container", Image: "busybox:latest", Command: []string{"echo", "hello"}}},
+							Containers: []corev1.Container{
+								{
+									Name:    "container",
+									Image:   "busybox:latest",
+									Command: []string{"echo", "hello"},
+								},
+							},
 							RestartPolicy: corev1.RestartPolicyNever,
 						},
 					},
@@ -692,8 +698,7 @@ func NewHPA(name, namespace string) *autoscalingv2.HorizontalPodAutoscaler {
 
 // NewIngress returns an Ingress object for testing
 func NewIngress(name, namespace string) *networkingv1.Ingress {
-	var pathType networkingv1.PathType
-	pathType = "Exact"
+	pathType := networkingv1.PathType("Exact")
 	return &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,

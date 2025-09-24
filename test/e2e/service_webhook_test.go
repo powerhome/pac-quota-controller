@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
@@ -47,8 +49,11 @@ var _ = Describe("Service Quota Webhook", func() {
 
 		// Wait for CRQ status to include the test namespace before proceeding
 		By("Waiting for CRQ status to include the test namespace")
-		err = testutils.WaitForCRQStatus(ctx, k8sClient, testCRQName, []string{testNamespace} /*timeout*/, 60*1e9 /*interval*/, 1*1e9)
-		Expect(err).NotTo(HaveOccurred(), "CRQ status did not include the test namespace in time; check CRQ selector and namespace labels")
+		err = testutils.WaitForCRQStatus(ctx, k8sClient, testCRQName, []string{testNamespace}, 10*time.Second, 1*time.Second)
+		Expect(err).NotTo(
+			HaveOccurred(),
+			"CRQ status did not include the test namespace in time; check CRQ selector and namespace labels",
+		)
 	})
 
 	AfterEach(func() {
@@ -261,7 +266,16 @@ var _ = Describe("Service Quota Webhook", func() {
 			Expect(k8sClient.Create(ctx, lbService)).To(Succeed())
 			// Try to update the ClusterIP service to LoadBalancer (should fail)
 			var fetched corev1.Service
-			Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{Name: service.Name, Namespace: testNamespace}, &fetched)).To(Succeed())
+			Expect(
+				k8sClient.Get(
+					ctx,
+					ctrlclient.ObjectKey{
+						Name:      service.Name,
+						Namespace: testNamespace,
+					},
+					&fetched,
+				),
+			).To(Succeed())
 			fetched.Spec.Type = corev1.ServiceTypeLoadBalancer
 			err := k8sClient.Update(ctx, &fetched)
 			Expect(err).To(HaveOccurred())

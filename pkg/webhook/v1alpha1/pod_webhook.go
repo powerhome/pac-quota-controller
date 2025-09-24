@@ -1,19 +1,3 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package v1alpha1
 
 import (
@@ -39,7 +23,7 @@ import (
 // PodWebhook handles webhook requests for Pod resources
 type PodWebhook struct {
 	client        kubernetes.Interface
-	podCalculator pod.PodResourceCalculatorInterface
+	podCalculator pod.PodResourceCalculator
 	crqClient     *quota.CRQClient
 	log           *zap.Logger
 }
@@ -48,7 +32,7 @@ type PodWebhook struct {
 func NewPodWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *PodWebhook {
 	return &PodWebhook{
 		client:        k8sClient,
-		podCalculator: pod.NewPodResourceCalculator(k8sClient),
+		podCalculator: *pod.NewPodResourceCalculator(k8sClient),
 		crqClient:     crqClient,
 		log:           log,
 	}
@@ -130,27 +114,17 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 	var err error
 
 	ctx := c.Request.Context()
-	switch admissionReview.Request.Operation {
-	case admissionv1.Create:
-		h.log.Info("Validating Pod on create",
-			zap.String("name", podObj.GetName()),
-			zap.String("namespace", podObj.GetNamespace()))
-		warnings, err = h.validateCreate(ctx, &podObj)
-	case admissionv1.Update:
-		h.log.Info("Validating Pod on update",
-			zap.String("name", podObj.GetName()),
-			zap.String("namespace", podObj.GetNamespace()))
-		warnings, err = h.validateUpdate(ctx, &podObj)
-	default:
-		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
-		admissionReview.Response.Allowed = false
-		admissionReview.Response.Result = &metav1.Status{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("Operation %s is not supported for Pod", admissionReview.Request.Operation),
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
-	}
+	warnings, err = handleWebhookOperation(
+		h.log,
+		admissionReview.Request.Operation,
+		podObj.GetName(),
+		podObj.GetNamespace(),
+		func() ([]string, error) { return h.validateCreate(ctx, &podObj) },
+		func() ([]string, error) { return h.validateUpdate(ctx, &podObj) },
+		c,
+		&admissionReview,
+		"Pod",
+	)
 
 	if err != nil {
 		h.log.Error("Validation failed", zap.Error(err))
@@ -178,7 +152,11 @@ func (h *PodWebhook) validateUpdate(ctx context.Context, podObj *corev1.Pod) ([]
 }
 
 // validatePodOperation is a shared function for both create and update validation
-func (h *PodWebhook) validatePodOperation(ctx context.Context, podObj *corev1.Pod, operation operation) ([]string, error) {
+func (h *PodWebhook) validatePodOperation(
+	ctx context.Context,
+	podObj *corev1.Pod,
+	operation operation,
+) ([]string, error) {
 	// Handle nil pod case
 	if podObj == nil {
 		h.log.Info("Skipping CRQ validation for nil pod on " + string(operation))

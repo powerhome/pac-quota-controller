@@ -205,3 +205,40 @@ func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.Admissi
 	}
 	return &response
 }
+
+// handleWebhookOperation is a shared helper for operation switch logic in pod/service webhooks
+func handleWebhookOperation(
+	log *zap.Logger,
+	operation admissionv1.Operation,
+	name, ns string,
+	createFn func() ([]string, error),
+	updateFn func() ([]string, error),
+	c *gin.Context,
+	admissionReview *admissionv1.AdmissionReview,
+	resourceType string,
+) ([]string, error) {
+	var warnings []string
+	var err error
+	switch operation {
+	case admissionv1.Create:
+		log.Info(fmt.Sprintf("Validating %s on create", resourceType),
+			zap.String("name", name),
+			zap.String("namespace", ns))
+		warnings, err = createFn()
+	case admissionv1.Update:
+		log.Info(fmt.Sprintf("Validating %s on update", resourceType),
+			zap.String("name", name),
+			zap.String("namespace", ns))
+		warnings, err = updateFn()
+	default:
+		log.Info("Unsupported operation", zap.String("operation", string(operation)))
+		admissionReview.Response.Allowed = false
+		admissionReview.Response.Result = &metav1.Status{
+			Code:    400,
+			Message: fmt.Sprintf("Operation %s is not supported for %s", operation, resourceType),
+		}
+		c.JSON(200, admissionReview)
+		return nil, fmt.Errorf("unsupported operation")
+	}
+	return warnings, err
+}

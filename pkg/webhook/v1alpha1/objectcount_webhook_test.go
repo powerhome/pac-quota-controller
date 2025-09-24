@@ -32,6 +32,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 		logger     *zap.Logger
 		ginEngine  *gin.Engine
 		scheme     *runtime.Scheme
+		nsName     string
 	)
 
 	BeforeEach(func() {
@@ -43,6 +44,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 		logger = zap.NewNop()
 		gin.SetMode(gin.TestMode)
 		ginEngine = gin.New()
+		nsName = "test-namespace"
 	})
 
 	AfterEach(func() {
@@ -116,7 +118,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 					},
 				}
 				ns := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{Name: "test-namespace", Labels: map[string]string{"env": "test"}},
+					ObjectMeta: metav1.ObjectMeta{Name: nsName, Labels: map[string]string{"env": "test"}},
 				}
 				_, _ = fakeClient.CoreV1().Namespaces().Create(context.Background(), ns, metav1.CreateOptions{})
 				fakeRuntimeClient := ctrlclientfake.NewClientBuilder().
@@ -128,8 +130,17 @@ var _ = Describe("ObjectCountWebhook", func() {
 			})
 
 			It("should allow creation when under quota", func() {
-				_, _ = fakeClient.CoreV1().ConfigMaps("test-namespace").Create(context.Background(), &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "test-namespace"}}, metav1.CreateOptions{})
-				review := createObjectCountAdmissionReview("123", "test-namespace", "configmaps")
+				_, _ = fakeClient.CoreV1().ConfigMaps(nsName).Create(
+					context.Background(),
+					&corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "cm1",
+							Namespace: nsName,
+						},
+					},
+					metav1.CreateOptions{},
+				)
+				review := createObjectCountAdmissionReview("123", nsName, "configmaps")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 				w := httptest.NewRecorder()
@@ -142,9 +153,28 @@ var _ = Describe("ObjectCountWebhook", func() {
 
 			It("should deny creation when quota exceeded", func() {
 				// Add 2 configmaps to reach quota
-				_, _ = fakeClient.CoreV1().ConfigMaps("test-namespace").Create(context.Background(), &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "test-namespace"}}, metav1.CreateOptions{})
-				_, _ = fakeClient.CoreV1().ConfigMaps("test-namespace").Create(context.Background(), &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm2", Namespace: "test-namespace"}}, metav1.CreateOptions{})
-				review := createObjectCountAdmissionReview("456", "test-namespace", "configmaps")
+				_, err := fakeClient.CoreV1().ConfigMaps(nsName).Create(
+					context.Background(),
+					&corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "cm1",
+							Namespace: nsName,
+						},
+					}, metav1.CreateOptions{},
+				)
+				Expect(err).ToNot(HaveOccurred())
+				_, err = fakeClient.CoreV1().ConfigMaps(nsName).Create(
+					context.Background(),
+					&corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "cm2",
+							Namespace: nsName,
+						},
+					},
+					metav1.CreateOptions{},
+				)
+				Expect(err).ToNot(HaveOccurred())
+				review := createObjectCountAdmissionReview("456", nsName, "configmaps")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 				w := httptest.NewRecorder()
@@ -159,9 +189,20 @@ var _ = Describe("ObjectCountWebhook", func() {
 
 			It("should allow creation with multiple objects under quota", func() {
 				// Add 1 configmap, quota is 2
-				_, _ = fakeClient.CoreV1().ConfigMaps("test-namespace").Create(context.Background(), &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "test-namespace"}}, metav1.CreateOptions{})
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cm1",
+						Namespace: nsName,
+					},
+				}
+				_, err := fakeClient.CoreV1().ConfigMaps(nsName).Create(
+					context.Background(),
+					cm,
+					metav1.CreateOptions{},
+				)
+				Expect(err).ToNot(HaveOccurred())
 				// Simulate batch creation (not strictly supported by AdmissionReview, but test logic)
-				review := createObjectCountAdmissionReview("789", "test-namespace", "configmaps")
+				review := createObjectCountAdmissionReview("789", nsName, "configmaps")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 				w := httptest.NewRecorder()
@@ -173,7 +214,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 			})
 
 			It("should allow creation of one deployment", func() {
-				review := createObjectCountAdmissionReview("2001", "test-namespace", "deployments.apps")
+				review := createObjectCountAdmissionReview("2001", nsName, "deployments.apps")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 				w := httptest.NewRecorder()
@@ -186,8 +227,8 @@ var _ = Describe("ObjectCountWebhook", func() {
 
 			It("should deny creation of two deployments", func() {
 				// Create one existing deployment
-				dep, err := webhook.client.AppsV1().Deployments("test-namespace").Create(context.Background(), &appsv1.Deployment{
-					ObjectMeta: metav1.ObjectMeta{Name: "dep1", Namespace: "test-namespace"},
+				dep, err := webhook.client.AppsV1().Deployments(nsName).Create(context.Background(), &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{Name: "dep1", Namespace: nsName},
 					Spec: appsv1.DeploymentSpec{
 						Selector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{"app": "myapp"},
@@ -207,10 +248,10 @@ var _ = Describe("ObjectCountWebhook", func() {
 						},
 					},
 				}, metav1.CreateOptions{})
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(dep).NotTo(BeNil())
 				Expect(dep).NotTo(BeNil())
-				review := createObjectCountAdmissionReview("2002", "test-namespace", "deployments.apps")
+				review := createObjectCountAdmissionReview("2002", nsName, "deployments.apps")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 				w := httptest.NewRecorder()
@@ -224,7 +265,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 			})
 
 			It("should allow creation of one deployment and one ingress", func() {
-				reviewDep := createObjectCountAdmissionReview("2003", "test-namespace", "deployments.apps")
+				reviewDep := createObjectCountAdmissionReview("2003", nsName, "deployments.apps")
 				bodyDep, _ := json.Marshal(reviewDep)
 				reqDep := httptest.NewRequest("POST", "/webhook", bytes.NewReader(bodyDep))
 				wDep := httptest.NewRecorder()
@@ -234,7 +275,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 				_ = json.Unmarshal(wDep.Body.Bytes(), &respDep)
 				Expect(respDep.Response.Allowed).To(BeTrue())
 
-				reviewIng := createObjectCountAdmissionReview("2004", "test-namespace", "ingresses.networking.k8s.io")
+				reviewIng := createObjectCountAdmissionReview("2004", nsName, "ingresses.networking.k8s.io")
 				bodyIng, _ := json.Marshal(reviewIng)
 				reqIng := httptest.NewRequest("POST", "/webhook", bytes.NewReader(bodyIng))
 				wIng := httptest.NewRecorder()
@@ -247,9 +288,26 @@ var _ = Describe("ObjectCountWebhook", func() {
 
 			It("should deny creation with multiple objects over quota", func() {
 				// Add 2 configmaps, quota is 2
-				_, _ = fakeClient.CoreV1().ConfigMaps("test-namespace").Create(context.Background(), &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: "test-namespace"}}, metav1.CreateOptions{})
-				_, _ = fakeClient.CoreV1().ConfigMaps("test-namespace").Create(context.Background(), &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm2", Namespace: "test-namespace"}}, metav1.CreateOptions{})
-				review := createObjectCountAdmissionReview("1011", "test-namespace", "configmaps")
+				// Add 2 configmaps, quota is 2
+				cm1 := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cm1",
+						Namespace: nsName,
+					},
+				}
+				cm2 := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cm2",
+						Namespace: nsName,
+					},
+				}
+				_, err := fakeClient.CoreV1().ConfigMaps(nsName).Create(
+					context.Background(), cm1, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
+				_, err = fakeClient.CoreV1().ConfigMaps(nsName).Create(
+					context.Background(), cm2, metav1.CreateOptions{})
+				Expect(err).ToNot(HaveOccurred())
+				review := createObjectCountAdmissionReview("1011", nsName, "configmaps")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 				w := httptest.NewRecorder()
@@ -264,7 +322,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 
 			It("should allow creation with zero objects", func() {
 				// No configmaps present
-				review := createObjectCountAdmissionReview("1213", "test-namespace", "configmaps")
+				review := createObjectCountAdmissionReview("1213", nsName, "configmaps")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 				w := httptest.NewRecorder()
@@ -276,7 +334,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 			})
 
 			It("should allow creation of unknown resource type", func() {
-				review := createObjectCountAdmissionReview("1415", "test-namespace", "invalidresource")
+				review := createObjectCountAdmissionReview("1415", nsName, "invalidresource")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 				w := httptest.NewRecorder()
@@ -303,7 +361,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 			It("should allow creation when CRQClient fails", func() {
 				// Simulate CRQClient failure by passing nil client
 				webhook.crqClient = quota.NewCRQClient(nil)
-				review := createObjectCountAdmissionReview("1819", "test-namespace", "configmaps")
+				review := createObjectCountAdmissionReview("1819", nsName, "configmaps")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
 				w := httptest.NewRecorder()
@@ -317,13 +375,13 @@ var _ = Describe("ObjectCountWebhook", func() {
 	})
 })
 
-func createObjectCountAdmissionReview(uid, namespace, resource string) admissionv1.AdmissionReview {
+func createObjectCountAdmissionReview(uid, namespace, resourceName string) admissionv1.AdmissionReview {
 	return admissionv1.AdmissionReview{
 		Request: &admissionv1.AdmissionRequest{
 			UID:       types.UID(uid),
 			Namespace: namespace,
 			Operation: admissionv1.Create,
-			Resource:  metav1.GroupVersionResource{Resource: resource},
+			Resource:  metav1.GroupVersionResource{Resource: resourceName},
 		},
 	}
 }

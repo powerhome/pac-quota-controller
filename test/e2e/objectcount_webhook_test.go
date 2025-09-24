@@ -26,11 +26,16 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 		testSuffix = testutils.GenerateTestSuffix()
 		testNamespace = testutils.GenerateResourceName("objectcount-ns-" + testSuffix)
 		testCRQName = testutils.GenerateResourceName("objectcount-crq-" + testSuffix)
-		ns, _ = testutils.CreateNamespace(ctx, k8sClient, testNamespace, map[string]string{"objectcount-test": "test-label-" + testSuffix})
+		ns, _ = testutils.CreateNamespace(
+			ctx,
+			k8sClient,
+			testNamespace,
+			map[string]string{"objectcount-test": "test-label-" + testSuffix},
+		)
 		crq, _ = testutils.CreateClusterResourceQuota(ctx, k8sClient, testCRQName, &metav1.LabelSelector{
 			MatchLabels: map[string]string{"objectcount-test": "test-label-" + testSuffix},
 		}, quotav1alpha1.ResourceList{
-			"configmaps":                           resource.MustParse("2"),
+			"configmaps":                           resource.MustParse("3"), // There is always a kube-root-ca.crt in the NS
 			"secrets":                              resource.MustParse("1"),
 			"replicationcontrollers":               resource.MustParse("1"),
 			"deployments.apps":                     resource.MustParse("1"),
@@ -50,7 +55,7 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 
 	Context("Object Count Quota", func() {
 		It("should allow creation under quota for configmaps", func() {
-			cmName := testutils.GenerateResourceName("cm-under-quota-" + testSuffix)
+			cmName := testutils.GenerateResourceName("cm-at-quota-" + testSuffix)
 			cm := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      cmName,
@@ -274,15 +279,76 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 				name string
 				obj  client.Object
 			}{
-				{"cm-mixed-under-", &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: testutils.GenerateResourceName("cm-mixed-under-" + testSuffix), Namespace: testNamespace}}},
-				{"secret-mixed-under-", &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: testutils.GenerateResourceName("secret-mixed-under-" + testSuffix), Namespace: testNamespace}}},
-				{"rc-mixed-under-", testutils.NewReplicationController(testutils.GenerateResourceName("rc-mixed-under-"+testSuffix), testNamespace, 1)},
-				{"dep-mixed-under-", testutils.NewDeployment(testutils.GenerateResourceName("dep-mixed-under-"+testSuffix), testNamespace, 1)},
-				{"ss-mixed-under-", testutils.NewStatefulSet(testutils.GenerateResourceName("ss-mixed-under-"+testSuffix), testNamespace, 1)},
-				{"ds-mixed-under-", testutils.NewDaemonSet(testutils.GenerateResourceName("ds-mixed-under-"+testSuffix), testNamespace)},
-				{"cj-mixed-under-", testutils.NewCronJob(testutils.GenerateResourceName("cj-mixed-under-"+testSuffix), testNamespace)},
-				{"hpa-mixed-under-", testutils.NewHPA(testutils.GenerateResourceName("hpa-mixed-under-"+testSuffix), testNamespace)},
-				{"ing-mixed-under-", testutils.NewIngress(testutils.GenerateResourceName("ing-mixed-under-"+testSuffix), testNamespace)},
+				{
+					"cm-mixed-under-",
+					&corev1.ConfigMap{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      testutils.GenerateResourceName("cm-mixed-under-" + testSuffix),
+							Namespace: testNamespace,
+						},
+					},
+				},
+				{
+					"secret-mixed-under-",
+					&corev1.Secret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      testutils.GenerateResourceName("secret-mixed-under-" + testSuffix),
+							Namespace: testNamespace,
+						},
+					},
+				},
+				{
+					"rc-mixed-under-",
+					testutils.NewReplicationController(
+						testutils.GenerateResourceName("rc-mixed-under-"+testSuffix),
+						testNamespace,
+						1,
+					),
+				},
+				{
+					"dep-mixed-under-",
+					testutils.NewDeployment(
+						testutils.GenerateResourceName("dep-mixed-under-"+testSuffix),
+						testNamespace,
+						1,
+					),
+				},
+				{
+					"ss-mixed-under-",
+					testutils.NewStatefulSet(
+						testutils.GenerateResourceName("ss-mixed-under-"+testSuffix),
+						testNamespace,
+						1,
+					),
+				},
+				{
+					"ds-mixed-under-",
+					testutils.NewDaemonSet(
+						testutils.GenerateResourceName("ds-mixed-under-"+testSuffix),
+						testNamespace,
+					),
+				},
+				{
+					"cj-mixed-under-",
+					testutils.NewCronJob(
+						testutils.GenerateResourceName("cj-mixed-under-"+testSuffix),
+						testNamespace,
+					),
+				},
+				{
+					"hpa-mixed-under-",
+					testutils.NewHPA(
+						testutils.GenerateResourceName("hpa-mixed-under-"+testSuffix),
+						testNamespace,
+					),
+				},
+				{
+					"ing-mixed-under-",
+					testutils.NewIngress(
+						testutils.GenerateResourceName("ing-mixed-under-"+testSuffix),
+						testNamespace,
+					),
+				},
 			}
 			for _, r := range resources {
 				err := k8sClient.Create(ctx, r.obj)
@@ -299,22 +365,46 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 		It("should deny mixed resources over quota", func() {
 			// Fill up quota for configmaps and secrets, then try to create one more of each
 			for i := range 2 {
-				cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: testutils.GenerateResourceName("cm-mixed-over-" + testSuffix + "-" + strconv.Itoa(i)), Namespace: testNamespace}}
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testutils.GenerateResourceName("cm-mixed-over-" + testSuffix + "-" + strconv.Itoa(i)),
+						Namespace: testNamespace,
+					},
+				}
 				err := k8sClient.Create(ctx, cm)
 				Expect(err).ToNot(HaveOccurred(), "ConfigMap creation up to quota should be allowed")
 			}
-			cmExtra := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: testutils.GenerateResourceName("cm-mixed-over-" + testSuffix + "-extra"), Namespace: testNamespace}}
+			cmExtra := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testutils.GenerateResourceName("cm-mixed-over-" + testSuffix + "-extra"),
+					Namespace: testNamespace,
+				},
+			}
 			err := k8sClient.Create(ctx, cmExtra)
 			Expect(err).To(HaveOccurred(), "ConfigMap creation over quota should be denied")
-			secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: testutils.GenerateResourceName("secret-mixed-over-" + testSuffix), Namespace: testNamespace}}
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testutils.GenerateResourceName("secret-mixed-over-" + testSuffix),
+					Namespace: testNamespace,
+				},
+			}
 			err = k8sClient.Create(ctx, secret)
 			Expect(err).ToNot(HaveOccurred(), "Secret creation up to quota should be allowed")
-			secretExtra := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: testutils.GenerateResourceName("secret-mixed-over-" + testSuffix + "-extra"), Namespace: testNamespace}}
+			secretExtra := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testutils.GenerateResourceName("secret-mixed-over-" + testSuffix + "-extra"),
+					Namespace: testNamespace,
+				},
+			}
 			err = k8sClient.Create(ctx, secretExtra)
 			Expect(err).To(HaveOccurred(), "Secret creation over quota should be denied")
 		})
 		It("should deny creation with missing namespace", func() {
-			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: testutils.GenerateResourceName("cm-missing-ns-" + testSuffix)}}
+			cm := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: testutils.GenerateResourceName("cm-missing-ns-" + testSuffix),
+				},
+			}
 			err := k8sClient.Create(ctx, cm)
 			Expect(err).To(HaveOccurred(), "ConfigMap creation with missing namespace should be denied")
 		})
