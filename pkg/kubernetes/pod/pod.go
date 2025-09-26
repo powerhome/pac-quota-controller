@@ -153,33 +153,6 @@ func (c *PodResourceCalculator) CalculateUsage(
 	return *totalUsage, nil
 }
 
-// CalculateTotalUsage calculates the total usage across all resources in a namespace
-func (c *PodResourceCalculator) CalculateTotalUsage(ctx context.Context, namespace string) (
-	map[corev1.ResourceName]resource.Quantity, error) {
-	result := make(map[corev1.ResourceName]resource.Quantity)
-
-	// Calculate usage for common resources
-	resources := []corev1.ResourceName{
-		usage.ResourceRequestsCPU,
-		usage.ResourceRequestsMemory,
-		usage.ResourceLimitsCPU,
-		usage.ResourceLimitsMemory,
-		usage.ResourceRequestsEphemeralStorage,
-		usage.ResourceLimitsEphemeralStorage,
-		usage.ResourcePods, // Add pod count
-	}
-
-	for _, resourceName := range resources {
-		resourceUsage, err := c.CalculateUsage(ctx, namespace, resourceName)
-		if err != nil {
-			return nil, err
-		}
-		result[resourceName] = resourceUsage
-	}
-
-	return result, nil
-}
-
 // CalculatePodCount calculates the number of non-terminal pods in a namespace
 func (c *PodResourceCalculator) CalculatePodCount(ctx context.Context, namespace string) (int64, error) {
 	podList, err := c.Client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})

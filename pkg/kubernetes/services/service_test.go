@@ -45,30 +45,6 @@ var _ = Describe("ServiceResourceCalculator", func() {
 		calc = NewServiceResourceCalculator(client)
 	})
 
-	Describe("CalculateTotalUsage", func() {
-		It("returns correct map for all supported resources in ns1", func() {
-			m, err := calc.CalculateTotalUsage(ctx, "ns1")
-			Expect(err).ToNot(HaveOccurred())
-			q := m[usage.ResourceServices]
-			Expect((&q).Value()).To(Equal(int64(4)))
-			q = m[usage.ResourceServicesLoadBalancers]
-			Expect((&q).Value()).To(Equal(int64(1)))
-			q = m[usage.ResourceServicesNodePorts]
-			Expect((&q).Value()).To(Equal(int64(1)))
-		})
-
-		It("returns correct map for all supported resources in ns2", func() {
-			m, err := calc.CalculateTotalUsage(ctx, "ns2")
-			Expect(err).ToNot(HaveOccurred())
-			q := m[usage.ResourceServices]
-			Expect((&q).Value()).To(Equal(int64(1)))
-			q = m[usage.ResourceServicesLoadBalancers]
-			Expect((&q).Value()).To(Equal(int64(0)))
-			q = m[usage.ResourceServicesNodePorts]
-			Expect((&q).Value()).To(Equal(int64(0)))
-		})
-	})
-
 	Describe("CalculateUsage", func() {
 		It("returns correct count for ResourceServices in ns1", func() {
 			q, err := calc.CalculateUsage(ctx, "ns1", usage.ResourceServices)

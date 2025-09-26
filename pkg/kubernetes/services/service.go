@@ -67,29 +67,6 @@ func (c *ServiceResourceCalculator) CalculateUsage(
 	}
 }
 
-// CalculateTotalUsage calculates the total usage for all supported service count resources in a namespace.
-func (c *ServiceResourceCalculator) CalculateTotalUsage(
-	ctx context.Context,
-	namespace string,
-) (
-	map[corev1.ResourceName]resource.Quantity,
-	error,
-) {
-	total, byType, err := c.countServicesByType(ctx, namespace)
-	if err != nil {
-		return nil, err
-	}
-	result := map[corev1.ResourceName]resource.Quantity{
-		usage.ResourceServices: *resource.NewQuantity(total, resource.DecimalSI),
-		usage.ResourceServicesLoadBalancers: *resource.NewQuantity(
-			byType[corev1.ServiceTypeLoadBalancer],
-			resource.DecimalSI,
-		),
-		usage.ResourceServicesNodePorts: *resource.NewQuantity(byType[corev1.ServiceTypeNodePort], resource.DecimalSI),
-	}
-	return result, nil
-}
-
 // CountServices returns the total number of services and a breakdown by type in the namespace.
 func (c *ServiceResourceCalculator) countServicesByType(
 	ctx context.Context,

@@ -71,17 +71,3 @@ func (c *ObjectCountCalculator) CalculateUsage(
 	}
 	return *resource.NewQuantity(count, resource.DecimalSI), nil
 }
-
-// CalculateTotalUsage returns a map with the count for the configured resource in the namespace.
-func (c *ObjectCountCalculator) CalculateTotalUsage(
-	ctx context.Context,
-	resourceName corev1.ResourceName,
-	namespace string) (map[corev1.ResourceName]resource.Quantity, error) {
-	usage := make(map[corev1.ResourceName]resource.Quantity)
-	q, err := c.CalculateUsage(ctx, namespace, resourceName)
-	if err != nil {
-		return usage, err
-	}
-	usage[resourceName] = q
-	return usage, nil
-}

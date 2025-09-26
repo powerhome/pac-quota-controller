@@ -83,29 +83,6 @@ func (c *StorageResourceCalculator) CalculateUsage(
 	}
 }
 
-// CalculateTotalUsage calculates the total usage across all storage resources in a namespace
-func (c *StorageResourceCalculator) CalculateTotalUsage(ctx context.Context, namespace string) (
-	map[corev1.ResourceName]resource.Quantity, error) {
-	result := make(map[corev1.ResourceName]resource.Quantity)
-
-	// Calculate usage for storage resources
-	resources := []corev1.ResourceName{
-		usage.ResourceRequestsStorage,
-		usage.ResourceStorage,
-		usage.ResourcePersistentVolumeClaims, // Add PVC count
-	}
-
-	for _, resourceName := range resources {
-		resourceUsage, err := c.CalculateUsage(ctx, namespace, resourceName)
-		if err != nil {
-			return nil, err
-		}
-		result[resourceName] = resourceUsage
-	}
-
-	return result, nil
-}
-
 // CalculatePVCCount calculates the number of PersistentVolumeClaims in a namespace
 func (c *StorageResourceCalculator) CalculatePVCCount(ctx context.Context, namespace string) (int64, error) {
 	log.Info("Calculating PVC count", zap.String("namespace", namespace))

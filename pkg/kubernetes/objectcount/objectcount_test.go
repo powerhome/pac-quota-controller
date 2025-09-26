@@ -34,15 +34,14 @@ var _ = Describe("ObjectCountCalculator", func() {
 		_ = networkingv1.AddToScheme(scheme)
 	})
 
-	DescribeTable("CalculateTotalUsage for all supported resources",
+	DescribeTable("CalculateUsage for all supported resources",
 		func(resourceName string, object runtime.Object, expected int64) {
 			rn := corev1.ResourceName(resourceName)
 			client := fake.NewSimpleClientset(object)
 			calc := NewObjectCountCalculator(client)
-			usage, err := calc.CalculateTotalUsage(ctx, rn, nsName)
+			usage, err := calc.CalculateUsage(ctx, nsName, rn)
 			Expect(err).ToNot(HaveOccurred())
-			q := usage[rn]
-			Expect(q.Value()).To(Equal(expected))
+			Expect(usage.Value()).To(Equal(expected))
 		},
 		Entry(
 			"Validate configmaps",
@@ -112,10 +111,9 @@ var _ = Describe("ObjectCountCalculator", func() {
 		cm2 := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm2", Namespace: ns}}
 		client := fake.NewSimpleClientset(cm1, cm2)
 		calc := NewObjectCountCalculator(client)
-		usage, err := calc.CalculateTotalUsage(ctx, rn, ns)
+		usage, err := calc.CalculateUsage(ctx, ns, rn)
 		Expect(err).ToNot(HaveOccurred())
-		q := usage[rn]
-		Expect(q.Value()).To(Equal(int64(2)))
+		Expect(usage.Value()).To(Equal(int64(2)))
 	})
 
 	It("should count multiple resource types in the same namespace", func() {
@@ -127,14 +125,12 @@ var _ = Describe("ObjectCountCalculator", func() {
 		client := fake.NewSimpleClientset(cm, secret)
 		calcCM := NewObjectCountCalculator(client)
 		calcSecret := NewObjectCountCalculator(client)
-		usageCM, err := calcCM.CalculateTotalUsage(ctx, rnCM, ns)
+		usageCM, err := calcCM.CalculateUsage(ctx, ns, rnCM)
 		Expect(err).ToNot(HaveOccurred())
-		usageSecret, err := calcSecret.CalculateTotalUsage(ctx, rnSecret, ns)
+		usageSecret, err := calcSecret.CalculateUsage(ctx, ns, rnSecret)
 		Expect(err).ToNot(HaveOccurred())
-		qCM := usageCM[rnCM]
-		qSecret := usageSecret[rnSecret]
-		Expect((&qCM).Value()).To(Equal(int64(1)))
-		Expect((&qSecret).Value()).To(Equal(int64(1)))
+		Expect(usageCM.Value()).To(Equal(int64(1)))
+		Expect(usageSecret.Value()).To(Equal(int64(1)))
 	})
 
 	It("should return zero for no resources present", func() {
@@ -142,10 +138,9 @@ var _ = Describe("ObjectCountCalculator", func() {
 		rn := corev1.ResourceName("pods")
 		client := fake.NewSimpleClientset()
 		calc := NewObjectCountCalculator(client)
-		usage, err := calc.CalculateTotalUsage(ctx, rn, ns)
+		usage, err := calc.CalculateUsage(ctx, ns, rn)
 		Expect(err).ToNot(HaveOccurred())
-		q := usage[rn]
-		Expect(q.Value()).To(Equal(int64(0)))
+		Expect(usage.Value()).To(Equal(int64(0)))
 	})
 
 	It("should return zero for inexistent resource type", func() {
@@ -153,9 +148,8 @@ var _ = Describe("ObjectCountCalculator", func() {
 		rn := corev1.ResourceName("nonexistent")
 		client := fake.NewSimpleClientset()
 		calc := NewObjectCountCalculator(client)
-		usage, err := calc.CalculateTotalUsage(ctx, rn, ns)
+		usage, err := calc.CalculateUsage(ctx, ns, rn)
 		Expect(err).ToNot(HaveOccurred())
-		q := usage[rn]
-		Expect(q.Value()).To(Equal(int64(0)))
+		Expect(usage.Value()).To(Equal(int64(0)))
 	})
 })

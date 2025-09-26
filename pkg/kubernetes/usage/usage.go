@@ -12,9 +12,6 @@ import (
 type ResourceCalculatorInterface interface {
 	// CalculateUsage calculates the total usage for a specific resource in a namespace
 	CalculateUsage(ctx context.Context, namespace string, resourceName corev1.ResourceName) (resource.Quantity, error)
-
-	// CalculateTotalUsage calculates the total usage across all resources in a namespace
-	CalculateTotalUsage(ctx context.Context, namespace string) (map[corev1.ResourceName]resource.Quantity, error)
 }
 
 // BaseResourceCalculator provides common functionality for resource calculators
