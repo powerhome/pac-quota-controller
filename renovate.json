@@ -3,5 +3,14 @@
   "extends": [
     "local>powerhome/renovate-config",
     "group:allNonMajor"
+  ],
+  "regexManagers": [
+    {
+      "fileMatch": ["^charts/pac-quota-controller/values.yaml$"],
+      "matchStrings": [
+        "repository:\\s*ghcr\\.io/powerhome/pac-quota-controller\\s*\\n\\s*tag:\\s*(?<currentValue>.+)"
+      ],
+      "enabled": false
+    }
   ]
 }
