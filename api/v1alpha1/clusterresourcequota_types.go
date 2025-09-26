@@ -1,19 +1,3 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package v1alpha1
 
 import (
@@ -26,11 +10,12 @@ type ResourceList corev1.ResourceList
 
 // ResourceQuotaStatus defines the enforced hard limits and observed use.
 type ResourceQuotaStatus struct {
-	// Hard is the set of enforced hard limits for each named resource.
+	// Hard is the set of enforced hard limits for each named resource (see ClusterResourceQuotaSpec for examples).
 	// +optional
 	Hard ResourceList `json:"hard,omitempty"`
 
 	// Used is the current observed total usage of the resource in the namespace.
+	// For object count quotas, this is the current count of each resource type (e.g., pods, services.loadbalancers, ingresses.nginx, etc.).
 	// +optional
 	Used ResourceList `json:"used,omitempty"`
 }
@@ -48,9 +33,13 @@ type ResourceQuotaStatusByNamespace struct {
 type ClusterResourceQuotaSpec struct {
 	// Hard is the set of desired hard limits for each named resource.
 	// For example:
-	// 'pods': '10'
-	// 'requests.cpu': '1'
-	// 'requests.memory': 1Gi
+	// 'pods': '10' (Pod count)
+	// 'services': '5' (Service count)
+	// 'services.loadbalancers': '2' (Service type=LoadBalancer count)
+	// 'ingresses': '3' (Ingress count)
+	// 'configmaps': '20' (ConfigMap count)
+	// ...and so on for all supported native and extended resource types.
+	// See documentation for the full list of supported resource keys.
 	// +optional
 	Hard ResourceList `json:"hard,omitempty"`
 

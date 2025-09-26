@@ -1,4 +1,4 @@
-package namespace
+package objectcount
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestNamespace(t *testing.T) {
+func TestObjectCountCalculator(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Namespace Package Suite")
+	RunSpecs(t, "ObjectCountCalculator Suite")
 }

@@ -1,19 +1,3 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package storage
 
 import (
@@ -36,9 +20,6 @@ var log = zap.NewNop()
 type StorageResourceCalculator struct {
 	usage.BaseResourceCalculator
 }
-
-// Ensure StorageResourceCalculator implements StorageResourceCalculatorInterface
-var _ StorageResourceCalculatorInterface = &StorageResourceCalculator{}
 
 // NewStorageResourceCalculator creates a new instance of StorageResourceCalculator.
 func NewStorageResourceCalculator(c kubernetes.Interface) *StorageResourceCalculator {
@@ -100,29 +81,6 @@ func (c *StorageResourceCalculator) CalculateUsage(
 		// Return zero for non-storage resources
 		return resource.Quantity{}, nil
 	}
-}
-
-// CalculateTotalUsage calculates the total usage across all storage resources in a namespace
-func (c *StorageResourceCalculator) CalculateTotalUsage(ctx context.Context, namespace string) (
-	map[corev1.ResourceName]resource.Quantity, error) {
-	result := make(map[corev1.ResourceName]resource.Quantity)
-
-	// Calculate usage for storage resources
-	resources := []corev1.ResourceName{
-		usage.ResourceRequestsStorage,
-		usage.ResourceStorage,
-		usage.ResourcePersistentVolumeClaims, // Add PVC count
-	}
-
-	for _, resourceName := range resources {
-		resourceUsage, err := c.CalculateUsage(ctx, namespace, resourceName)
-		if err != nil {
-			return nil, err
-		}
-		result[resourceName] = resourceUsage
-	}
-
-	return result, nil
 }
 
 // CalculatePVCCount calculates the number of PersistentVolumeClaims in a namespace

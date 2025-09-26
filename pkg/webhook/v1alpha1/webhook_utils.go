@@ -1,17 +1,32 @@
 package v1alpha1
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 
 	"go.uber.org/zap"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/gin-gonic/gin"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+)
+
+type operation string
+
+const (
+	OperationCreate operation = "creation"
+	OperationUpdate operation = "update"
+	OperationDelete operation = "deletion"
 )
 
 // validateCRQResourceQuotaWithNamespace is a shared function for validating resource quotas
@@ -26,7 +41,6 @@ func validateCRQResourceQuotaWithNamespace(
 	calculateCurrentUsage func(string, corev1.ResourceName) (resource.Quantity, error),
 	log *zap.Logger,
 ) error {
-	// If no CRQ client is available, skip validation
 	if crqClient == nil {
 		log.Info("Skipping CRQ validation - no CRQ client available",
 			zap.String("namespace", ns.Name),
@@ -47,7 +61,7 @@ func validateCRQResourceQuotaWithNamespace(
 		log.Error("Failed to get CRQ for namespace",
 			zap.String("namespace", ns.Name),
 			zap.Error(err))
-		return fmt.Errorf("failed to get CRQ for namespace %s: %w", ns.Name, err)
+		return nil
 	}
 
 	// If no CRQ applies to this namespace, allow the operation
@@ -167,4 +181,64 @@ func calculateCRQCurrentUsage(
 		zap.Strings("namespaces", namespaceNames))
 
 	return *totalUsage, nil
+}
+
+func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.AdmissionReview) *admissionv1.AdmissionReview {
+	body, _ := json.Marshal(admissionReview)
+	req, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	engine.ServeHTTP(w, req)
+
+	var response admissionv1.AdmissionReview
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		// If unmarshaling fails, create a default response
+		response = admissionv1.AdmissionReview{
+			Response: &admissionv1.AdmissionResponse{
+				Allowed: false,
+				Result: &metav1.Status{
+					Message: "Failed to parse response",
+				},
+			},
+		}
+	}
+	return &response
+}
+
+// handleWebhookOperation is a shared helper for operation switch logic in pod/service webhooks
+func handleWebhookOperation(
+	log *zap.Logger,
+	operation admissionv1.Operation,
+	name, ns string,
+	createFn func() ([]string, error),
+	updateFn func() ([]string, error),
+	c *gin.Context,
+	admissionReview *admissionv1.AdmissionReview,
+	resourceType string,
+) ([]string, error) {
+	var warnings []string
+	var err error
+	switch operation {
+	case admissionv1.Create:
+		log.Info(fmt.Sprintf("Validating %s on create", resourceType),
+			zap.String("name", name),
+			zap.String("namespace", ns))
+		warnings, err = createFn()
+	case admissionv1.Update:
+		log.Info(fmt.Sprintf("Validating %s on update", resourceType),
+			zap.String("name", name),
+			zap.String("namespace", ns))
+		warnings, err = updateFn()
+	default:
+		log.Info("Unsupported operation", zap.String("operation", string(operation)))
+		admissionReview.Response.Allowed = false
+		admissionReview.Response.Result = &metav1.Status{
+			Code:    400,
+			Message: fmt.Sprintf("Operation %s is not supported for %s", operation, resourceType),
+		}
+		c.JSON(200, admissionReview)
+		return nil, fmt.Errorf("unsupported operation")
+	}
+	return warnings, err
 }

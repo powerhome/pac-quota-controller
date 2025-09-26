@@ -1,4 +1,4 @@
-package namespace
+package services
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestNamespace(t *testing.T) {
+func TestServices(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Namespace Package Suite")
+	RunSpecs(t, "ServiceResourceCalculator Suite")
 }

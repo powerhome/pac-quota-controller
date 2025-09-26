@@ -247,12 +247,6 @@ var _ = Describe("NamespaceWebhook", func() {
 			Expect(w.Code).To(Equal(http.StatusOK))
 		})
 
-		It("should handle decode error", func() {
-			// Skip this test for now as the webhook successfully decodes valid JSON
-			// In real scenarios, decode errors would occur with malformed Namespace data
-			Skip("Skipping decode error test - webhook successfully handles valid JSON")
-		})
-
 		Describe("validateNamespaceAgainstCRQs edge cases", func() {
 			var ctx context.Context
 

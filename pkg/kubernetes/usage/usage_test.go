@@ -288,19 +288,6 @@ var _ = Describe("Usage", func() {
 		})
 	})
 
-	Describe("ResourceCalculatorInterface", func() {
-		It("should define interface methods", func() {
-			// This test verifies that the interface is properly defined
-			var calculator ResourceCalculatorInterface
-			Expect(calculator).To(BeNil()) // Interface is nil by default
-
-			// The interface should have these methods:
-			// - CalculateUsage(ctx context.Context, namespace string,
-			//   resourceName corev1.ResourceName) (resource.Quantity, error)
-			// - CalculateTotalUsage(ctx context.Context, namespace string) (map[corev1.ResourceName]resource.Quantity, error)
-		})
-	})
-
 	Describe("Performance characteristics", func() {
 		It("should handle large number of resources efficiently", func() {
 			result := NewUsageResult("test-namespace")

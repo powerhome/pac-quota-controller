@@ -472,52 +472,6 @@ var _ = Describe("StorageResourceCalculator", func() {
 		})
 	})
 
-	Describe("StorageResourceCalculator CalculateTotalUsage", func() {
-		var (
-			calculator *StorageResourceCalculator
-			fakeClient *fake.Clientset
-		)
-
-		BeforeEach(func() {
-			fakeClient = fake.NewSimpleClientset()
-			calculator = NewStorageResourceCalculator(fakeClient)
-		})
-
-		It("should calculate total usage for all storage resources", func() {
-			pvc := &corev1.PersistentVolumeClaim{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "pvc",
-					Namespace: "test-ns",
-				},
-				Spec: corev1.PersistentVolumeClaimSpec{
-					Resources: corev1.VolumeResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceStorage: resource.MustParse("10Gi"),
-						},
-					},
-				},
-			}
-
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
-
-			totalUsage, err := calculator.CalculateTotalUsage(ctx, "test-ns")
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(totalUsage).NotTo(BeNil())
-			Expect(totalUsage).To(HaveLen(3)) // ResourceRequestsStorage, ResourceStorage, and ResourcePersistentVolumeClaims
-		})
-
-		It("should return empty map for empty namespace", func() {
-			totalUsage, err := calculator.CalculateTotalUsage(ctx, "empty-ns")
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(totalUsage).NotTo(BeNil())
-			Expect(totalUsage).To(HaveLen(3)) // ResourceRequestsStorage, ResourceStorage, and ResourcePersistentVolumeClaims
-		})
-	})
-
 	Describe("StorageResourceCalculator CalculateStorageClassUsage", func() {
 		var (
 			calculator *StorageResourceCalculator

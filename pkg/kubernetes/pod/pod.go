@@ -2,6 +2,7 @@ package pod
 
 import (
 	"context"
+	"strings"
 
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -19,9 +20,6 @@ var log = zap.NewNop()
 type PodResourceCalculator struct {
 	usage.BaseResourceCalculator
 }
-
-// Ensure PodResourceCalculator implements PodResourceCalculatorInterface
-var _ PodResourceCalculatorInterface = &PodResourceCalculator{}
 
 // NewPodResourceCalculator creates a new PodResourceCalculator
 func NewPodResourceCalculator(c kubernetes.Interface) *PodResourceCalculator {
@@ -88,6 +86,17 @@ func getContainerResourceUsage(container corev1.Container, resourceName corev1.R
 			return memory
 		}
 	default:
+		// Handle extended resources with 'requests.' prefix
+		// As the CRQ Hard Spec requires the resource name to be in the format 'requests.<resource>'
+		// https://kubernetes.io/docs/concepts/policy/resource-quotas/#quota-for-extended-resources
+		// We need to remove the prefix, as the pod requests is a nested key
+		s := string(resourceName)
+		if strings.HasPrefix(s, "requests.") {
+			extName := corev1.ResourceName(s[len("requests."):])
+			if resourceValue, ok := container.Resources.Requests[extName]; ok {
+				return resourceValue
+			}
+		}
 		// Handle hugepages and other resource types
 		if resourceValue, ok := container.Resources.Requests[resourceName]; ok {
 			return resourceValue
@@ -96,7 +105,6 @@ func getContainerResourceUsage(container corev1.Container, resourceName corev1.R
 			return resourceValue
 		}
 	}
-
 	return resource.Quantity{}
 }
 
@@ -113,7 +121,10 @@ func (c *PodResourceCalculator) CalculateUsage(
 		if err != nil {
 			return resource.Quantity{}, err
 		}
-		return *resource.NewQuantity(podCount, resource.DecimalSI), nil
+		return *resource.NewQuantity(
+			podCount,
+			resource.DecimalSI,
+		), nil
 	}
 
 	podList, err := c.Client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
@@ -140,33 +151,6 @@ func (c *PodResourceCalculator) CalculateUsage(
 		zap.String("totalUsage", totalUsage.String()),
 		zap.Int("podCount", len(podList.Items)))
 	return *totalUsage, nil
-}
-
-// CalculateTotalUsage calculates the total usage across all resources in a namespace
-func (c *PodResourceCalculator) CalculateTotalUsage(ctx context.Context, namespace string) (
-	map[corev1.ResourceName]resource.Quantity, error) {
-	result := make(map[corev1.ResourceName]resource.Quantity)
-
-	// Calculate usage for common resources
-	resources := []corev1.ResourceName{
-		usage.ResourceRequestsCPU,
-		usage.ResourceRequestsMemory,
-		usage.ResourceLimitsCPU,
-		usage.ResourceLimitsMemory,
-		usage.ResourceRequestsEphemeralStorage,
-		usage.ResourceLimitsEphemeralStorage,
-		usage.ResourcePods, // Add pod count
-	}
-
-	for _, resourceName := range resources {
-		resourceUsage, err := c.CalculateUsage(ctx, namespace, resourceName)
-		if err != nil {
-			return nil, err
-		}
-		result[resourceName] = resourceUsage
-	}
-
-	return result, nil
 }
 
 // CalculatePodCount calculates the number of non-terminal pods in a namespace

@@ -59,7 +59,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 				corev1.ResourceRequestsMemory: resource.MustParse("4Gi"), // 4GB memory request limit
 				corev1.ResourceLimitsCPU:      resource.MustParse("4"),   // 4 CPU cores limit
 				corev1.ResourceLimitsMemory:   resource.MustParse("8Gi"), // 8GB memory limit
-				"example.com/gpu":             resource.MustParse("2"),   // 2 GPU units
+				"requests.example.com/gpu":    resource.MustParse("2"),   // 2 GPU units
 				"hugepages-2Mi":               resource.MustParse("4Gi"), // 4GB hugepages
 			},
 		)
@@ -192,9 +192,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					k8sClient,
 					nsName,
 					"test-pod-"+suffix,
-					corev1.ResourceList{
-						"example.com/gpu": resource.MustParse("1"),
-					},
+					nil,
 					corev1.ResourceList{
 						"example.com/gpu": resource.MustParse("1"),
 					})
@@ -206,7 +204,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 				Eventually(func() error {
 					usage := testutils.GetRefreshedCRQStatusUsage(ctx, k8sClient, crq.Name)
 					return testutils.ExpectCRQUsageToMatch(usage, map[string]string{
-						"example.com/gpu": "1", // GPU resource used
+						"requests.example.com/gpu": "1", // GPU resource used
 					})
 				}, Timeout, Interval).Should(Succeed())
 			})
@@ -432,9 +430,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					k8sClient,
 					"dynamic-ns-"+suffix,
 					"gpu-pod-"+suffix,
-					corev1.ResourceList{
-						"example.com/gpu": resource.MustParse("1"),
-					},
+					nil,
 					corev1.ResourceList{
 						"example.com/gpu": resource.MustParse("1"),
 					})
@@ -452,11 +448,11 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 				Eventually(func() error {
 					usage := testutils.GetRefreshedCRQStatusUsage(ctx, k8sClient, crq.Name)
 					return testutils.ExpectCRQUsageToMatch(usage, map[string]string{
-						"requests.cpu":    "100m",  // Pod 1 CPU
-						"requests.memory": "128Mi", // Pod 1 Memory
-						"limits.cpu":      "200m",  // Pod 1 CPU limits
-						"limits.memory":   "256Mi", // Pod 1 Memory limits
-						"example.com/gpu": "1",     // Pod 2 GPU
+						"requests.cpu":             "100m",  // Pod 1 CPU
+						"requests.memory":          "128Mi", // Pod 1 Memory
+						"limits.cpu":               "200m",  // Pod 1 CPU limits
+						"limits.memory":            "256Mi", // Pod 1 Memory limits
+						"requests.example.com/gpu": "1",     // Pod 2 GPU
 					})
 				}, Timeout, Interval).Should(Succeed())
 

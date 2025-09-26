@@ -1,19 +1,3 @@
-/*
-Copyright 2025.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package usage
 
 import (
@@ -28,9 +12,6 @@ import (
 type ResourceCalculatorInterface interface {
 	// CalculateUsage calculates the total usage for a specific resource in a namespace
 	CalculateUsage(ctx context.Context, namespace string, resourceName corev1.ResourceName) (resource.Quantity, error)
-
-	// CalculateTotalUsage calculates the total usage across all resources in a namespace
-	CalculateTotalUsage(ctx context.Context, namespace string) (map[corev1.ResourceName]resource.Quantity, error)
 }
 
 // BaseResourceCalculator provides common functionality for resource calculators
@@ -95,28 +76,45 @@ func (r *UsageResult) GetTotalUsage(resourceName corev1.ResourceName) resource.Q
 
 // Core resource names used across the application
 var (
-	// CPU resources
+	// Core compute resources
 	ResourceRequestsCPU = corev1.ResourceRequestsCPU
 	ResourceLimitsCPU   = corev1.ResourceLimitsCPU
 	ResourceCPU         = corev1.ResourceCPU
 
-	// Memory resources
+	// Core memory resources
 	ResourceRequestsMemory = corev1.ResourceRequestsMemory
 	ResourceLimitsMemory   = corev1.ResourceLimitsMemory
 	ResourceMemory         = corev1.ResourceMemory
 
-	// Storage resources
+	// Core storage resources
 	ResourceRequestsStorage = corev1.ResourceRequestsStorage
 	ResourceStorage         = corev1.ResourceStorage
 
-	// Ephemeral storage
+	// Ephemeral storage resources
 	ResourceRequestsEphemeralStorage = corev1.ResourceRequestsEphemeralStorage
 	ResourceLimitsEphemeralStorage   = corev1.ResourceLimitsEphemeralStorage
 	ResourceEphemeralStorage         = corev1.ResourceEphemeralStorage
 
-	// Count resources
+	// Core countable resources
 	ResourcePods                   = corev1.ResourcePods
 	ResourcePersistentVolumeClaims = corev1.ResourcePersistentVolumeClaims
+	ResourceConfigMaps             = corev1.ResourceConfigMaps
+	ResourceReplicationControllers = corev1.ResourceReplicationControllers
+	ResourceSecrets                = corev1.ResourceSecrets
+
+	// Additional Kubernetes resource counts
+	ResourceDeployments              = corev1.ResourceName("deployments.apps")
+	ResourceStatefulSets             = corev1.ResourceName("statefulsets.apps")
+	ResourceDaemonSets               = corev1.ResourceName("daemonsets.apps")
+	ResourceJobs                     = corev1.ResourceName("jobs.batch")
+	ResourceCronJobs                 = corev1.ResourceName("cronjobs.batch")
+	ResourceHorizontalPodAutoscalers = corev1.ResourceName("horizontalpodautoscalers.autoscaling")
+	ResourceIngresses                = corev1.ResourceName("ingresses.networking.k8s.io")
+
+	// Service-related resources
+	ResourceServices              = corev1.ResourceServices
+	ResourceServicesLoadBalancers = corev1.ResourceServicesLoadBalancers
+	ResourceServicesNodePorts     = corev1.ResourceServicesNodePorts
 )
 
 // Common resource calculation utilities

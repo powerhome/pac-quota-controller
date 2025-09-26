@@ -54,7 +54,11 @@ The `pac-quota-controller` is a Kubernetes controller that extends Kubernetes wi
 10. **Cert-Manager:**
     - Cert-manager is used for webhook certificate management. The Helm chart includes options to install cert-manager or use an existing installation.
 
-11. **Instruction Maintenance:** After interactions where new project conventions, critical file paths, or development preferences are established or significantly clarified, I (GitHub Copilot) should be mindful of these changes. If these changes are persistent and generally applicable, I should suggest or, if requested, directly update this `copilot-instructions.md` file to ensure it remains current and accurately reflects the project's context. The user may also explicitly request updates to this file.
+12. **Feature Planning & Documentation:**
+    - For major features (such as the object count support for core/extended Kubernetes resources), maintain a detailed, step-by-step implementation plan in a Markdown file.
+    - Always follow and update this plan as the implementation progresses.
+    - Whenever the plan or project conventions evolve, update both the plan and this `copilot-instructions.md` to ensure alignment and accurate documentation.
+    - After finishing the implementation of the feature, cleanup the document from the docs folder.
 
 ## Workflow for Changes
 

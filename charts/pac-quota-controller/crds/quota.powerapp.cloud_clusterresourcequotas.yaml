@@ -28,6 +28,25 @@ spec:
           ClusterResourceQuota is the Schema for the clusterresourcequotas API.
           It extends the standard Kubernetes ResourceQuota by allowing it to be applied across multiple
           namespaces that match a label selector.
+
+          Supported object count resources (for use in the 'hard' and 'used' fields):
+            - pods
+            - services
+            - services.loadbalancers
+            - services.nodeports
+            - configmaps
+            - secrets
+            - persistentvolumeclaims
+            - replicationcontrollers
+            - deployments.apps
+            - statefulsets.apps
+            - daemonsets.apps
+            - jobs.batch
+            - cronjobs.batch
+            - horizontalpodautoscalers.autoscaling
+            - ingresses.networking.k8s.io
+
+          You may specify quotas for any of these resources. See the Helm chart documentation for details and examples.
         properties:
           apiVersion:
             description: |-
@@ -59,9 +78,23 @@ spec:
                 description: |-
                   Hard is the set of desired hard limits for each named resource.
                   For example:
-                  'pods': '10'
-                  'requests.cpu': '1'
-                  'requests.memory': 1Gi
+                  'pods': '10' (Pod count)
+                  'services': '5' (Service count)
+                  'services.loadbalancers': '2' (Service type=LoadBalancer count)
+                  'services.nodeports': '3' (Service type=NodePort count)
+                  'configmaps': '20' (ConfigMap count)
+                  'secrets': '15' (Secret count)
+                  'persistentvolumeclaims': '8' (PVC count)
+                  'replicationcontrollers': '4' (ReplicationController count)
+                  'deployments.apps': '6' (Deployment count)
+                  'statefulsets.apps': '2' (StatefulSet count)
+                  'daemonsets.apps': '2' (DaemonSet count)
+                  'jobs.batch': '5' (Job count)
+                  'cronjobs.batch': '3' (CronJob count)
+                  'horizontalpodautoscalers.autoscaling': '2' (HPA count)
+                  'ingresses.networking.k8s.io': '3' (Ingress count)
+
+                  ...and so on for all supported native and extended resource types.
                 type: object
               namespaceSelector:
                 description: |-

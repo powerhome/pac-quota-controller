@@ -1,4 +1,3 @@
-// ...existing code...
 package utils
 
 import (
@@ -10,9 +9,12 @@ import (
 	"slices"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -561,4 +563,165 @@ func CreatePVC(
 		return nil, err
 	}
 	return pvc, nil
+}
+
+// NewReplicationController returns a ReplicationController object for testing
+func NewReplicationController(name, namespace string, replicas int32) *corev1.ReplicationController {
+	return &corev1.ReplicationController{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: corev1.ReplicationControllerSpec{
+			Replicas: &replicas,
+			Selector: map[string]string{"app": name},
+			Template: &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "container", Image: "nginx:latest"}},
+				},
+			},
+		},
+	}
+}
+
+// NewDeployment returns a Deployment object for testing
+func NewDeployment(name, namespace string, replicas int32) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "container", Image: "nginx:latest"}},
+				},
+			},
+		},
+	}
+}
+
+// NewStatefulSet returns a StatefulSet object for testing
+func NewStatefulSet(name, namespace string, replicas int32) *appsv1.StatefulSet {
+	return &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: appsv1.StatefulSetSpec{
+			Replicas:    &replicas,
+			ServiceName: name + "-svc",
+			Selector:    &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "container", Image: "nginx:latest"}},
+				},
+			},
+		},
+	}
+}
+
+// NewDaemonSet returns a DaemonSet object for testing
+func NewDaemonSet(name, namespace string) *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{Name: "container", Image: "nginx:latest"}},
+				},
+			},
+		},
+	}
+}
+
+// NewCronJob returns a CronJob object for testing
+func NewCronJob(name, namespace string) *batchv1.CronJob {
+	return &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: batchv1.CronJobSpec{
+			Schedule: "* * * * *",
+			JobTemplate: batchv1.JobTemplateSpec{
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:    "container",
+									Image:   "busybox:latest",
+									Command: []string{"echo", "hello"},
+								},
+							},
+							RestartPolicy: corev1.RestartPolicyNever,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// NewHPA returns a HorizontalPodAutoscaler object for testing
+func NewHPA(name, namespace string) *autoscalingv2.HorizontalPodAutoscaler {
+	minReplicas := int32(1)
+	maxReplicas := int32(2)
+	return &autoscalingv2.HorizontalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
+			ScaleTargetRef: autoscalingv2.CrossVersionObjectReference{
+				Kind:       "Deployment",
+				Name:       name,
+				APIVersion: "apps/v1",
+			},
+			MinReplicas: &minReplicas,
+			MaxReplicas: maxReplicas,
+			Metrics:     []autoscalingv2.MetricSpec{},
+		},
+	}
+}
+
+// NewIngress returns an Ingress object for testing
+func NewIngress(name, namespace string) *networkingv1.Ingress {
+	pathType := networkingv1.PathType("Exact")
+	return &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: networkingv1.IngressSpec{
+			Rules: []networkingv1.IngressRule{{
+				Host: "test.local",
+				IngressRuleValue: networkingv1.IngressRuleValue{
+					HTTP: &networkingv1.HTTPIngressRuleValue{
+						Paths: []networkingv1.HTTPIngressPath{{
+							PathType: &pathType,
+							Path:     "/",
+							Backend: networkingv1.IngressBackend{
+								Service: &networkingv1.IngressServiceBackend{
+									Name: "test-svc",
+									Port: networkingv1.ServiceBackendPort{Number: 80},
+								},
+							},
+						}},
+					},
+				},
+			}},
+		},
+	}
 }

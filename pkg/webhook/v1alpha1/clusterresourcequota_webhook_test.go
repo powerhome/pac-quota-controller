@@ -123,13 +123,6 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 		})
 	})
 
-	Describe("validateDelete", func() {
-		It("should validate cluster resource quota deletion", func() {
-			err := webhook.validateDelete(ctx)
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
-
 	Describe("Handle", func() {
 		It("should handle create operation", func() {
 			// Create admission review

@@ -14,11 +14,60 @@
 helm install pac-quota-controller oci://ghcr.io/powerhome/pac-quota-controller --version <version> -n pac-quota-controller-system --create-namespace
 ```
 
+
 ## Introduction
 
 This chart bootstraps a [PAC Quota Controller](https://github.com/powerhome/pac-quota-controller) deployment on a [Kubernetes](https://kubernetes.io) cluster using the [Helm](https://helm.sh) package manager.
 
 The PAC Quota Controller extends Kubernetes with a ClusterResourceQuota custom resource that allows defining resource quotas that span multiple namespaces.
+
+### Object Count Quotas (Native & Extended Resources)
+
+You can specify object count quotas for native and extended Kubernetes resources using the `hard` field in the ClusterResourceQuota spec.
+
+#### Supported object count resources
+
+- `pods`                                 (Pod count)
+- `services`                             (Service count)
+- `services.loadbalancers`               (Service type=LoadBalancer count)
+- `services.nodeports`                   (Service type=NodePort count)
+- `configmaps`                           (ConfigMap count)
+- `secrets`                              (Secret count)
+- `persistentvolumeclaims`               (PVC count)
+- `replicationcontrollers`               (ReplicationController count)
+- `deployments.apps`                     (Deployment count)
+- `statefulsets.apps`                    (StatefulSet count)
+- `daemonsets.apps`                      (DaemonSet count)
+- `jobs.batch`                           (Job count)
+- `cronjobs.batch`                       (CronJob count)
+- `horizontalpodautoscalers.autoscaling` (HPA count)
+- `ingresses.networking.k8s.io`          (Ingress count)
+
+Subtype quotas (e.g., `services.loadbalancers`) cannot exceed the total for the parent resource (e.g., `services`).
+
+Custom CRDs are not supported for object count quotas.
+
+#### Example
+
+```yaml
+spec:
+  hard:
+    pods: "10"                                 # Pod count
+    services: "5"                              # Service count
+    services.loadbalancers: "2"                # Service type=LoadBalancer count
+    services.nodeports: "3"                    # Service type=NodePort count
+    configmaps: "20"                           # ConfigMap count
+    secrets: "15"                              # Secret count
+    persistentvolumeclaims: "8"                # PVC count
+    replicationcontrollers: "4"                # ReplicationController count
+    deployments.apps: "6"                      # Deployment count
+    statefulsets.apps: "2"                     # StatefulSet count
+    daemonsets.apps: "2"                       # DaemonSet count
+    jobs.batch: "5"                            # Job count
+    cronjobs.batch: "3"                        # CronJob count
+    horizontalpodautoscalers.autoscaling: "2"  # HPA count
+    ingresses.networking.k8s.io: "3"           # Ingress count
+```
 
 ### Container Images
 
