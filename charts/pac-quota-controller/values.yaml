@@ -35,7 +35,7 @@ controllerManager:
   container:
     image:
       repository: ghcr.io/powerhome/pac-quota-controller
-      tag: latest
+      tag: latest@sha256:078ff5c3c925042318a2b81969fe38b0b296b64f190517fbe3ad21868a24d680
       pullPolicy: IfNotPresent
     args:
       - "--leader-elect"
