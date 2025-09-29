@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -17,15 +17,14 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 )
 
 // ClusterResourceQuotaWebhook handles webhook requests for ClusterResourceQuota resources
 type ClusterResourceQuotaWebhook struct {
-	client            kubernetes.Interface
-	crqClient         *quota.CRQClient
-	serviceCalculator services.ServiceResourceCalculator
-	log               *zap.Logger
+	client    kubernetes.Interface
+	crqClient *quota.CRQClient
+	log       *zap.Logger
 }
 
 // NewClusterResourceQuotaWebhook creates a new ClusterResourceQuotaWebhook
@@ -35,10 +34,9 @@ func NewClusterResourceQuotaWebhook(
 	log *zap.Logger,
 ) *ClusterResourceQuotaWebhook {
 	return &ClusterResourceQuotaWebhook{
-		client:            k8sClient,
-		crqClient:         crqClient,
-		serviceCalculator: *services.NewServiceResourceCalculator(k8sClient),
-		log:               log,
+		client:    k8sClient,
+		crqClient: crqClient,
+		log:       log,
 	}
 }
 
@@ -53,6 +51,13 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 		})
 		return
 	}
+
+	// Metrics: start timer and increment validation count
+	operation := string(admissionReview.Request.Operation)
+	webhookName := "clusterresourcequota"
+	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
+	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
+	defer timer.ObserveDuration()
 
 	// Validate the request first
 	if admissionReview.Request == nil {
@@ -137,8 +142,10 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 			Code:    http.StatusForbidden,
 			Message: err.Error(),
 		}
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "denied").Inc()
 	} else {
 		admissionReview.Response.Allowed = true
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "allowed").Inc()
 	}
 
 	c.JSON(http.StatusOK, admissionReview)
@@ -158,43 +165,7 @@ func (h *ClusterResourceQuotaWebhook) validateOperation(
 		return err
 	}
 
-	// Validate service object count quotas for all supported service resource types
-	if crq.Spec.Hard != nil && crq.Spec.NamespaceSelector != nil {
-		selector, err := namespace.NewLabelBasedNamespaceSelector(h.client, crq.Spec.NamespaceSelector)
-		if err != nil {
-			return fmt.Errorf("failed to create namespace selector: %w", err)
-		}
-		selectedNamespaces, err := selector.GetSelectedNamespaces(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to get selected namespaces: %w", err)
-		}
-		for resourceName := range crq.Spec.Hard {
-			switch resourceName {
-			case "services", "services.loadbalancers", "services.nodeports", "services.clusterips", "services.externalnames":
-				var totalUsage resource.Quantity
-				for _, ns := range selectedNamespaces {
-					usageQty, err := h.serviceCalculator.CalculateUsage(ctx, ns, resourceName)
-					if err != nil {
-						return fmt.Errorf("failed to calculate usage for %s in namespace %s: %w", resourceName, ns, err)
-					}
-					if totalUsage.IsZero() {
-						totalUsage = usageQty.DeepCopy()
-					} else {
-						totalUsage.Add(usageQty)
-					}
-				}
-				hardQty := crq.Spec.Hard[resourceName]
-				if totalUsage.Cmp(hardQty) > 0 {
-					return fmt.Errorf(
-						"quota exceeded for %s: used %s, hard limit %s",
-						resourceName,
-						totalUsage.String(),
-						hardQty.String(),
-					)
-				}
-			}
-		}
-	}
+	// Service quota validation removed; handled by dedicated service webhook.
 	return nil
 }
 

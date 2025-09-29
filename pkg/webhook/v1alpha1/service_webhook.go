@@ -16,6 +16,8 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -47,6 +49,13 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Metrics: start timer and increment validation count
+	operation := string(admissionReview.Request.Operation)
+	webhookName := "service"
+	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
+	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
+	defer timer.ObserveDuration()
 
 	// Check for malformed requests (like {}) that don't have proper AdmissionReview structure
 	if admissionReview.Kind == "" && admissionReview.APIVersion == "" && admissionReview.Request == nil {
@@ -128,11 +137,13 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 			Code:    http.StatusForbidden,
 			Message: err.Error(),
 		}
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "denied").Inc()
 	} else {
 		admissionReview.Response.Allowed = true
 		if len(warnings) > 0 {
 			admissionReview.Response.Warnings = warnings
 		}
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "allowed").Inc()
 	}
 
 	c.JSON(http.StatusOK, admissionReview)

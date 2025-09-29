@@ -11,27 +11,25 @@ metadata:
 spec:
   endpoints:
     - path: /metrics
-      port: https
+      port: webhook-server
       scheme: https
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
       tlsConfig:
         {{- if .Values.certmanager.enable }}
-        serverName: pac-quota-controller-manager-metrics-service.{{ .Release.Namespace }}.svc
-        # Apply secure TLS configuration with cert-manager
+        serverName: pac-quota-controller-manager.{{ .Release.Namespace }}.svc
         insecureSkipVerify: false
         ca:
           secret:
-            name: metrics-server-cert
+            name: webhook-server-cert
             key: ca.crt
         cert:
           secret:
-            name: metrics-server-cert
+            name: webhook-server-cert
             key: tls.crt
         keySecret:
-          name: metrics-server-cert
+          name: webhook-server-cert
           key: tls.key
         {{- else }}
-        # Development/Test mode (insecure configuration)
         insecureSkipVerify: true
         {{- end }}
   selector:

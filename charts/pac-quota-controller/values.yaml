@@ -39,7 +39,6 @@ controllerManager:
       pullPolicy: IfNotPresent
     args:
       - "--leader-elect"
-      - "--metrics-bind-address=:8443"
     webhookCertPath: "/tmp/k8s-webhook-server/serving-certs"
     resources:
       limits:
@@ -79,9 +78,6 @@ controllerManager:
 rbac:
   enable: true
 
-metrics:
-  enable: true
-
 prometheus:
   enable: false
 
@@ -91,9 +87,6 @@ certmanager:
   enable: true
   # The installation of cert-manager itself is no longer handled by this chart.
   # Please install cert-manager separately in your cluster. See README for details.
-
-networkPolicy:
-  enable: true
 
 webhook:
   enable: true

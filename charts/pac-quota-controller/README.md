@@ -131,6 +131,10 @@ helm delete pac-quota-controller -n pac-quota-controller-system
 
 The command removes all the Kubernetes components associated with the chart and deletes the release.
 
+### Metrics Endpoint Access
+
+The metrics endpoint is now exposed without network policy restrictions, allowing Prometheus and other monitoring tools to scrape metrics without additional configuration.
+
 ## Usage
 
 Once installed, you can create a ClusterResourceQuota to limit resources across namespaces:
@@ -228,7 +232,6 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.terminationGracePeriodSeconds | int | `15` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
 | metrics.enable | bool | `true` |  |
-| networkPolicy.enable | bool | `true` |  |
 | prometheus.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |

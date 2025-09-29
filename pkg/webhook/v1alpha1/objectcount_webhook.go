@@ -9,12 +9,14 @@ import (
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/objectcount"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
-	"k8s.io/apimachinery/pkg/api/resource"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // ObjectCountWebhook handles webhook requests for Object count resources
@@ -47,6 +49,13 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Metrics: start timer and increment validation count
+	operation := string(admissionReview.Request.Operation)
+	webhookName := "objectcount"
+	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
+	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
+	defer timer.ObserveDuration()
 
 	// Check for malformed requests (like {}) that don't have proper AdmissionReview structure
 	if admissionReview.Kind == "" && admissionReview.APIVersion == "" && admissionReview.Request == nil {
@@ -111,11 +120,13 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 			Code:    http.StatusForbidden,
 			Message: err.Error(),
 		}
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "denied").Inc()
 	} else {
 		admissionReview.Response.Allowed = true
 		if len(warnings) > 0 {
 			admissionReview.Response.Warnings = warnings
 		}
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "allowed").Inc()
 	}
 
 	c.JSON(http.StatusOK, admissionReview)

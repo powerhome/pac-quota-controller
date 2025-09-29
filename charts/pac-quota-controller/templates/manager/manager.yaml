@@ -54,11 +54,6 @@ spec:
           - containerPort: 9443
             name: webhook-server
             protocol: TCP
-          {{- if .Values.metrics.enable }}
-          - containerPort: 8443
-            name: metrics-server
-            protocol: TCP
-          {{- end }}
           command:
             - /manager
           image: {{ .Values.controllerManager.container.image.repository }}:{{ .Values.controllerManager.container.image.tag }}
@@ -83,11 +78,6 @@ spec:
           securityContext:
             {{- toYaml .Values.controllerManager.container.securityContext | nindent 12 }}
           volumeMounts:
-            {{- if .Values.metrics.enable }}
-            - name: metrics-certs
-              mountPath: /tmp/k8s-metrics-server/metrics-certs
-              readOnly: true
-            {{- end }}
             {{- if .Values.webhook.enable }}
             - name: webhook-certs
               mountPath: {{ .Values.controllerManager.container.webhookCertPath | default "/tmp/k8s-webhook-server/serving-certs" }}
@@ -98,17 +88,6 @@ spec:
       serviceAccountName: {{ .Values.controllerManager.serviceAccount.name }}
       terminationGracePeriodSeconds: {{ .Values.controllerManager.terminationGracePeriodSeconds }}
       volumes:
-        {{- if .Values.metrics.enable }}
-        {{- if .Values.certmanager.enable }}
-        - name: metrics-certs
-          secret:
-            secretName: metrics-server-cert # Default secret name for cert-manager managed metrics certs
-        {{- else if .Values.metrics.customTLS.secretName }}
-        - name: metrics-certs
-          secret:
-            secretName: {{ .Values.metrics.customTLS.secretName }}
-        {{- end }}
-        {{- end }}
         {{- if .Values.webhook.enable }}
         {{- if .Values.certmanager.enable }}
         - name: webhook-certs

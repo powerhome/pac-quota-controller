@@ -14,6 +14,7 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -100,6 +101,7 @@ type ClusterResourceQuotaReconciler struct {
 	ComputeCalculator        *pod.PodResourceCalculator
 	StorageCalculator        *storage.StorageResourceCalculator
 	ServiceCalculator        *services.ServiceResourceCalculator
+	ObjectCountCalculator    *objectcount.ObjectCountCalculator
 	ExcludeNamespaceLabelKey string
 	ExcludedNamespaces       []string
 }
@@ -174,6 +176,31 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Calculate aggregated resource usage across all selected namespaces
 	totalUsage, usageByNamespace := r.calculateAndAggregateUsage(ctx, crq, selectedNamespaces)
+
+	// Expose custom metrics: per-namespace and total usage as percent (0-1 float)
+	for _, nsUsage := range usageByNamespace {
+		ns := nsUsage.Namespace
+		for resourceName, used := range nsUsage.Status.Used {
+			hard, hasHard := crq.Spec.Hard[resourceName]
+			var percent float64
+			if hasHard && hard.Value() > 0 {
+				percent = float64(used.Value()) / float64(hard.Value())
+			} else {
+				percent = 0.0
+			}
+			metrics.CRQUsage.WithLabelValues(crq.Name, ns, string(resourceName)).Set(percent)
+		}
+	}
+	for resourceName, total := range totalUsage {
+		hard, hasHard := crq.Spec.Hard[resourceName]
+		var percent float64
+		if hasHard && hard.Value() > 0 {
+			percent = float64(total.Value()) / float64(hard.Value())
+		} else {
+			percent = 0.0
+		}
+		metrics.CRQTotalUsage.WithLabelValues(crq.Name, string(resourceName)).Set(percent)
+	}
 
 	// Update the status of the ClusterResourceQuota
 	if err := r.updateStatus(ctx, crq, totalUsage, usageByNamespace); err != nil {
@@ -286,10 +313,16 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 
 			// Dispatch to the correct calculation function based on the resource type
 			switch resourceName {
-			case corev1.ResourceRequestsCPU, corev1.ResourceRequestsMemory, corev1.ResourceLimitsCPU, corev1.ResourceLimitsMemory:
+			case corev1.ResourceRequestsCPU,
+				corev1.ResourceRequestsMemory,
+				corev1.ResourceLimitsCPU,
+				corev1.ResourceLimitsMemory,
+				corev1.ResourcePods:
 				currentUsage = r.calculateComputeResources(ctx, nsName, resourceName)
 			case corev1.ResourceRequestsStorage:
 				currentUsage = r.calculateStorageResources(ctx, nsName, resourceName)
+			case usage.ResourceServices, usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
+				currentUsage = r.calculateServiceResources(ctx, nsName, resourceName)
 			default:
 				// Handle extended resources (hugepages, GPUs, etc.) via compute calculator
 				// Extended resources are typically consumed by pods, so they should be calculated
@@ -325,22 +358,10 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 func (r *ClusterResourceQuotaReconciler) calculateObjectCount(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
 	// Use the correct calculator for each resource type
 	switch resourceName {
-	case usage.ResourceServices, usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
-		if r.ServiceCalculator == nil {
-			log.Error(nil, "ServiceCalculator is nil", "namespace", ns, "resource", resourceName)
-			return resource.MustParse("0")
-		}
-		serviceCount, err := r.ServiceCalculator.CalculateUsage(ctx, ns, resourceName)
-		if err != nil {
-			log.Error(err, "Failed to calculate service usage", "resource", resourceName, "namespace", ns)
-			return resource.MustParse("0")
-		}
-		return serviceCount
 	case usage.ResourceConfigMaps, usage.ResourceSecrets, usage.ResourceReplicationControllers,
 		usage.ResourceDeployments, usage.ResourceStatefulSets, usage.ResourceDaemonSets,
 		usage.ResourceJobs, usage.ResourceCronJobs, usage.ResourceHorizontalPodAutoscalers, usage.ResourceIngresses:
-		calc := objectcount.NewObjectCountCalculator(r.KubeClient)
-		objectCount, err := calc.CalculateUsage(ctx, ns, resourceName)
+		objectCount, err := r.ObjectCountCalculator.CalculateUsage(ctx, ns, resourceName)
 		if err != nil {
 			log.Error(err, "Failed to calculate object count usage", "resource", resourceName, "namespace", ns)
 			return resource.MustParse("0")
@@ -375,6 +396,21 @@ func (r *ClusterResourceQuotaReconciler) calculateStorageResources(ctx context.C
 		return resource.MustParse("0")
 	}
 	return storageUsage
+}
+
+// calculateServiceResources calculates the usage for service resource quotas.
+func (r *ClusterResourceQuotaReconciler) calculateServiceResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+	if r.ServiceCalculator == nil {
+		log.Error(nil, "ServiceCalculator is nil", "namespace", ns, "resource", resourceName)
+		return resource.MustParse("0")
+	}
+
+	serviceUsage, err := r.ServiceCalculator.CalculateUsage(ctx, ns, resourceName)
+	if err != nil {
+		log.Error(err, "Failed to calculate service resources", "resource", resourceName, "namespace", ns)
+		return resource.MustParse("0")
+	}
+	return serviceUsage
 }
 
 // updateStatus updates the status of the ClusterResourceQuota object.
@@ -513,6 +549,9 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 	}
 	if r.ServiceCalculator == nil {
 		r.ServiceCalculator = services.NewServiceResourceCalculator(clientset)
+	}
+	if r.ObjectCountCalculator == nil {
+		r.ObjectCountCalculator = objectcount.NewObjectCountCalculator(clientset)
 	}
 
 	log.Info("Setting up ClusterResourceQuota controller")

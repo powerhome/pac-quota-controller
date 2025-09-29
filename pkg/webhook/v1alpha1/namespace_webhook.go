@@ -16,6 +16,8 @@ import (
 
 	namespaceutil "github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // NamespaceWebhook handles webhook requests for Namespace resources
@@ -46,6 +48,13 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	// Metrics: start timer and increment validation count
+	operation := string(admissionReview.Request.Operation)
+	webhookName := "namespace"
+	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
+	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
+	defer timer.ObserveDuration()
 
 	// Validate the request first
 	if admissionReview.Request == nil {
@@ -129,11 +138,13 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 			Code:    http.StatusForbidden,
 			Message: err.Error(),
 		}
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "denied").Inc()
 	} else {
 		admissionReview.Response.Allowed = true
 		if len(warnings) > 0 {
 			admissionReview.Response.Warnings = warnings
 		}
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "allowed").Inc()
 	}
 
 	c.JSON(http.StatusOK, admissionReview)
