@@ -1,6 +1,6 @@
 # pac-quota-controller
 
-![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
+![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
 
 A Helm chart for PAC Quota Controller - Managing cluster resource quotas across namespaces
 
@@ -71,7 +71,7 @@ spec:
 This chart can use container images from GitHub Container Registry:
 
 ```console
-ghcr.io/powerhome/pac-quota-controller:0.2.0
+ghcr.io/powerhome/pac-quota-controller:0.3.0
 ```
 
 You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
@@ -202,7 +202,6 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 |-----|------|---------|-------------|
 | certmanager.enable | bool | `true` |  |
 | controllerManager.container.args[0] | string | `"--leader-elect"` |  |
-| controllerManager.container.args[1] | string | `"--metrics-bind-address=:8443"` |  |
 | controllerManager.container.image.pullPolicy | string | `"IfNotPresent"` |  |
 | controllerManager.container.image.repository | string | `"ghcr.io/powerhome/pac-quota-controller"` |  |
 | controllerManager.container.image.tag | string | `"latest"` |  |
@@ -231,7 +230,6 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
 | controllerManager.terminationGracePeriodSeconds | int | `15` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
-| metrics.enable | bool | `true` |  |
 | prometheus.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |
