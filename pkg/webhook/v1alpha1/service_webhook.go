@@ -50,32 +50,33 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 		return
 	}
 
+	// Check for malformed requests
+	if admissionReview.Request == nil {
+		h.log.Error("Malformed admission review request")
+		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
+		return
+	}
+
+	if namespace := admissionReview.Request.Namespace; namespace == "" {
+		h.log.Info("Admission review request namespace is empty")
+		admissionReview.Response = &admissionv1.AdmissionResponse{
+			UID:     admissionReview.Request.UID,
+			Allowed: false,
+			Result: &metav1.Status{
+				Code:    http.StatusBadRequest,
+				Message: "Namespace is required for object count validation",
+			},
+		}
+		c.JSON(http.StatusOK, admissionReview)
+		return
+	}
+
 	// Metrics: start timer and increment validation count
 	operation := string(admissionReview.Request.Operation)
 	webhookName := "service"
 	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
 	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
 	defer timer.ObserveDuration()
-
-	// Check for malformed requests (like {}) that don't have proper AdmissionReview structure
-	if admissionReview.Kind == "" && admissionReview.APIVersion == "" && admissionReview.Request == nil {
-		h.log.Error("Malformed admission review request")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Malformed admission review request"})
-		return
-	}
-
-	if admissionReview.Request == nil {
-		h.log.Info("Admission review request is nil")
-		admissionReview.Response = &admissionv1.AdmissionResponse{
-			Allowed: false,
-			Result: &metav1.Status{
-				Code:    http.StatusBadRequest,
-				Message: "Missing admission request",
-			},
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
-	}
 
 	admissionReview.Response = &admissionv1.AdmissionResponse{
 		UID: admissionReview.Request.UID,

@@ -227,14 +227,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 			ginEngine.ServeHTTP(w, req)
 
-			Expect(w.Code).To(Equal(http.StatusOK))
-
-			var response admissionv1.AdmissionReview
-			err = json.Unmarshal(w.Body.Bytes(), &response)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Missing admission request"))
+			Expect(w.Code).To(Equal(http.StatusBadRequest))
 		})
 
 		It("should handle invalid JSON", func() {
@@ -967,6 +960,7 @@ func createPVCAdmissionReview(pvc *corev1.PersistentVolumeClaim,
 				Resource: "persistentvolumeclaims",
 			},
 			Operation: operation,
+			Namespace: pvc.Namespace,
 			Object: runtime.RawExtension{
 				Raw: pvcBytes,
 			},

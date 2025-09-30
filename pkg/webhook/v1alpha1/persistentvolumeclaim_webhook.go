@@ -54,27 +54,33 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 		return
 	}
 
+	// Check for malformed requests
+	if admissionReview.Request == nil {
+		h.log.Error("Malformed admission review request")
+		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
+		return
+	}
+
+	if namespace := admissionReview.Request.Namespace; namespace == "" {
+		h.log.Info("Admission review request namespace is empty")
+		admissionReview.Response = &admissionv1.AdmissionResponse{
+			UID:     admissionReview.Request.UID,
+			Allowed: false,
+			Result: &metav1.Status{
+				Code:    http.StatusBadRequest,
+				Message: "Namespace is required for object count validation",
+			},
+		}
+		c.JSON(http.StatusOK, admissionReview)
+		return
+	}
+
 	// Metrics: start timer and increment validation count
 	operation := string(admissionReview.Request.Operation)
 	webhookName := "persistentvolumeclaim"
 	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
 	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
 	defer timer.ObserveDuration()
-
-	// Validate the request first
-	if admissionReview.Request == nil {
-		h.log.Info("Admission review request is nil")
-		admissionReview.Response = &admissionv1.AdmissionResponse{
-			UID:     "unknown",
-			Allowed: false,
-			Result: &metav1.Status{
-				Code:    http.StatusBadRequest,
-				Message: "Missing admission request",
-			},
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
-	}
 
 	// Set the response type
 	admissionReview.Response = &admissionv1.AdmissionResponse{

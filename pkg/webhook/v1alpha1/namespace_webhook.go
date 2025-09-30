@@ -49,25 +49,19 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 		return
 	}
 
+	// Check for malformed requests
+	if admissionReview.Request == nil {
+		h.log.Error("Malformed admission review request")
+		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
+		return
+	}
+
 	// Metrics: start timer and increment validation count
 	operation := string(admissionReview.Request.Operation)
 	webhookName := "namespace"
 	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
 	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
 	defer timer.ObserveDuration()
-
-	// Validate the request first
-	if admissionReview.Request == nil {
-		h.log.Error("Admission review request is nil")
-		admissionReview.Response = &admissionv1.AdmissionResponse{
-			Allowed: false,
-			Result: &metav1.Status{
-				Message: "Admission review request is nil",
-			},
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
-	}
 
 	// Set the response type
 	admissionReview.Response = &admissionv1.AdmissionResponse{

@@ -208,13 +208,13 @@ var _ = Describe("ServiceWebhook", func() {
 				},
 				Request: nil,
 			}
+			body, _ := json.Marshal(admissionReview)
+			req, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
 
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response).NotTo(BeNil())
-			Expect(response.Response).NotTo(BeNil())
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Missing admission request"))
+			ginEngine.ServeHTTP(w, req)
+			Expect(w.Code).To(Equal(http.StatusBadRequest))
 		})
 
 		It("should reject request with wrong resource kind", func() {
@@ -240,6 +240,7 @@ var _ = Describe("ServiceWebhook", func() {
 						Resource: "configmaps",
 					},
 					Operation: admissionv1.Create,
+					Namespace: "test-namespace",
 					Object: runtime.RawExtension{
 						Raw: raw,
 					},
@@ -855,6 +856,7 @@ func createServiceAdmissionReview(
 				Resource: "services",
 			},
 			Operation: operation,
+			Namespace: service.Namespace,
 			Object: runtime.RawExtension{
 				Raw: raw,
 			},

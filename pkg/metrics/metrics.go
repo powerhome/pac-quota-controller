@@ -3,6 +3,8 @@ package metrics
 import (
 	"net/http"
 
+	"sync"
+
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
@@ -46,14 +48,17 @@ var (
 	)
 	// Custom registry for webhook metrics only
 	WebhookRegistry = prometheus.NewRegistry()
+	registerOnce    sync.Once
 )
 
 func RegisterWebhookMetrics() {
-	WebhookRegistry.MustRegister(CRQUsage)
-	WebhookRegistry.MustRegister(CRQTotalUsage)
-	WebhookRegistry.MustRegister(WebhookValidationCount)
-	WebhookRegistry.MustRegister(WebhookValidationDuration)
-	WebhookRegistry.MustRegister(WebhookAdmissionDecision)
+	registerOnce.Do(func() {
+		WebhookRegistry.MustRegister(CRQUsage)
+		WebhookRegistry.MustRegister(CRQTotalUsage)
+		WebhookRegistry.MustRegister(WebhookValidationCount)
+		WebhookRegistry.MustRegister(WebhookValidationDuration)
+		WebhookRegistry.MustRegister(WebhookAdmissionDecision)
+	})
 }
 
 // SetupStandaloneMetricsServer creates a standalone HTTP server for metrics
