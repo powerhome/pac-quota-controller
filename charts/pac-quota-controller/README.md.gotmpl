@@ -134,9 +134,49 @@ helm delete pac-quota-controller -n pac-quota-controller-system
 
 The command removes all the Kubernetes components associated with the chart and deletes the release.
 
-### Metrics Endpoint Access
 
-The metrics endpoint is now exposed without network policy restrictions, allowing Prometheus and other monitoring tools to scrape metrics without additional configuration.
+### Metrics Service
+
+The controller exposes a Prometheus-compatible `/metrics` endpoint on a dedicated HTTPS port and service:
+
+- **Service name:** `pac-quota-controller-metrics-service`
+- **Port:** `<metrics-port>` (default: 8443)
+- **Path:** `/metrics`
+- **Enabled by default:** Set `metrics.enable: true|false` in `values.yaml` to enable or disable the metrics server.
+- **TLS:** Uses cert-manager or user-provided certificates (see [Certificates](#certificates)).
+
+No network policy is applied; the endpoint is public within the cluster.
+
+#### Example Prometheus Scrape Config
+
+```yaml
+- job_name: 'pac-quota-controller'
+  kubernetes_sd_configs:
+    - role: endpoints
+  relabel_configs:
+    - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_namespace]
+      action: keep
+      regex: pac-quota-controller-metrics-service;pac-quota-controller-system
+    - source_labels: [__meta_kubernetes_endpoint_port_name]
+      action: keep
+      regex: metrics-server
+  scheme: https
+  tls_config:
+    insecure_skip_verify: true # or use CA if available
+```
+
+
+
+You can configure the port and certificate mount path for metrics via `values.yaml`:
+
+```yaml
+metrics:
+  enable: true
+  port: 8443
+  certPath: /tmp/k8s-metrics-server/metrics-certs   # Path where the metrics cert secret is mounted
+```
+
+The controller will always look for `tls.crt` and `tls.key` in the specified directory.
 
 
 ## Usage

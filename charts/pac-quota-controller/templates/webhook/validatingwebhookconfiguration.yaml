@@ -13,7 +13,7 @@ webhooks:
   - name: vclusterresourcequota-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
-    failurePolicy: Fail
+    failurePolicy: Ignore
     timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}
@@ -39,7 +39,7 @@ webhooks:
   - name: vnamespace-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
-    failurePolicy: Fail
+    failurePolicy: Ignore
     timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}
@@ -65,7 +65,7 @@ webhooks:
   - name: vpod-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
-    failurePolicy: Fail
+    failurePolicy: Ignore
     timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}
@@ -91,7 +91,7 @@ webhooks:
   - name: vpersistentvolumeclaim-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
-    failurePolicy: Fail
+    failurePolicy: Ignore
     timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}
@@ -117,7 +117,7 @@ webhooks:
   - name: vservice-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
-    failurePolicy: Fail
+    failurePolicy: Ignore
     timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}
@@ -143,7 +143,7 @@ webhooks:
   - name: vobjectcount-v1alpha1.powerapp.cloud
     admissionReviewVersions: ["v1"]
     sideEffects: None
-    failurePolicy: Fail
+    failurePolicy: Ignore
     timeoutSeconds: 30
     clientConfig:
       {{- if not .Values.certmanager.enable }}

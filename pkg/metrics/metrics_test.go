@@ -15,15 +15,18 @@ func TestMetrics(t *testing.T) {
 	RunSpecs(t, "Metrics Package Suite")
 }
 
-var _ = Describe("SetupStandaloneMetricsServer", func() {
-	It("should setup standalone metrics server", func() {
+var _ = Describe("MetricsServer", func() {
+	It("should setup metrics server struct and underlying http.Server", func() {
 		cfg := &config.Config{
-			MetricsAddr: ":8080",
+			MetricsPort:   8080,
+			SecureMetrics: false,
+			// No certificate paths provided for this test.
 		}
 		logger := zap.NewNop()
-		server, err := SetupStandaloneMetricsServer(cfg, logger)
+		ms, err := NewMetricsServer(cfg, logger)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(server).NotTo(BeNil())
-		Expect(server.Addr).To(Equal(":8080"))
+		Expect(ms).NotTo(BeNil())
+		Expect(ms.server).NotTo(BeNil())
+		Expect(ms.server.Addr).To(Equal(":8080"))
 	})
 })

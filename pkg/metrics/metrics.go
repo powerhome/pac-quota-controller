@@ -1,12 +1,16 @@
 package metrics
 
 import (
+	"crypto/tls"
+	"fmt"
 	"net/http"
-
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
@@ -61,22 +65,95 @@ func RegisterWebhookMetrics() {
 	})
 }
 
-// SetupStandaloneMetricsServer creates a standalone HTTP server for metrics
-func SetupStandaloneMetricsServer(cfg *config.Config, log *zap.Logger) (*http.Server, error) {
-	// Create a simple HTTP server for metrics
-	server := &http.Server{
-		Addr: cfg.MetricsAddr,
+// MetricsServer encapsulates the metrics HTTP server and its lifecycle.
+type MetricsServer struct {
+	cfg      *config.Config
+	log      *zap.Logger
+	server   *http.Server
+	registry *prometheus.Registry
+}
+
+// NewMetricsServer creates a new MetricsServer instance and registers metrics.
+//
+// The metrics server requires a valid TLS certificate and key to be present at startup.
+// These are typically provisioned by cert-manager and mounted into the pod as files.
+// If the certificate or key is missing, server startup will fail with a clear error.
+func NewMetricsServer(cfg *config.Config, log *zap.Logger) (*MetricsServer, error) {
+	RegisterWebhookMetrics()
+	ms := &MetricsServer{
+		cfg:      cfg,
+		log:      log,
+		registry: WebhookRegistry,
+	}
+	if err := ms.setupServer(); err != nil {
+		return nil, err
+	}
+	return ms, nil
+}
+
+// Start runs the metrics server in a goroutine.
+func (ms *MetricsServer) Start(stopCh <-chan struct{}) {
+	go func() {
+		<-stopCh
+		ms.log.Info("Shutting down metrics server...")
+		if err := ms.server.Close(); err != nil {
+			ms.log.Error("Error shutting down metrics server", zap.Error(err))
+		}
+	}()
+
+	go func() {
+		ms.log.Info("Starting metrics server", zap.String("address", ms.server.Addr))
+		if err := ms.server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			ms.log.Error("Metrics server failed", zap.Error(err))
+		}
+	}()
+}
+
+// setupServer initializes the HTTPS server for metrics.
+// The certificate and key files must exist at startup. These are typically mounted from a cert-manager-managed Secret.
+// If the files are missing, this method returns a clear error and the server will not start.
+func (ms *MetricsServer) setupServer() error {
+	addr := fmt.Sprintf(":%d", ms.cfg.MetricsPort)
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.HandlerFor(ms.registry, promhttp.HandlerOpts{}))
+
+	if !ms.cfg.SecureMetrics {
+		ms.server = &http.Server{
+			Addr:    addr,
+			Handler: mux,
+		}
+		ms.log.Info("Standalone metrics server configured (INSECURE, no certificate required)", zap.String("address", addr))
+		return nil
 	}
 
-	// Set up basic metrics endpoint
-	http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		if _, err := w.Write([]byte("# Metrics endpoint\n")); err != nil {
-			http.Error(w, "Failed to write response", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "text/plain")
-	})
+	certPath := ms.cfg.MetricsCertPath
+	certFile := filepath.Join(certPath, "tls.crt")
+	keyFile := filepath.Join(certPath, "tls.key")
 
-	log.Info("Standalone metrics server configured", zap.String("address", cfg.MetricsAddr))
-	return server, nil
+	// Check cert files exist (required for HTTPS)
+	if _, err := os.Stat(certFile); err != nil {
+		return fmt.Errorf("metrics server certificate file not found: %s. This file must be provisioned (usually by cert-manager) and mounted before startup", certFile)
+	}
+	if _, err := os.Stat(keyFile); err != nil {
+		return fmt.Errorf("metrics server key file not found: %s. This file must be provisioned (usually by cert-manager) and mounted before startup", keyFile)
+	}
+
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return fmt.Errorf("failed to load metrics server cert/key: %w. Ensure the files are valid and match", err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
+
+	ms.server = &http.Server{
+		Addr:      addr,
+		Handler:   mux,
+		TLSConfig: tlsConfig,
+	}
+
+	ms.log.Info("Standalone metrics server configured (certificate required)", zap.String("address", addr), zap.String("cert", certFile), zap.String("key", keyFile))
+	return nil
 }

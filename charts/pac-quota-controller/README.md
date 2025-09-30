@@ -131,9 +131,46 @@ helm delete pac-quota-controller -n pac-quota-controller-system
 
 The command removes all the Kubernetes components associated with the chart and deletes the release.
 
-### Metrics Endpoint Access
+### Metrics Service
 
-The metrics endpoint is now exposed without network policy restrictions, allowing Prometheus and other monitoring tools to scrape metrics without additional configuration.
+The controller exposes a Prometheus-compatible `/metrics` endpoint on a dedicated HTTPS port and service:
+
+- **Service name:** `pac-quota-controller-metrics-service`
+- **Port:** `<metrics-port>` (default: 8443)
+- **Path:** `/metrics`
+- **Enabled by default:** Set `metrics.enable: true|false` in `values.yaml` to enable or disable the metrics server.
+- **TLS:** Uses cert-manager or user-provided certificates (see [Certificates](#certificates)).
+
+No network policy is applied; the endpoint is public within the cluster.
+
+#### Example Prometheus Scrape Config
+
+```yaml
+- job_name: 'pac-quota-controller'
+  kubernetes_sd_configs:
+    - role: endpoints
+  relabel_configs:
+    - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_namespace]
+      action: keep
+      regex: pac-quota-controller-metrics-service;pac-quota-controller-system
+    - source_labels: [__meta_kubernetes_endpoint_port_name]
+      action: keep
+      regex: metrics-server
+  scheme: https
+  tls_config:
+    insecure_skip_verify: true # or use CA if available
+```
+
+You can configure the port, certificate mount path, and filenames for metrics via `values.yaml`:
+
+```yaml
+metrics:
+  enable: true
+  port: 8443
+  certPath: /tmp/k8s-metrics-server/metrics-certs   # Path where the metrics cert secret is mounted
+  certName: tls.crt                                 # Certificate filename in the secret
+  certKey: tls.key                                  # Key filename in the secret
+```
 
 ## Usage
 
@@ -230,6 +267,11 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
 | controllerManager.terminationGracePeriodSeconds | int | `15` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
+| metrics.certKey | string | `"tls.key"` |  |
+| metrics.certName | string | `"tls.crt"` |  |
+| metrics.certPath | string | `"/tmp/k8s-metrics-server/metrics-certs"` |  |
+| metrics.enable | bool | `true` |  |
+| metrics.port | int | `8443` |  |
 | prometheus.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |

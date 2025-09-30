@@ -50,10 +50,18 @@ spec:
             - --webhook-dry-run-only=true
             {{- end }}
             - --webhook-cert-path={{ .Values.controllerManager.container.webhookCertPath }}
+            {{- if .Values.metrics.enable }}
+            - --metrics-cert-path={{ .Values.metrics.certPath }}
+            {{- end }}
           ports:
           - containerPort: 9443
             name: webhook-server
             protocol: TCP
+          {{- if .Values.metrics.enable }}
+          - containerPort: {{ .Values.metrics.port }}
+            name: metrics-server
+            protocol: TCP
+          {{- end }}
           command:
             - /manager
           image: {{ .Values.controllerManager.container.image.repository }}:{{ .Values.controllerManager.container.image.tag }}
@@ -83,6 +91,11 @@ spec:
               mountPath: {{ .Values.controllerManager.container.webhookCertPath | default "/tmp/k8s-webhook-server/serving-certs" }}
               readOnly: true
             {{- end }}
+            {{- if .Values.metrics.enable }}
+            - name: metrics-certs
+              mountPath: {{ .Values.metrics.certPath | default "/tmp/k8s-metrics-server/metrics-certs" }}
+              readOnly: true
+            {{- end }}
       securityContext:
         {{- toYaml .Values.controllerManager.securityContext | nindent 8 }}
       serviceAccountName: {{ .Values.controllerManager.serviceAccount.name }}
@@ -97,5 +110,16 @@ spec:
         - name: webhook-certs
           secret:
             secretName: {{ .Values.webhook.customTLS.secretName }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.metrics.enable }}
+        {{- if .Values.certmanager.enable }}
+        - name: metrics-certs
+          secret:
+            secretName: metrics-server-cert # Default secret name for cert-manager managed metrics certs
+        {{- else if .Values.metrics.customTLS.secretName }}
+        - name: metrics-certs
+          secret:
+            secretName: {{ .Values.metrics.customTLS.secretName }}
         {{- end }}
         {{- end }}

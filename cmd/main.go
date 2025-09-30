@@ -21,6 +21,7 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/powerhome/pac-quota-controller/pkg/logger"
 	"github.com/powerhome/pac-quota-controller/pkg/manager"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 	"github.com/powerhome/pac-quota-controller/pkg/webhook"
 )
 
@@ -88,6 +89,18 @@ func main() {
 						zapLogger.Error("webhook certificate watcher failed", zap.Error(err))
 					}
 				}()
+			}
+
+			// Start metrics server if enabled
+			if cfg.MetricsEnable && cfg.MetricsPort > 0 {
+				metricsServer, err := metrics.NewMetricsServer(cfg, zapLogger)
+				if err != nil {
+					zapLogger.Error("metrics server setup failed", zap.Error(err))
+					os.Exit(1)
+				}
+				stopCh := make(chan struct{})
+				metricsServer.Start(stopCh)
+				defer close(stopCh)
 			}
 
 			// Set up graceful shutdown
