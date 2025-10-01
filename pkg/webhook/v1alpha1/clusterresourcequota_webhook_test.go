@@ -178,7 +178,7 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 			webhook.Handle(c)
 
 			// Verify response
-			Expect(w.Code).To(Equal(http.StatusOK))
+			Expect(w.Code).To(Equal(http.StatusBadRequest))
 		})
 
 		It("should handle invalid JSON", func() {

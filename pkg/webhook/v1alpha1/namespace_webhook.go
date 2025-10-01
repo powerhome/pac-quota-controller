@@ -16,6 +16,8 @@ import (
 
 	namespaceutil "github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // NamespaceWebhook handles webhook requests for Namespace resources
@@ -47,18 +49,19 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 		return
 	}
 
-	// Validate the request first
+	// Check for malformed requests
 	if admissionReview.Request == nil {
-		h.log.Error("Admission review request is nil")
-		admissionReview.Response = &admissionv1.AdmissionResponse{
-			Allowed: false,
-			Result: &metav1.Status{
-				Message: "Admission review request is nil",
-			},
-		}
-		c.JSON(http.StatusOK, admissionReview)
+		h.log.Error("Malformed admission review request")
+		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
 		return
 	}
+
+	// Metrics: start timer and increment validation count
+	operation := string(admissionReview.Request.Operation)
+	webhookName := "namespace"
+	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
+	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
+	defer timer.ObserveDuration()
 
 	// Set the response type
 	admissionReview.Response = &admissionv1.AdmissionResponse{
@@ -129,11 +132,13 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 			Code:    http.StatusForbidden,
 			Message: err.Error(),
 		}
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "denied").Inc()
 	} else {
 		admissionReview.Response.Allowed = true
 		if len(warnings) > 0 {
 			admissionReview.Response.Warnings = warnings
 		}
+		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "allowed").Inc()
 	}
 
 	c.JSON(http.StatusOK, admissionReview)

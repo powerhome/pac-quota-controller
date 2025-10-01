@@ -131,12 +131,15 @@ var _ = Describe("PodWebhook", func() {
 				Request: nil,
 			}
 
-			response := sendWebhookRequest(ginEngine, admissionReview)
+			admissionReviewJSON, err := json.Marshal(admissionReview)
+			Expect(err).NotTo(HaveOccurred())
+			req, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(admissionReviewJSON))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
 
-			Expect(response).NotTo(BeNil())
-			Expect(response.Response).NotTo(BeNil())
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Missing admission request"))
+			ginEngine.ServeHTTP(w, req)
+
+			Expect(w.Code).To(Equal(http.StatusBadRequest))
 		})
 
 		It("should reject request with wrong resource kind", func() {
@@ -1383,6 +1386,7 @@ func createPodAdmissionReview(pod *corev1.Pod, operation admissionv1.Operation) 
 				Resource: "pods",
 			},
 			Operation: operation,
+			Namespace: pod.Namespace,
 			Object: runtime.RawExtension{
 				Raw: raw,
 			},

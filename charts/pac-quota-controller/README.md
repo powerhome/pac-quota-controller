@@ -1,6 +1,6 @@
 # pac-quota-controller
 
-![Version: 0.2.0](https://img.shields.io/badge/Version-0.2.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.2.0](https://img.shields.io/badge/AppVersion-0.2.0-informational?style=flat-square)
+![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
 
 A Helm chart for PAC Quota Controller - Managing cluster resource quotas across namespaces
 
@@ -71,7 +71,7 @@ spec:
 This chart can use container images from GitHub Container Registry:
 
 ```console
-ghcr.io/powerhome/pac-quota-controller:0.2.0
+ghcr.io/powerhome/pac-quota-controller:0.3.0
 ```
 
 You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
@@ -130,6 +130,47 @@ helm delete pac-quota-controller -n pac-quota-controller-system
 ```
 
 The command removes all the Kubernetes components associated with the chart and deletes the release.
+
+### Metrics Service
+
+The controller exposes a Prometheus-compatible `/metrics` endpoint on a dedicated HTTPS port and service:
+
+- **Service name:** `pac-quota-controller-metrics-service`
+- **Port:** `<metrics-port>` (default: 8443)
+- **Path:** `/metrics`
+- **Enabled by default:** Set `metrics.enable: true|false` in `values.yaml` to enable or disable the metrics server.
+- **TLS:** Uses cert-manager or user-provided certificates (see [Certificates](#certificates)).
+
+No network policy is applied; the endpoint is public within the cluster.
+
+#### Example Prometheus Scrape Config
+
+```yaml
+- job_name: 'pac-quota-controller'
+  kubernetes_sd_configs:
+    - role: endpoints
+  relabel_configs:
+    - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_namespace]
+      action: keep
+      regex: pac-quota-controller-metrics-service;pac-quota-controller-system
+    - source_labels: [__meta_kubernetes_endpoint_port_name]
+      action: keep
+      regex: metrics-server
+  scheme: https
+  tls_config:
+    insecure_skip_verify: true # or use CA if available
+```
+
+You can configure the port and certificate mount path for metrics via `values.yaml`:
+
+```yaml
+metrics:
+  enable: true
+  port: 8443
+  certPath: /tmp/k8s-metrics-server/metrics-certs   # Path where the metrics cert secret is mounted
+```
+
+The controller will always look for `tls.crt` and `tls.key` in the specified directory.
 
 ## Usage
 
@@ -198,7 +239,6 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 |-----|------|---------|-------------|
 | certmanager.enable | bool | `true` |  |
 | controllerManager.container.args[0] | string | `"--leader-elect"` |  |
-| controllerManager.container.args[1] | string | `"--metrics-bind-address=:8443"` |  |
 | controllerManager.container.image.pullPolicy | string | `"IfNotPresent"` |  |
 | controllerManager.container.image.repository | string | `"ghcr.io/powerhome/pac-quota-controller"` |  |
 | controllerManager.container.image.tag | string | `"latest"` |  |
@@ -227,8 +267,9 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
 | controllerManager.terminationGracePeriodSeconds | int | `15` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
+| metrics.certPath | string | `"/tmp/k8s-metrics-server/metrics-certs"` |  |
 | metrics.enable | bool | `true` |  |
-| networkPolicy.enable | bool | `true` |  |
+| metrics.port | int | `8443` |  |
 | prometheus.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |

@@ -31,8 +31,6 @@ var _ = Describe("InitConfig", func() {
 			"WEBHOOK_CERT_NAME",
 			"WEBHOOK_CERT_KEY",
 			"METRICS_CERT_PATH",
-			"METRICS_CERT_NAME",
-			"METRICS_CERT_KEY",
 			"ENABLE_HTTP2",
 			"LOG_LEVEL",
 			"LOG_FORMAT",
@@ -45,14 +43,12 @@ var _ = Describe("InitConfig", func() {
 
 	It("should initialize with default values", func() {
 		cfg := InitConfig()
-		Expect(cfg.MetricsAddr).To(Equal(":8443"))
+		Expect(cfg.MetricsPort).To(Equal(8443))
 		Expect(cfg.ProbeAddr).To(Equal(":8081"))
 		Expect(cfg.EnableLeaderElection).To(BeFalse())
 		Expect(cfg.SecureMetrics).To(BeTrue())
 		Expect(cfg.WebhookCertName).To(Equal("tls.crt"))
 		Expect(cfg.WebhookCertKey).To(Equal("tls.key"))
-		Expect(cfg.MetricsCertName).To(Equal("tls.crt"))
-		Expect(cfg.MetricsCertKey).To(Equal("tls.key"))
 		Expect(cfg.EnableHTTP2).To(BeFalse())
 		Expect(cfg.LogLevel).To(Equal("info"))
 		Expect(cfg.LogFormat).To(Equal("json"))
@@ -68,8 +64,6 @@ var _ = Describe("InitConfig", func() {
 			"WEBHOOK_CERT_NAME":         "cert.pem",
 			"WEBHOOK_CERT_KEY":          "key.pem",
 			"METRICS_CERT_PATH":         "/certs/metrics",
-			"METRICS_CERT_NAME":         "metrics.crt",
-			"METRICS_CERT_KEY":          "metrics.key",
 			"ENABLE_HTTP2":              "true",
 			"LOG_LEVEL":                 "debug",
 			"LOG_FORMAT":                "console",
@@ -89,8 +83,6 @@ var _ = Describe("InitConfig", func() {
 		Expect(cfg.WebhookCertName).To(Equal("cert.pem"))
 		Expect(cfg.WebhookCertKey).To(Equal("key.pem"))
 		Expect(cfg.MetricsCertPath).To(Equal("/certs/metrics"))
-		Expect(cfg.MetricsCertName).To(Equal("metrics.crt"))
-		Expect(cfg.MetricsCertKey).To(Equal("metrics.key"))
 		Expect(cfg.EnableHTTP2).To(BeTrue())
 		Expect(cfg.LogLevel).To(Equal("debug"))
 		Expect(cfg.LogFormat).To(Equal("console"))
@@ -114,9 +106,9 @@ var _ = Describe("SetupFlags", func() {
 		flags := cmd.Flags()
 		Expect(flags.HasAvailableFlags()).To(BeTrue())
 
-		metricsAddr, err := flags.GetString("metrics-bind-address")
+		metricsPort, err := flags.GetInt("metrics-port")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(metricsAddr).To(Equal("0"))
+		Expect(metricsPort).To(Equal(8443))
 
 		probeAddr, err := flags.GetString("health-probe-bind-address")
 		Expect(err).NotTo(HaveOccurred())

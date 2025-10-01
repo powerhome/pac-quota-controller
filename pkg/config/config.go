@@ -13,6 +13,7 @@ var setupLog = logf.Log.WithName("setup.config")
 
 // Config holds the controller configuration
 type Config struct {
+	MetricsEnable               bool
 	EnableHTTP2                 bool
 	EnableLeaderElection        bool
 	ExcludeNamespaceLabelKey    string
@@ -23,10 +24,8 @@ type Config struct {
 	LeaderElectionRetryPeriod   int
 	LogFormat                   string
 	LogLevel                    string
-	MetricsAddr                 string
-	MetricsCertKey              string
-	MetricsCertName             string
 	MetricsCertPath             string
+	MetricsPort                 int
 	OwnNamespace                string
 	ProbeAddr                   string
 	SecureMetrics               bool
@@ -38,7 +37,8 @@ type Config struct {
 
 // setDefaults configures the default values for configuration parameters
 func setDefaults() {
-	viper.SetDefault("metrics-bind-address", ":8443")
+	viper.SetDefault("metrics-enable", true)
+	viper.SetDefault("metrics-port", 8443)
 	viper.SetDefault("health-probe-bind-address", ":8081")
 	viper.SetDefault("leader-elect", false)
 	viper.SetDefault("leader-election-lease-duration", 15)
@@ -76,6 +76,7 @@ func InitConfig() *Config {
 	}
 	return &Config{
 		EnableHTTP2:                 viper.GetBool("enable-http2"),
+		MetricsEnable:               viper.GetBool("metrics-enable"),
 		EnableLeaderElection:        viper.GetBool("leader-elect"),
 		ExcludeNamespaceLabelKey:    viper.GetString("exclude-namespace-label-key"),
 		ExcludedNamespaces:          excluded,
@@ -85,9 +86,7 @@ func InitConfig() *Config {
 		LeaderElectionRetryPeriod:   viper.GetInt("leader-election-retry-period"),
 		LogFormat:                   viper.GetString("log-format"),
 		LogLevel:                    viper.GetString("log-level"),
-		MetricsAddr:                 viper.GetString("metrics-bind-address"),
-		MetricsCertKey:              viper.GetString("metrics-cert-key"),
-		MetricsCertName:             viper.GetString("metrics-cert-name"),
+		MetricsPort:                 viper.GetInt("metrics-port"),
 		MetricsCertPath:             viper.GetString("metrics-cert-path"),
 		OwnNamespace:                viper.GetString("own-namespace"),
 		ProbeAddr:                   viper.GetString("health-probe-bind-address"),
@@ -101,8 +100,7 @@ func InitConfig() *Config {
 
 // SetupFlags binds cobra flags to viper
 func SetupFlags(cmd *cobra.Command) {
-	cmd.Flags().String("metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
-		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
+	cmd.Flags().Bool("metrics-enable", true, "Enable the metrics server.")
 	cmd.Flags().String("health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	cmd.Flags().Bool("leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -115,15 +113,14 @@ func SetupFlags(cmd *cobra.Command) {
 		"Duration in seconds the leader will retry refreshing leadership before giving up.")
 	cmd.Flags().Int("leader-election-retry-period", 2,
 		"Duration in seconds the leader election clients should wait between tries of actions.")
+	cmd.Flags().Int("metrics-port", 8443, "The port the metrics server listens on.")
 	cmd.Flags().Bool("metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	cmd.Flags().String("webhook-cert-path", "", "The directory that contains the webhook certificate.")
 	cmd.Flags().String("webhook-cert-name", "tls.crt", "The name of the webhook certificate file.")
 	cmd.Flags().String("webhook-cert-key", "tls.key", "The name of the webhook key file.")
 	cmd.Flags().String("metrics-cert-path", "",
-		"The directory that contains the metrics server certificate.")
-	cmd.Flags().String("metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
-	cmd.Flags().String("metrics-cert-key", "tls.key", "The name of the metrics server key file.")
+		"The directory that contains the metrics server certificate (tls.crt/tls.key).")
 	cmd.Flags().Bool("enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
 	cmd.Flags().String("log-level", "info", "Log level (debug, info, warn, error)")

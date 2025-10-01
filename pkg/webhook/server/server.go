@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,6 +19,7 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/powerhome/pac-quota-controller/pkg/health"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 	"github.com/powerhome/pac-quota-controller/pkg/ready"
 	"github.com/powerhome/pac-quota-controller/pkg/webhook/certwatcher"
 	"github.com/powerhome/pac-quota-controller/pkg/webhook/v1alpha1"
@@ -25,11 +27,13 @@ import (
 
 // GinWebhookServer represents a Gin-based webhook server
 type GinWebhookServer struct {
-	engine           *gin.Engine
-	server           *http.Server
-	log              *zap.Logger
-	port             int
-	certWatcher      *certwatcher.CertWatcher
+	engine      *gin.Engine
+	server      *http.Server
+	log         *zap.Logger
+	port        int
+	certWatcher *certwatcher.CertWatcher
+	// Health and readiness managers
+	healthManager    *health.HealthManager
 	readyManager     *ready.ReadinessManager
 	readinessChecker *ready.SimpleReadinessChecker
 
@@ -39,6 +43,9 @@ type GinWebhookServer struct {
 	crqHandler       *v1alpha1.ClusterResourceQuotaWebhook
 	namespaceHandler *v1alpha1.NamespaceWebhook
 	serviceHandler   *v1alpha1.ServiceWebhook
+
+	// Object count handler
+	objectCountHandler *v1alpha1.ObjectCountWebhook
 
 	k8sClient     kubernetes.Interface
 	runtimeClient client.Client
@@ -80,6 +87,7 @@ func NewGinWebhookServer(
 		port:             cfg.WebhookPort,
 		server:           &http.Server{},
 		readyManager:     ready.NewReadinessManager(logger),
+		healthManager:    health.NewHealthManager(logger),
 		readinessChecker: ready.NewSimpleReadinessChecker("webhook-server"),
 		k8sClient:        kubeClient,
 		runtimeClient:    runtimeClient,
@@ -94,18 +102,14 @@ func NewGinWebhookServer(
 // SetupCertificateWatcher configures certificate watching for the server
 func (s *GinWebhookServer) SetupCertificateWatcher(cfg *config.Config) error {
 	if len(cfg.WebhookCertPath) == 0 {
-		if s.log != nil {
-			s.log.Info("No certificate path provided, skipping certificate watcher setup")
-		}
+		s.log.Info("No certificate path provided, skipping certificate watcher setup")
 		return nil
 	}
 
-	if s.log != nil {
-		s.log.Info("Initializing webhook certificate watcher using provided certificates",
-			zap.String("webhook-cert-path", cfg.WebhookCertPath),
-			zap.String("webhook-cert-name", cfg.WebhookCertName),
-			zap.String("webhook-cert-key", cfg.WebhookCertKey))
-	}
+	s.log.Info("Initializing webhook certificate watcher using provided certificates",
+		zap.String("webhook-cert-path", cfg.WebhookCertPath),
+		zap.String("webhook-cert-name", cfg.WebhookCertName),
+		zap.String("webhook-cert-key", cfg.WebhookCertKey))
 
 	var err error
 	s.certWatcher, err = certwatcher.NewCertWatcher(
@@ -114,9 +118,7 @@ func (s *GinWebhookServer) SetupCertificateWatcher(cfg *config.Config) error {
 		s.log,
 	)
 	if err != nil {
-		if s.log != nil {
-			s.log.Error("Failed to initialize webhook certificate watcher", zap.Error(err))
-		}
+		s.log.Error("Failed to initialize webhook certificate watcher", zap.Error(err))
 		return fmt.Errorf("failed to initialize webhook certificate watcher: %w", err)
 	}
 
@@ -126,89 +128,73 @@ func (s *GinWebhookServer) SetupCertificateWatcher(cfg *config.Config) error {
 	}
 	s.server.TLSConfig = tlsConfig
 
-	if s.log != nil {
-		s.log.Info("Certificate watcher configured successfully")
-	}
+	s.log.Info("Certificate watcher configured successfully")
 	return nil
 }
 
 // setupRoutes configures all webhook routes
 func (s *GinWebhookServer) setupRoutes() {
 	// Health and readiness check endpoints
-	healthManager := health.NewHealthManager(s.log)
-	s.readyManager = ready.NewReadinessManager(s.log)
 
 	// Add default health and readiness checkers
-	healthManager.AddChecker(health.NewSimpleHealthChecker("webhook-server"))
+	s.healthManager.AddChecker(health.NewSimpleHealthChecker("webhook-server"))
 	s.readinessChecker = ready.NewSimpleReadinessChecker("webhook-server")
 	s.readyManager.AddChecker(s.readinessChecker)
 
-	s.engine.GET("/healthz", healthManager.HealthHandler())
+	s.engine.GET("/healthz", s.healthManager.HealthHandler())
 	s.engine.GET("/readyz", s.readyManager.ReadyHandler())
+
+	// Register webhook metrics with custom registry
+	metrics.RegisterWebhookMetrics()
+	// Expose only webhook metrics at /metrics
+	s.engine.GET("/metrics", gin.WrapH(promhttp.HandlerFor(metrics.WebhookRegistry, promhttp.HandlerOpts{})))
 
 	// Create CRQ client for custom resource operations
 	var crqClient *quota.CRQClient
 	if s.runtimeClient != nil {
 		crqClient = quota.NewCRQClient(s.runtimeClient)
-		if s.log != nil {
-			s.log.Info("CRQ client created successfully for webhook validation")
-		}
+		s.log.Info("CRQ client created successfully for webhook validation")
 	} else {
-		if s.log != nil {
-			s.log.Warn("Dynamic client is nil, CRQ operations will not be available")
-		}
+		s.log.Warn("Dynamic client is nil, CRQ operations will not be available")
 	}
 
-	if s.log != nil {
-		s.log.Info("Setting up ClusterResourceQuota webhook")
-	}
+	s.log.Info("Setting up ClusterResourceQuota webhook")
+
 	s.crqHandler = v1alpha1.NewClusterResourceQuotaWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate-quota-powerapp-cloud-v1alpha1-clusterresourcequota", s.crqHandler.Handle)
 
-	if s.log != nil {
-		s.log.Info("Setting up namespace webhook")
-	}
+	s.log.Info("Setting up namespace webhook")
+
 	s.namespaceHandler = v1alpha1.NewNamespaceWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate--v1-namespace", s.namespaceHandler.Handle)
 
-	if s.log != nil {
-		s.log.Info("Setting up pod webhook")
-	}
+	s.log.Info("Setting up pod webhook")
+
 	s.podHandler = v1alpha1.NewPodWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate--v1-pod", s.podHandler.Handle)
 
-	if s.log != nil {
-		s.log.Info("Setting up service webhook")
-	}
+	s.log.Info("Setting up service webhook")
+
 	s.serviceHandler = v1alpha1.NewServiceWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate--v1-service", s.serviceHandler.Handle)
 
-	if s.log != nil {
-		s.log.Info("Setting up PVC webhook")
-	}
+	s.log.Info("Setting up PVC webhook")
+
 	s.pvcHandler = v1alpha1.NewPersistentVolumeClaimWebhook(s.k8sClient, crqClient, s.log)
 	s.engine.POST("/validate--v1-persistentvolumeclaim", s.pvcHandler.Handle)
 
-	if s.log != nil {
-		s.log.Info("Setting up objectcount webhook")
-	}
-	// Setup objectcount webhook handler
-	if s.log != nil {
-		s.log.Info("Setting up objectcount webhook")
-	}
-	objectCountHandler := v1alpha1.NewObjectCountWebhook(s.k8sClient, crqClient, s.log)
-	s.engine.POST("/validate-objectcount-v1", objectCountHandler.Handle)
+	s.log.Info("Setting up objectcount webhook")
 
-	if s.log != nil {
-		s.log.Info("All webhook handlers configured with CRQ client support")
-	}
+	s.objectCountHandler = v1alpha1.NewObjectCountWebhook(s.k8sClient, crqClient, s.log)
+	s.engine.POST("/validate-objectcount-v1", s.objectCountHandler.Handle)
+
+	s.log.Info("All webhook handlers configured with CRQ client support")
+
 }
 
 // Start starts the webhook server
 func (s *GinWebhookServer) Start(ctx context.Context) error {
-	if s.log != nil {
-		s.log.Info("Starting Gin webhook server", zap.Int("port", s.port))
-	}
+	s.log.Info("Starting Gin webhook server", zap.Int("port", s.port))
 
 	// Start certificate watcher if configured
 	if err := s.startCertWatcher(ctx); err != nil {
@@ -226,9 +212,7 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 
 	// Mark the server as ready and wait for shutdown
 	s.MarkReady()
-	if s.log != nil {
-		s.log.Info("Webhook server startup initiated successfully")
-	}
+	s.log.Info("Webhook server startup initiated successfully")
 
 	// Wait for context cancellation
 	<-ctx.Done()
@@ -243,20 +227,16 @@ func (s *GinWebhookServer) startCertWatcher(ctx context.Context) error {
 		return nil
 	}
 
-	if s.log != nil {
-		s.log.Info("Starting certificate watcher")
-	}
+	s.log.Info("Starting certificate watcher")
 
 	if err := s.certWatcher.Start(ctx); err != nil {
-		if s.log != nil {
-			s.log.Error("Failed to start certificate watcher", zap.Error(err))
-		}
+		s.log.Error("Failed to start certificate watcher", zap.Error(err))
+
 		return fmt.Errorf("failed to start certificate watcher: %w", err)
 	}
 
-	if s.log != nil {
-		s.log.Info("Certificate watcher started successfully")
-	}
+	s.log.Info("Certificate watcher started successfully")
+
 	return nil
 }
 
@@ -269,9 +249,8 @@ func (s *GinWebhookServer) configureServer() {
 		s.server.TLSConfig = &tls.Config{
 			GetCertificate: s.certWatcher.GetCertificate,
 		}
-		if s.log != nil {
-			s.log.Info("TLS configuration set up using certificate watcher")
-		}
+		s.log.Info("TLS configuration set up using certificate watcher")
+
 	}
 }
 
@@ -281,21 +260,16 @@ func (s *GinWebhookServer) startServerInBackground() <-chan error {
 	go func() {
 		var err error
 		if s.server.TLSConfig != nil {
-			if s.log != nil {
-				s.log.Info("Starting server with TLS")
-			}
+			s.log.Info("Starting server with TLS")
+
 			err = s.server.ListenAndServeTLS("", "")
 		} else {
-			if s.log != nil {
-				s.log.Info("Starting server without TLS")
-			}
+			s.log.Info("Starting server without TLS")
 			err = s.server.ListenAndServe()
 		}
 
 		if err != nil && err != http.ErrServerClosed {
-			if s.log != nil {
-				s.log.Error("Webhook server error", zap.Error(err))
-			}
+			s.log.Error("Webhook server error", zap.Error(err))
 			serverStarted <- err
 		} else {
 			serverStarted <- nil
@@ -323,9 +297,7 @@ func (s *GinWebhookServer) waitForServerReady(ctx context.Context, serverStarted
 		case <-time.After(backoff):
 			if s.isServerReady() {
 				isReady = true
-				if s.log != nil {
-					s.log.Info("Webhook server is ready to accept connections")
-				}
+				s.log.Info("Webhook server is ready to accept connections")
 			} else {
 				backoff = s.calculateNextBackoff(backoff, maxBackoff)
 			}
@@ -340,9 +312,7 @@ func (s *GinWebhookServer) waitForServerReady(ctx context.Context, serverStarted
 
 // handleContextCancelled handles context cancellation during startup
 func (s *GinWebhookServer) handleContextCancelled(ctx context.Context) error {
-	if s.log != nil {
-		s.log.Info("Context cancelled before server ready, shutting down")
-	}
+	s.log.Info("Context cancelled before server ready, shutting down")
 
 	if s.certWatcher != nil {
 		s.certWatcher.Stop()
@@ -364,14 +334,10 @@ func (s *GinWebhookServer) calculateNextBackoff(currentBackoff, maxBackoff time.
 
 // shutdown performs graceful shutdown of the server
 func (s *GinWebhookServer) shutdown(ctx context.Context) error {
-	if s.log != nil {
-		s.log.Info("Shutting down webhook server")
-	}
+	s.log.Info("Shutting down webhook server")
 
 	if s.certWatcher != nil {
-		if s.log != nil {
-			s.log.Info("Stopping certificate watcher")
-		}
+		s.log.Info("Stopping certificate watcher")
 		s.certWatcher.Stop()
 	}
 
@@ -384,9 +350,7 @@ func (s *GinWebhookServer) shutdown(ctx context.Context) error {
 // MarkReady marks the webhook server as ready
 func (s *GinWebhookServer) MarkReady() {
 	if s.readinessChecker != nil {
-		if s.log != nil {
-			s.log.Info("Marking webhook server as ready")
-		}
+		s.log.Info("Marking webhook server as ready")
 		s.readinessChecker.SetReady(true)
 	}
 }
@@ -439,9 +403,7 @@ func (s *GinWebhookServer) isServerReady() bool {
 	defer func() {
 		if resp != nil {
 			if err := resp.Body.Close(); err != nil {
-				if s.log != nil {
-					s.log.Warn("Error closing response body in isServerReady", zap.Error(err))
-				}
+				s.log.Warn("Error closing response body in isServerReady", zap.Error(err))
 			}
 		}
 	}()
