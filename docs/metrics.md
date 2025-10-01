@@ -44,13 +44,13 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 
 ## Example Prometheus Queries
 
-- **Total webhook requests per type:**  
+- **Total webhook requests per type:**
   `sum by (webhook) (pac_quota_controller_webhook_validation_total)`
 
-- **Admission decisions breakdown:**  
+- **Admission decisions breakdown:**
   `sum by (webhook, decision) (pac_quota_controller_webhook_admission_decision_total)`
 
-- **Average validation duration:**  
+- **Average validation duration:**
   `avg by (webhook) (rate(pac_quota_controller_webhook_validation_duration_seconds_sum[5m]) / rate(pac_quota_controller_webhook_validation_duration_seconds_count[5m]))`
 
 ---

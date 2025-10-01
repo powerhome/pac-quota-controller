@@ -122,7 +122,7 @@ func (ms *MetricsServer) setupServer() error {
 			Addr:    addr,
 			Handler: mux,
 		}
-		ms.log.Info("Standalone metrics server configured (INSECURE, no certificate required)", zap.String("address", addr))
+		ms.log.Info("Standalone metrics server configured", zap.String("address", addr))
 		return nil
 	}
 
@@ -132,15 +132,15 @@ func (ms *MetricsServer) setupServer() error {
 
 	// Check cert files exist (required for HTTPS)
 	if _, err := os.Stat(certFile); err != nil {
-		return fmt.Errorf("metrics server certificate file not found: %s. This file must be provisioned (usually by cert-manager) and mounted before startup", certFile)
+		return fmt.Errorf("metrics server certificate file not found: %s", certFile)
 	}
 	if _, err := os.Stat(keyFile); err != nil {
-		return fmt.Errorf("metrics server key file not found: %s. This file must be provisioned (usually by cert-manager) and mounted before startup", keyFile)
+		return fmt.Errorf("metrics server key file not found: %s", keyFile)
 	}
 
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
-		return fmt.Errorf("failed to load metrics server cert/key: %w. Ensure the files are valid and match", err)
+		return fmt.Errorf("failed to load metrics server cert/key: %w", err)
 	}
 
 	tlsConfig := &tls.Config{
@@ -154,6 +154,6 @@ func (ms *MetricsServer) setupServer() error {
 		TLSConfig: tlsConfig,
 	}
 
-	ms.log.Info("Standalone metrics server configured (certificate required)", zap.String("address", addr), zap.String("cert", certFile), zap.String("key", keyFile))
+	ms.log.Info("Standalone metrics server configured", zap.String("address", addr))
 	return nil
 }

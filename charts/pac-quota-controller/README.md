@@ -161,16 +161,16 @@ No network policy is applied; the endpoint is public within the cluster.
     insecure_skip_verify: true # or use CA if available
 ```
 
-You can configure the port, certificate mount path, and filenames for metrics via `values.yaml`:
+You can configure the port and certificate mount path for metrics via `values.yaml`:
 
 ```yaml
 metrics:
   enable: true
   port: 8443
   certPath: /tmp/k8s-metrics-server/metrics-certs   # Path where the metrics cert secret is mounted
-  certName: tls.crt                                 # Certificate filename in the secret
-  certKey: tls.key                                  # Key filename in the secret
 ```
+
+The controller will always look for `tls.crt` and `tls.key` in the specified directory.
 
 ## Usage
 
@@ -267,8 +267,6 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
 | controllerManager.terminationGracePeriodSeconds | int | `15` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
-| metrics.certKey | string | `"tls.key"` |  |
-| metrics.certName | string | `"tls.crt"` |  |
 | metrics.certPath | string | `"/tmp/k8s-metrics-server/metrics-certs"` |  |
 | metrics.enable | bool | `true` |  |
 | metrics.port | int | `8443` |  |
