@@ -16,7 +16,6 @@ const (
 	ReasonQuotaExceeded     = "QuotaExceeded"
 	ReasonNamespaceAdded    = "NamespaceAdded"
 	ReasonNamespaceRemoved  = "NamespaceRemoved"
-	ReasonQuotaReconciled   = "QuotaReconciled"
 	ReasonCalculationFailed = "CalculationFailed"
 	ReasonInvalidSelector   = "InvalidSelector"
 
@@ -79,12 +78,6 @@ func (r *EventRecorder) NamespaceAdded(crq *quotav1alpha1.ClusterResourceQuota, 
 func (r *EventRecorder) NamespaceRemoved(crq *quotav1alpha1.ClusterResourceQuota, namespace string) {
 	message := fmt.Sprintf("Namespace %s removed from quota scope", namespace)
 	r.recordEvent(crq, EventTypeNormal, ReasonNamespaceRemoved, message)
-}
-
-// QuotaReconciled records a successful reconciliation
-func (r *EventRecorder) QuotaReconciled(crq *quotav1alpha1.ClusterResourceQuota, namespacesCount int) {
-	message := fmt.Sprintf("Quota reconciled successfully across %d namespaces", namespacesCount)
-	r.recordEvent(crq, EventTypeNormal, ReasonQuotaReconciled, message)
 }
 
 // CalculationFailed records an event when resource calculation fails

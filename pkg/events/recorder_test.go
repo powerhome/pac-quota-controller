@@ -128,26 +128,6 @@ var _ = Describe("EventRecorder", func() {
 		})
 	})
 
-	Describe("QuotaReconciled", func() {
-		It("should record a QuotaReconciled event with namespace count", func() {
-			eventRecorder.QuotaReconciled(testCRQ, 5)
-
-			Expect(fakeRecorder.Events).To(HaveLen(1))
-			event := <-fakeRecorder.Events
-			Expect(event).To(ContainSubstring("QuotaReconciled"))
-			Expect(event).To(ContainSubstring("Quota reconciled successfully across 5 namespaces"))
-		})
-
-		It("should record event as Normal type", func() {
-			eventRecorder.QuotaReconciled(testCRQ, 3)
-
-			Expect(fakeRecorder.Events).To(HaveLen(1))
-			event := <-fakeRecorder.Events
-			Expect(event).To(ContainSubstring("Normal"))
-			Expect(event).To(ContainSubstring("QuotaReconciled"))
-		})
-	})
-
 	Describe("CalculationFailed", func() {
 		It("should record a CalculationFailed event with error details", func() {
 			testErr := fmt.Errorf("failed to calculate pod resources")

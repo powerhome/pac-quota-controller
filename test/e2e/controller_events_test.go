@@ -95,35 +95,6 @@ var _ = Describe("Controller Events E2E", Ordered, func() {
 			}, time.Minute, time.Second).Should(BeTrue(), "CRQ should be deleted")
 		})
 
-		It("should generate QuotaReconciled events during normal operation", func() {
-			By("Creating the ClusterResourceQuota")
-			Expect(k8sClient.Create(ctx, testCRQ)).To(Succeed())
-
-			By("Waiting for CRQ to be reconciled")
-			Eventually(func() bool {
-				var crq quotav1alpha1.ClusterResourceQuota
-				err := k8sClient.Get(ctx, client.ObjectKeyFromObject(testCRQ), &crq)
-				if err != nil {
-					return false
-				}
-				return len(crq.Status.Namespaces) > 0
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "CRQ should be reconciled")
-
-			By("Waiting for QuotaReconciled event")
-			Eventually(func() error {
-				return utils.WaitForCRQEvent(ctx, clientSet, controllerNS, crqName, "QuotaReconciled", 10*time.Second)
-			}, 30*time.Second, 2*time.Second).Should(Succeed(), "QuotaReconciled event should be recorded")
-
-			By("Validating QuotaReconciled event content")
-			events, err := utils.GetEventsByReason(ctx, clientSet, controllerNS, crqName, "QuotaReconciled")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(events).ToNot(BeEmpty(), "Should have at least one QuotaReconciled event")
-
-			// Validate the latest event content
-			latestEvent := events[len(events)-1]
-			Expect(utils.ValidateEventContent(latestEvent, "QuotaReconciled", "Normal", "reconciled successfully")).To(Succeed())
-		})
-
 		It("should generate NamespaceAdded and NamespaceRemoved events", func() {
 			By("Creating the ClusterResourceQuota")
 			Expect(k8sClient.Create(ctx, testCRQ)).To(Succeed())

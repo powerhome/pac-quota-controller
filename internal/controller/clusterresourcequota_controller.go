@@ -9,6 +9,7 @@ import (
 	"time"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/powerhome/pac-quota-controller/pkg/events"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/objectcount"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
@@ -103,6 +104,7 @@ type ClusterResourceQuotaReconciler struct {
 	ServiceCalculator        *services.ServiceResourceCalculator
 	ObjectCountCalculator    *objectcount.ObjectCountCalculator
 	EventRecorder            *events.EventRecorder
+	Config                   *config.Config
 	logger                   *zap.Logger
 	ExcludeNamespaceLabelKey string
 	ExcludedNamespaces       []string
@@ -224,11 +226,6 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 		r.logger.Error("Failed to update ClusterResourceQuota status", zap.Error(err))
 		return ctrl.Result{}, err
-	}
-
-	// Record successful reconciliation (only every 10 minutes to reduce noise)
-	if r.shouldRecordReconciliationEvent() {
-		r.EventRecorder.QuotaReconciled(crq, len(selectedNamespaces))
 	}
 
 	r.logger.Info("Finished reconciliation")
@@ -605,9 +602,28 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		r.previousNamespacesByQuota = make(map[string][]string)
 	}
 
-	// Start cleanup manager
-	cleanupConfig := events.DefaultCleanupConfig()
-	// TODO: Read cleanup config from environment or config file
+	// Load event cleanup configuration from multiple sources
+	var cleanupConfig events.CleanupConfig
+
+	if r.Config != nil && r.Config.EventsEnable {
+		cleanupConfig, err = events.LoadEventCleanupConfig(
+			r.Config.EventsConfigPath,
+			r.Config.EventsTTL,
+			r.Config.EventsMaxEventsPerCRQ,
+			r.Config.EventsCleanupInterval,
+		)
+		if err != nil {
+			r.logger.Warn("Failed to load event cleanup config, using defaults", zap.Error(err))
+			cleanupConfig = events.DefaultCleanupConfig()
+		}
+	} else {
+		// Events disabled or no config provided, use defaults but disable cleanup
+		cleanupConfig = events.DefaultCleanupConfig()
+		if r.Config != nil && !r.Config.EventsEnable {
+			cleanupConfig.Enabled = false
+		}
+	}
+
 	cleanupManager := events.NewEventCleanupManager(mgr.GetClient(), cleanupConfig, r.logger)
 
 	// Start cleanup in background

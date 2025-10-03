@@ -131,41 +131,6 @@ helm delete pac-quota-controller -n pac-quota-controller-system
 
 The command removes all the Kubernetes components associated with the chart and deletes the release.
 
-## RBAC
-
-The PAC Quota Controller uses separate ClusterRoles for different functionality areas to support modular permission management:
-
-### Core Controller Permissions
-
-The main ClusterRole (`<release-name>-manager-role`) provides permissions for:
-
-- **Core Resources**: namespaces, pods, services, pvcs, configmaps, secrets, replicationcontrollers
-- **Workload Resources**: deployments, statefulsets, daemonsets (apps), jobs, cronjobs (batch)
-- **Scaling Resources**: horizontalpodautoscalers (autoscaling)
-- **Network Resources**: ingresses (networking.k8s.io)
-- **Custom Resources**: clusterresourcequotas (quota.powerapp.cloud)
-
-### Events Permissions
-
-Event recording uses a separate ClusterRole (`<release-name>-events`) with permissions for:
-
-- **Events Resource**: create, get, list, delete on core/v1 events
-
-This separation allows for fine-grained permission management and optional event functionality.
-
-### Configuration
-
-```yaml
-rbac:
-  enable: true           # Enable RBAC resources
-  annotations: {}        # Optional annotations for all RBAC resources
-
-events:
-  enable: true           # Controls event ClusterRole creation
-```
-
-When `events.enable: false`, the events ClusterRole and ClusterRoleBinding are not created.
-
 ### Metrics Service
 
 The controller exposes a Prometheus-compatible `/metrics` endpoint on a dedicated HTTPS port and service:
@@ -211,7 +176,6 @@ The controller will always look for `tls.crt` and `tls.key` in the specified dir
 
 The PAC Quota Controller records Kubernetes Events to improve observability and enable event-driven monitoring. Events are automatically generated when:
 
-- Pods, Services, or PVCs are denied due to quota violations
 - Quota thresholds are reached or exceeded
 - Namespace selections change
 
@@ -233,14 +197,6 @@ events:
       baseInterval: "30s"       # Initial interval for quota violation events
       maxInterval: "15m"        # Maximum interval between events
 ```
-
-### Event Types
-
-| Event Type | Reason | Source | Description |
-|------------|--------|--------|-------------|
-| Warning    | QuotaViolation | Webhook | Resource creation/update denied due to quota limits |
-| Normal     | QuotaThresholdReached | Controller | Quota usage has reached configured threshold |
-| Normal     | NamespaceSelectionChanged | Controller | Namespace selection for CRQ has changed |
 
 ### Event Cleanup
 

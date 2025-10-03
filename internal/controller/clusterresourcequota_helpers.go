@@ -2,7 +2,6 @@ package controller
 
 import (
 	"sort"
-	"time"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
@@ -52,10 +51,4 @@ func (r *ClusterResourceQuotaReconciler) checkQuotaThresholds(crq *quotav1alpha1
 			}
 		}
 	}
-}
-
-// shouldRecordReconciliationEvent reduces noise by only recording every N reconciliations
-func (r *ClusterResourceQuotaReconciler) shouldRecordReconciliationEvent() bool {
-	// Record reconciliation events every 10 minutes
-	return time.Now().Unix()%600 == 0
 }
