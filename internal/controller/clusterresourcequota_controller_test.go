@@ -12,6 +12,7 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/mocks"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -121,7 +122,9 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 
 			reconciler := &ClusterResourceQuotaReconciler{
-				Client: fakeClient,
+				Client:                    fakeClient,
+				logger:                    zap.NewNop(),
+				previousNamespacesByQuota: make(map[string][]string),
 			}
 			req := ctrl.Request{
 				NamespacedName: types.NamespacedName{
@@ -149,8 +152,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 			c := fake.NewClientBuilder().WithObjects(testNamespace).Build()
 			reconciler = &ClusterResourceQuotaReconciler{
-				Client:                   c,
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
+				Client:                    c,
+				logger:                    zap.NewNop(),
+				previousNamespacesByQuota: make(map[string][]string),
+				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
 		})
 
@@ -446,8 +451,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 
 			reconciler = &ClusterResourceQuotaReconciler{
-				Client:                   basicClient,
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
+				Client:                    basicClient,
+				logger:                    zap.NewNop(),
+				previousNamespacesByQuota: make(map[string][]string),
+				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
 			testNamespace = &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
@@ -577,8 +584,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 			c := fake.NewClientBuilder().WithObjects(testNamespace).Build()
 			reconciler = &ClusterResourceQuotaReconciler{
-				Client:                   c,
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
+				Client:                    c,
+				logger:                    zap.NewNop(),
+				previousNamespacesByQuota: make(map[string][]string),
+				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
 		})
 
@@ -641,12 +650,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			var wg sync.WaitGroup
 			concurrency := 10
 
-			for i := 0; i < concurrency; i++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+			for range concurrency {
+				wg.Go(func() {
 					reconciler.findQuotasForObject(ctx, testNamespace)
-				}()
+				})
 			}
 
 			wg.Wait()
@@ -660,8 +667,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		BeforeEach(func() {
 			c := fake.NewClientBuilder().Build()
 			reconciler = &ClusterResourceQuotaReconciler{
-				Client:                   c,
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
+				Client:                    c,
+				logger:                    zap.NewNop(),
+				previousNamespacesByQuota: make(map[string][]string),
+				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
@@ -728,8 +737,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		BeforeEach(func() {
 			c := fake.NewClientBuilder().Build()
 			reconciler = &ClusterResourceQuotaReconciler{
-				Client:                   c,
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
+				Client:                    c,
+				logger:                    zap.NewNop(),
+				previousNamespacesByQuota: make(map[string][]string),
+				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
@@ -759,8 +770,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		BeforeEach(func() {
 			c := fake.NewClientBuilder().Build()
 			reconciler = &ClusterResourceQuotaReconciler{
-				Client:                   c,
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
+				Client:                    c,
+				logger:                    zap.NewNop(),
+				previousNamespacesByQuota: make(map[string][]string),
+				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
@@ -813,8 +826,10 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			}
 			c := fake.NewClientBuilder().WithObjects(testNamespace).Build()
 			reconciler = &ClusterResourceQuotaReconciler{
-				Client:                   c,
-				ExcludeNamespaceLabelKey: "pac-quota-controller.powerapp.cloud/exclude",
+				Client:                    c,
+				logger:                    zap.NewNop(),
+				previousNamespacesByQuota: make(map[string][]string),
+				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
 			// Set a mock CRQ client to prevent nil pointer dereference
 			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())

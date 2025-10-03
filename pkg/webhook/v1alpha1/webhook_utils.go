@@ -115,6 +115,7 @@ func validateCRQResourceQuotaWithNamespace(
 				zap.String("total_usage", totalUsage.String()),
 				zap.String("limit", quotaLimit.String()),
 				zap.String("crq", crq.Name))
+
 			return fmt.Errorf("ClusterResourceQuota '%s' %s limit exceeded: requested %s, current usage %s, "+
 				"quota limit %s, total would be %s",
 				crq.Name, resourceName, requestedQuantity.String(), currentUsage.String(), quotaLimit.String(), totalUsage.String())

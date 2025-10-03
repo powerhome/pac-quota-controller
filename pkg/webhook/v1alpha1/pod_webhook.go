@@ -31,7 +31,11 @@ type PodWebhook struct {
 }
 
 // NewPodWebhook creates a new PodWebhook
-func NewPodWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *PodWebhook {
+func NewPodWebhook(
+	k8sClient kubernetes.Interface,
+	crqClient *quota.CRQClient,
+	log *zap.Logger,
+) *PodWebhook {
 	return &PodWebhook{
 		client:        k8sClient,
 		podCalculator: *pod.NewPodResourceCalculator(k8sClient),

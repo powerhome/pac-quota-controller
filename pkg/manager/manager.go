@@ -77,6 +77,7 @@ func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
 		Client:                   mgr.GetClient(),
 		Scheme:                   mgr.GetScheme(),
 		ComputeCalculator:        computeCalculator,
+		Config:                   cfg,
 		ExcludeNamespaceLabelKey: cfg.ExcludeNamespaceLabelKey,
 		ExcludedNamespaces:       cfg.ExcludedNamespaces,
 	}).SetupWithManager(mgr); err != nil {

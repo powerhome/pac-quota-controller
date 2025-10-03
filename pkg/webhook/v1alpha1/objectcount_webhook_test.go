@@ -54,7 +54,6 @@ var _ = Describe("ObjectCountWebhook", func() {
 	Describe("NewObjectCountWebhook", func() {
 		It("should create a new object count webhook", func() {
 			fakeClient = fake.NewSimpleClientset()
-			logger = zap.NewNop()
 			crqClient = quota.NewCRQClient(nil)
 			webhook = NewObjectCountWebhook(fakeClient, crqClient, logger)
 			Expect(webhook).NotTo(BeNil())
@@ -64,7 +63,6 @@ var _ = Describe("ObjectCountWebhook", func() {
 		})
 
 		It("should create webhook with nil client", func() {
-			logger = zap.NewNop()
 			crqClient = quota.NewCRQClient(nil)
 			webhook = NewObjectCountWebhook(nil, crqClient, logger)
 			Expect(webhook).NotTo(BeNil())
@@ -81,7 +79,6 @@ var _ = Describe("ObjectCountWebhook", func() {
 
 		It("should create webhook with nil CRQ client", func() {
 			fakeClient = fake.NewSimpleClientset()
-			logger = zap.NewNop()
 			webhook = NewObjectCountWebhook(fakeClient, nil, logger)
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.crqClient).To(BeNil())

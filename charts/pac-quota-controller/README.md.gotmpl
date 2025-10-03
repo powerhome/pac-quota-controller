@@ -165,8 +165,6 @@ No network policy is applied; the endpoint is public within the cluster.
     insecure_skip_verify: true # or use CA if available
 ```
 
-
-
 You can configure the port and certificate mount path for metrics via `values.yaml`:
 
 ```yaml
@@ -178,6 +176,45 @@ metrics:
 
 The controller will always look for `tls.crt` and `tls.key` in the specified directory.
 
+## Events
+
+The PAC Quota Controller records Kubernetes Events to improve observability and enable event-driven monitoring. Events are automatically generated when:
+
+- Quota thresholds are reached or exceeded
+- Namespace selections change
+
+### Event Configuration
+
+Events are enabled by default and can be configured via `values.yaml`:
+
+```yaml
+events:
+  enable: true
+  cleanup:
+    ttl: "24h"                  # Time-to-live for events
+    maxEventsPerCRQ: 100        # Maximum events per ClusterResourceQuota
+    interval: "1h"              # Cleanup interval
+  recording:
+    controllerComponent: "pac-quota-controller-controller"
+    webhookComponent: "pac-quota-controller-webhook"
+    backoff:
+      baseInterval: "30s"       # Initial interval for quota violation events
+      maxInterval: "15m"        # Maximum interval between events
+```
+
+### Event Cleanup
+
+Events are automatically cleaned up based on:
+
+- **TTL**: Events older than the configured TTL are removed
+- **Count**: Only the most recent N events per ClusterResourceQuota are retained
+- **Interval**: Cleanup runs at the configured interval
+
+Events are recorded on ClusterResourceQuota objects and can be viewed with:
+
+```bash
+kubectl describe clusterresourcequota <name>
+```
 
 ## Usage
 

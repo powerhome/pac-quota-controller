@@ -33,6 +33,12 @@ type Config struct {
 	WebhookCertName             string
 	WebhookCertPath             string
 	WebhookPort                 int
+	// Events configuration
+	EventsEnable          bool
+	EventsConfigPath      string
+	EventsTTL             string
+	EventsMaxEventsPerCRQ int
+	EventsCleanupInterval string
 }
 
 // setDefaults configures the default values for configuration parameters
@@ -55,6 +61,12 @@ func setDefaults() {
 	viper.SetDefault("log-format", "json")
 	viper.SetDefault("exclude-namespace-label-key", "pac-quota-controller.powerapp.cloud/exclude")
 	viper.SetDefault("excluded-namespaces", "")
+	// Events defaults
+	viper.SetDefault("events-enable", true)
+	viper.SetDefault("events-config-path", "/etc/pac-quota-controller/events/event-config.yaml")
+	viper.SetDefault("events-ttl", "24h")
+	viper.SetDefault("events-max-events-per-crq", 100)
+	viper.SetDefault("events-cleanup-interval", "1h")
 }
 
 // InitConfig initializes viper configuration with environment variables support
@@ -86,15 +98,21 @@ func InitConfig() *Config {
 		LeaderElectionRetryPeriod:   viper.GetInt("leader-election-retry-period"),
 		LogFormat:                   viper.GetString("log-format"),
 		LogLevel:                    viper.GetString("log-level"),
-		MetricsPort:                 viper.GetInt("metrics-port"),
 		MetricsCertPath:             viper.GetString("metrics-cert-path"),
-		OwnNamespace:                viper.GetString("own-namespace"),
+		MetricsPort:                 viper.GetInt("metrics-port"),
+		OwnNamespace:                os.Getenv("POD_NAMESPACE"),
 		ProbeAddr:                   viper.GetString("health-probe-bind-address"),
 		SecureMetrics:               viper.GetBool("metrics-secure"),
 		WebhookCertKey:              viper.GetString("webhook-cert-key"),
 		WebhookCertName:             viper.GetString("webhook-cert-name"),
 		WebhookCertPath:             viper.GetString("webhook-cert-path"),
 		WebhookPort:                 viper.GetInt("webhook-port"),
+		// Events configuration
+		EventsEnable:          viper.GetBool("events-enable"),
+		EventsConfigPath:      viper.GetString("events-config-path"),
+		EventsTTL:             viper.GetString("events-ttl"),
+		EventsMaxEventsPerCRQ: viper.GetInt("events-max-events-per-crq"),
+		EventsCleanupInterval: viper.GetString("events-cleanup-interval"),
 	}
 }
 
@@ -136,6 +154,13 @@ func SetupFlags(cmd *cobra.Command) {
 		"",
 		"Comma-separated list of namespaces to exclude from reconciliation and webhook validation.",
 	)
+	// Events configuration flags
+	cmd.Flags().Bool("events-enable", true, "Enable Kubernetes Events recording.")
+	cmd.Flags().String("events-config-path", "/etc/pac-quota-controller/events/event-config.yaml",
+		"Path to the events configuration file.")
+	cmd.Flags().String("events-ttl", "24h", "Time-to-live for events before cleanup.")
+	cmd.Flags().Int("events-max-events-per-crq", 100, "Maximum number of events to retain per ClusterResourceQuota.")
+	cmd.Flags().String("events-cleanup-interval", "1h", "Interval for running event cleanup.")
 
 	// Bind flags to viper
 	if err := viper.BindPFlags(cmd.Flags()); err != nil {

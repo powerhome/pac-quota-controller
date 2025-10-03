@@ -43,6 +43,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 		k8sClient         kubernetes.Interface
 		crqClient         *quota.CRQClient
 		testNamespace     *corev1.Namespace
+		logger            *zap.Logger
 	)
 
 	BeforeEach(func() {
@@ -59,11 +60,12 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 		// Create webhook with fake client
 		k8sClient = fake.NewSimpleClientset(testNamespace)
 		scheme := runtime.NewScheme()
+		logger = zap.NewNop()
 		_ = quotav1alpha1.AddToScheme(scheme)
 		_ = corev1.AddToScheme(scheme)
 		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
 		crqClient = quota.NewCRQClient(fakeRuntimeClient)
-		webhook = NewPersistentVolumeClaimWebhook(k8sClient, crqClient, zap.NewNop())
+		webhook = NewPersistentVolumeClaimWebhook(k8sClient, crqClient, logger)
 
 		// Setup route
 		ginEngine.POST("/pvc", webhook.Handle)
@@ -71,8 +73,6 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 	Describe("NewPersistentVolumeClaimWebhook", func() {
 		It("should create a new webhook instance", func() {
-			k8sClient := fake.NewSimpleClientset()
-			logger := zap.NewNop()
 			webhook := NewPersistentVolumeClaimWebhook(k8sClient, crqClient, logger)
 
 			Expect(webhook).NotTo(BeNil())
@@ -82,7 +82,6 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 		})
 
 		It("should create webhook with nil client", func() {
-			logger := zap.NewNop()
 			webhook := NewPersistentVolumeClaimWebhook(nil, crqClient, logger)
 
 			Expect(webhook).NotTo(BeNil())
@@ -91,7 +90,6 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 		})
 
 		It("should create webhook with nil logger", func() {
-			k8sClient := fake.NewSimpleClientset()
 			webhook := NewPersistentVolumeClaimWebhook(k8sClient, crqClient, nil)
 
 			Expect(webhook).NotTo(BeNil())
@@ -100,8 +98,6 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 		})
 
 		It("should create webhook with nil CRQ client", func() {
-			k8sClient := fake.NewSimpleClientset()
-			logger := zap.NewNop()
 			webhook := NewPersistentVolumeClaimWebhook(k8sClient, nil, logger)
 
 			Expect(webhook).NotTo(BeNil())
@@ -404,7 +400,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				WithObjects(crq, namespace1, namespace2).
 				Build()
 			crqClient = quota.NewCRQClient(fakeRuntimeClient)
-			webhook = NewPersistentVolumeClaimWebhook(k8sClient, crqClient, zap.NewNop())
+			webhook = NewPersistentVolumeClaimWebhook(k8sClient, crqClient, logger)
 
 			// Re-setup gin engine
 			ginEngine = gin.New()
@@ -478,7 +474,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 			// Update client
 			k8sClient := fake.NewSimpleClientset(testNamespace, namespace1, namespace2, existingPVC, unmatchedNamespace)
-			webhook = NewPersistentVolumeClaimWebhook(k8sClient, crqClient, zap.NewNop())
+			webhook = NewPersistentVolumeClaimWebhook(k8sClient, crqClient, logger)
 			ginEngine = gin.New()
 			ginEngine.POST("/pvc", webhook.Handle)
 
