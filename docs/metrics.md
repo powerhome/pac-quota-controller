@@ -50,8 +50,8 @@ The pac-quota-controller emits Kubernetes Events when resource quotas are violat
 
 #### QuotaViolation Events
 
-**Event Type:** `Warning`  
-**Reason:** `QuotaViolation`  
+**Event Type:** `Warning`
+**Reason:** `QuotaViolation`
 **Source:** `pac-quota-controller-webhook`
 
 These events are emitted when a resource request would exceed the defined ClusterResourceQuota limits.
@@ -63,7 +63,7 @@ These events are emitted when a resource request would exceed the defined Cluste
 Emits QuotaViolation events for the following resources:
 
 - `requests.cpu` - CPU requests from all containers in the pod
-- `requests.memory` - Memory requests from all containers in the pod  
+- `requests.memory` - Memory requests from all containers in the pod
 - `limits.cpu` - CPU limits from all containers in the pod
 - `limits.memory` - Memory limits from all containers in the pod
 - `pods` - Pod count (always +1 for the pod being created)

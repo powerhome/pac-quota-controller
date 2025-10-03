@@ -93,7 +93,7 @@ events:
   recording:
     # Component name for controller events (default: pac-quota-controller-controller)
     controllerComponent: "pac-quota-controller-controller"
-    # Component name for webhook events (default: pac-quota-controller-webhook)  
+    # Component name for webhook events (default: pac-quota-controller-webhook)
     webhookComponent: "pac-quota-controller-webhook"
     # Exponential backoff configuration for quota violation events
     backoff:

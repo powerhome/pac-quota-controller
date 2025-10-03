@@ -1,6 +1,6 @@
 # pac-quota-controller
 
-![Version: 0.3.0](https://img.shields.io/badge/Version-0.3.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.0](https://img.shields.io/badge/AppVersion-0.3.0-informational?style=flat-square)
+![Version: 0.3.1](https://img.shields.io/badge/Version-0.3.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.3.1](https://img.shields.io/badge/AppVersion-0.3.1-informational?style=flat-square)
 
 A Helm chart for PAC Quota Controller - Managing cluster resource quotas across namespaces
 
@@ -71,7 +71,7 @@ spec:
 This chart can use container images from GitHub Container Registry:
 
 ```console
-ghcr.io/powerhome/pac-quota-controller:0.3.0
+ghcr.io/powerhome/pac-quota-controller:0.3.1
 ```
 
 You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
@@ -130,6 +130,41 @@ helm delete pac-quota-controller -n pac-quota-controller-system
 ```
 
 The command removes all the Kubernetes components associated with the chart and deletes the release.
+
+## RBAC
+
+The PAC Quota Controller uses separate ClusterRoles for different functionality areas to support modular permission management:
+
+### Core Controller Permissions
+
+The main ClusterRole (`<release-name>-manager-role`) provides permissions for:
+
+- **Core Resources**: namespaces, pods, services, pvcs, configmaps, secrets, replicationcontrollers
+- **Workload Resources**: deployments, statefulsets, daemonsets (apps), jobs, cronjobs (batch)
+- **Scaling Resources**: horizontalpodautoscalers (autoscaling)
+- **Network Resources**: ingresses (networking.k8s.io)
+- **Custom Resources**: clusterresourcequotas (quota.powerapp.cloud)
+
+### Events Permissions
+
+Event recording uses a separate ClusterRole (`<release-name>-events`) with permissions for:
+
+- **Events Resource**: create, get, list, delete on core/v1 events
+
+This separation allows for fine-grained permission management and optional event functionality.
+
+### Configuration
+
+```yaml
+rbac:
+  enable: true           # Enable RBAC resources
+  annotations: {}        # Optional annotations for all RBAC resources
+
+events:
+  enable: true           # Controls event ClusterRole creation
+```
+
+When `events.enable: false`, the events ClusterRole and ClusterRoleBinding are not created.
 
 ### Metrics Service
 

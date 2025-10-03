@@ -40,9 +40,9 @@ type EventCleanupManager struct {
 }
 
 // NewEventCleanupManager creates a new cleanup manager
-func NewEventCleanupManager(client client.Client, config CleanupConfig, logger *zap.Logger) *EventCleanupManager {
+func NewEventCleanupManager(k8sClient client.Client, config CleanupConfig, logger *zap.Logger) *EventCleanupManager {
 	return &EventCleanupManager{
-		client: client,
+		client: k8sClient,
 		config: config,
 		logger: logger,
 	}
@@ -84,13 +84,13 @@ func (m *EventCleanupManager) Start(ctx context.Context) {
 // cleanup performs the actual event cleanup
 func (m *EventCleanupManager) cleanup(ctx context.Context) error {
 	// Find all PAC quota events from controller
-	controllerEvents, err := m.getPACEvents(ctx, EventSourceController)
+	controllerEvents, err := m.getPACEvents(ctx)
 	if err != nil {
 		return err
 	}
 
 	// Find all PAC quota events from webhook
-	webhookEvents, err := m.getPACEvents(ctx, EventSourceWebhook)
+	webhookEvents, err := m.getPACEvents(ctx)
 	if err != nil {
 		return err
 	}
@@ -119,13 +119,7 @@ func (m *EventCleanupManager) cleanup(ctx context.Context) error {
 
 	// Process each CRQ's events
 	for crqName, crqEvents := range eventsByCRQ {
-		deleted, err := m.cleanupEventsForCRQ(ctx, crqName, crqEvents, cutoff)
-		if err != nil {
-			m.logger.Error("Failed to cleanup events for CRQ",
-				zap.Error(err),
-				zap.String("crq", crqName))
-			continue
-		}
+		deleted := m.cleanupEventsForCRQ(ctx, crqName, crqEvents, cutoff)
 		deletedCount += deleted
 	}
 
@@ -137,10 +131,10 @@ func (m *EventCleanupManager) cleanup(ctx context.Context) error {
 }
 
 // getPACEvents retrieves PAC quota events by source
-func (m *EventCleanupManager) getPACEvents(ctx context.Context, source string) (*corev1.EventList, error) {
+func (m *EventCleanupManager) getPACEvents(ctx context.Context) (*corev1.EventList, error) {
 	events := &corev1.EventList{}
 	listOpts := []client.ListOption{
-		client.MatchingLabels{LabelEventSource: source},
+		client.MatchingLabels{LabelEventSource: "controller"},
 	}
 
 	if err := m.client.List(ctx, events, listOpts...); err != nil {
@@ -152,7 +146,7 @@ func (m *EventCleanupManager) getPACEvents(ctx context.Context, source string) (
 
 // cleanupEventsForCRQ cleans up events for a specific CRQ
 func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName string,
-	events []corev1.Event, cutoff time.Time) (int, error) {
+	events []corev1.Event, cutoff time.Time) int {
 
 	var toDelete []corev1.Event
 	var validEvents []corev1.Event
@@ -218,7 +212,7 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 			zap.Int("remainingCount", len(events)-deletedCount))
 	}
 
-	return deletedCount, nil
+	return deletedCount
 }
 
 // GetCleanupStats returns statistics about the cleanup operation (for testing/monitoring)
@@ -226,14 +220,14 @@ func (m *EventCleanupManager) GetCleanupStats(ctx context.Context) (map[string]i
 	stats := make(map[string]int)
 
 	// Count controller events
-	controllerEvents, err := m.getPACEvents(ctx, EventSourceController)
+	controllerEvents, err := m.getPACEvents(ctx)
 	if err != nil {
 		return nil, err
 	}
 	stats["controller_events"] = len(controllerEvents.Items)
 
 	// Count webhook events
-	webhookEvents, err := m.getPACEvents(ctx, EventSourceWebhook)
+	webhookEvents, err := m.getPACEvents(ctx)
 	if err != nil {
 		return nil, err
 	}

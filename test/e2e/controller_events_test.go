@@ -117,7 +117,7 @@ var _ = Describe("Controller Events E2E", Ordered, func() {
 			By("Validating QuotaReconciled event content")
 			events, err := utils.GetEventsByReason(ctx, clientSet, controllerNS, crqName, "QuotaReconciled")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(events)).To(BeNumerically(">", 0), "Should have at least one QuotaReconciled event")
+			Expect(events).ToNot(BeEmpty(), "Should have at least one QuotaReconciled event")
 
 			// Validate the latest event content
 			latestEvent := events[len(events)-1]
@@ -166,7 +166,7 @@ var _ = Describe("Controller Events E2E", Ordered, func() {
 			By("Validating NamespaceRemoved event")
 			removedEvents, err := utils.GetEventsByReason(ctx, clientSet, controllerNS, crqName, "NamespaceRemoved")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(removedEvents)).To(BeNumerically(">", 0), "Should have NamespaceRemoved event")
+			Expect(removedEvents).ToNot(BeEmpty(), "Should have NamespaceRemoved event")
 
 			latestRemovedEvent := removedEvents[len(removedEvents)-1]
 			Expect(utils.ValidateEventContent(latestRemovedEvent, "NamespaceRemoved", "Normal", testNamespace1)).To(Succeed())
@@ -219,7 +219,7 @@ var _ = Describe("Controller Events E2E", Ordered, func() {
 			By("Validating QuotaExceeded event content")
 			exceededEvents, err := utils.GetEventsByReason(ctx, clientSet, controllerNS, lowLimitCRQ.Name, "QuotaExceeded")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(exceededEvents)).To(BeNumerically(">", 0), "Should have QuotaExceeded event")
+			Expect(exceededEvents).ToNot(BeEmpty(), "Should have QuotaExceeded event")
 
 			latestExceededEvent := exceededEvents[len(exceededEvents)-1]
 			Expect(utils.ValidateEventContent(latestExceededEvent, "QuotaExceeded", "Warning", "exceeded quota")).To(Succeed())
@@ -260,10 +260,15 @@ var _ = Describe("Controller Events E2E", Ordered, func() {
 			By("Validating InvalidSelector event content")
 			invalidEvents, err := utils.GetEventsByReason(ctx, clientSet, controllerNS, invalidCRQ.Name, "InvalidSelector")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(invalidEvents)).To(BeNumerically(">", 0), "Should have InvalidSelector event")
+			Expect(invalidEvents).ToNot(BeEmpty(), "Should have InvalidSelector event")
 
 			latestInvalidEvent := invalidEvents[len(invalidEvents)-1]
-			Expect(utils.ValidateEventContent(latestInvalidEvent, "InvalidSelector", "Warning", "Invalid namespace selector")).To(Succeed())
+			Expect(utils.ValidateEventContent(
+				latestInvalidEvent,
+				"InvalidSelector",
+				"Warning",
+				"Invalid namespace selector",
+			)).To(Succeed())
 		})
 	})
 
@@ -306,7 +311,7 @@ var _ = Describe("Controller Events E2E", Ordered, func() {
 			By("Validating event metadata and labels")
 			events, err := utils.GetCRQEvents(ctx, clientSet, controllerNS, testCRQ.Name)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(events)).To(BeNumerically(">", 0), "Should have at least one event")
+			Expect(events).ToNot(BeEmpty(), "Should have at least one event")
 
 			// Check the first event for proper metadata
 			event := events[0]

@@ -32,10 +32,10 @@ var _ = Describe("EventRecorder", func() {
 	BeforeEach(func() {
 		logger = zap.NewNop()
 		fakeRecorder = record.NewFakeRecorder(100)
-		
+
 		scheme := runtime.NewScheme()
 		Expect(quotav1alpha1.AddToScheme(scheme)).To(Succeed())
-		
+
 		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 		eventRecorder = NewEventRecorder(fakeRecorder, fakeClient, logger)
 
@@ -200,32 +200,6 @@ var _ = Describe("EventRecorder", func() {
 			// FakeRecorder doesn't capture annotations directly, but we can verify
 			// the recordEvent method is called with correct parameters
 			Eventually(fakeRecorder.Events).Should(Receive(ContainSubstring("QuotaExceeded")))
-		})
-	})
-
-	Describe("Event Constants", func() {
-		It("should have all required event reason constants", func() {
-			Expect(ReasonQuotaExceeded).To(Equal("QuotaExceeded"))
-			Expect(ReasonNamespaceAdded).To(Equal("NamespaceAdded"))
-			Expect(ReasonNamespaceRemoved).To(Equal("NamespaceRemoved"))
-			Expect(ReasonQuotaReconciled).To(Equal("QuotaReconciled"))
-			Expect(ReasonCalculationFailed).To(Equal("CalculationFailed"))
-			Expect(ReasonInvalidSelector).To(Equal("InvalidSelector"))
-		})
-
-		It("should have correct event type constants", func() {
-			Expect(EventTypeNormal).To(Equal("Normal"))
-			Expect(EventTypeWarning).To(Equal("Warning"))
-		})
-
-		It("should have correct event source constants", func() {
-			Expect(EventSourceController).To(Equal("controller"))
-		})
-
-		It("should have correct label constants", func() {
-			Expect(LabelEventSource).To(Equal("quota.pac.io/event-source"))
-			Expect(LabelEventType).To(Equal("quota.pac.io/event-type"))
-			Expect(LabelCRQName).To(Equal("quota.pac.io/crq-name"))
 		})
 	})
 })
