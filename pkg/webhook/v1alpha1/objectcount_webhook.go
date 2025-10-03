@@ -32,7 +32,8 @@ type ObjectCountWebhook struct {
 func NewObjectCountWebhook(
 	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
-	log *zap.Logger) *ObjectCountWebhook {
+	log *zap.Logger,
+) *ObjectCountWebhook {
 	return &ObjectCountWebhook{
 		client:                k8sClient,
 		objectCountCalculator: objectcount.NewObjectCountCalculator(k8sClient),

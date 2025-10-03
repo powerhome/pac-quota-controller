@@ -252,7 +252,7 @@ var _ = Describe("NamespaceWebhook", func() {
 
 			It("should handle namespace with no CRQ client", func() {
 				// Create webhook without CRQ client
-				webhookNoCRQ := NewNamespaceWebhook(fakeClient, nil, zap.NewNop())
+				webhookNoCRQ := NewNamespaceWebhook(fakeClient, nil, logger)
 
 				namespace := &corev1.Namespace{
 					ObjectMeta: metav1.ObjectMeta{

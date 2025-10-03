@@ -22,6 +22,15 @@ rules:
   - list
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+- apiGroups:
   - apps
   resources:
   - deployments

@@ -172,6 +172,55 @@ metrics:
 
 The controller will always look for `tls.crt` and `tls.key` in the specified directory.
 
+## Events
+
+The PAC Quota Controller records Kubernetes Events to improve observability and enable event-driven monitoring. Events are automatically generated when:
+
+- Pods, Services, or PVCs are denied due to quota violations
+- Quota thresholds are reached or exceeded
+- Namespace selections change
+
+### Event Configuration
+
+Events are enabled by default and can be configured via `values.yaml`:
+
+```yaml
+events:
+  enable: true
+  cleanup:
+    ttl: "24h"                  # Time-to-live for events
+    maxEventsPerCRQ: 100        # Maximum events per ClusterResourceQuota
+    interval: "1h"              # Cleanup interval
+  recording:
+    controllerComponent: "pac-quota-controller-controller"
+    webhookComponent: "pac-quota-controller-webhook"
+    backoff:
+      baseInterval: "30s"       # Initial interval for quota violation events
+      maxInterval: "15m"        # Maximum interval between events
+```
+
+### Event Types
+
+| Event Type | Reason | Source | Description |
+|------------|--------|--------|-------------|
+| Warning    | QuotaViolation | Webhook | Resource creation/update denied due to quota limits |
+| Normal     | QuotaThresholdReached | Controller | Quota usage has reached configured threshold |
+| Normal     | NamespaceSelectionChanged | Controller | Namespace selection for CRQ has changed |
+
+### Event Cleanup
+
+Events are automatically cleaned up based on:
+
+- **TTL**: Events older than the configured TTL are removed
+- **Count**: Only the most recent N events per ClusterResourceQuota are retained
+- **Interval**: Cleanup runs at the configured interval
+
+Events are recorded on ClusterResourceQuota objects and can be viewed with:
+
+```bash
+kubectl describe clusterresourcequota <name>
+```
+
 ## Usage
 
 Once installed, you can create a ClusterResourceQuota to limit resources across namespaces:
@@ -266,6 +315,14 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.serviceAccount.annotations | object | `{}` |  |
 | controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
 | controllerManager.terminationGracePeriodSeconds | int | `15` |  |
+| events.cleanup.interval | string | `"1h"` |  |
+| events.cleanup.maxEventsPerCRQ | int | `100` |  |
+| events.cleanup.ttl | string | `"24h"` |  |
+| events.enable | bool | `true` |  |
+| events.recording.backoff.baseInterval | string | `"30s"` |  |
+| events.recording.backoff.maxInterval | string | `"15m"` |  |
+| events.recording.controllerComponent | string | `"pac-quota-controller-controller"` |  |
+| events.recording.webhookComponent | string | `"pac-quota-controller-webhook"` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
 | metrics.certPath | string | `"/tmp/k8s-metrics-server/metrics-certs"` |  |
 | metrics.enable | bool | `true` |  |

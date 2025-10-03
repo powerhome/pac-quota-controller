@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/rand"
 	"slices"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -154,6 +155,73 @@ func GetEvents(ctx context.Context, clientSet *kubernetes.Clientset, namespace s
 		fmt.Fprintf(&out, "%s\t%s\t%s\n", e.LastTimestamp, e.InvolvedObject.Name, e.Message)
 	}
 	return out.String()
+}
+
+// GetCRQEvents lists events related to a specific ClusterResourceQuota in the given namespace.
+func GetCRQEvents(ctx context.Context, clientSet *kubernetes.Clientset, namespace, crqName string) ([]corev1.Event, error) {
+	events, err := clientSet.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list events: %w", err)
+	}
+
+	var crqEvents []corev1.Event
+	for _, event := range events.Items {
+		// Check if event is related to the CRQ
+		if event.InvolvedObject.Kind == "ClusterResourceQuota" && event.InvolvedObject.Name == crqName {
+			crqEvents = append(crqEvents, event)
+		}
+	}
+	return crqEvents, nil
+}
+
+// WaitForCRQEvent waits for a specific event type to be recorded for a ClusterResourceQuota.
+func WaitForCRQEvent(ctx context.Context, clientSet *kubernetes.Clientset, namespace, crqName, eventReason string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		events, err := GetCRQEvents(ctx, clientSet, namespace, crqName)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		for _, event := range events {
+			if event.Reason == eventReason {
+				return nil
+			}
+		}
+		time.Sleep(1 * time.Second)
+	}
+	return fmt.Errorf("event %s for CRQ %s not found within %v", eventReason, crqName, timeout)
+}
+
+// ValidateEventContent validates that an event contains expected content.
+func ValidateEventContent(event corev1.Event, expectedReason, expectedType string, messageContains string) error {
+	if event.Reason != expectedReason {
+		return fmt.Errorf("expected event reason %s, got %s", expectedReason, event.Reason)
+	}
+	if event.Type != expectedType {
+		return fmt.Errorf("expected event type %s, got %s", expectedType, event.Type)
+	}
+	if messageContains != "" && !strings.Contains(event.Message, messageContains) {
+		return fmt.Errorf("expected event message to contain %s, got %s", messageContains, event.Message)
+	}
+	return nil
+}
+
+// GetEventsByReason filters events by reason for a specific CRQ.
+func GetEventsByReason(ctx context.Context, clientSet *kubernetes.Clientset, namespace, crqName, reason string) ([]corev1.Event, error) {
+	allEvents, err := GetCRQEvents(ctx, clientSet, namespace, crqName)
+	if err != nil {
+		return nil, err
+	}
+
+	var filteredEvents []corev1.Event
+	for _, event := range allEvents {
+		if event.Reason == reason {
+			filteredEvents = append(filteredEvents, event)
+		}
+	}
+	return filteredEvents, nil
 }
 
 // DescribePod provides a description of a specified pod.

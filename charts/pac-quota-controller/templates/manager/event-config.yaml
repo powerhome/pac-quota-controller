@@ -1,0 +1,22 @@
+{{- if .Values.events.enable }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pac-quota-controller-event-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+data:
+  event-config.yaml: |
+    cleanup:
+      ttl: {{ .Values.events.cleanup.ttl | quote }}
+      maxEventsPerCRQ: {{ .Values.events.cleanup.maxEventsPerCRQ }}
+      interval: {{ .Values.events.cleanup.interval | quote }}
+    recording:
+      controllerComponent: {{ .Values.events.recording.controllerComponent | quote }}
+      webhookComponent: {{ .Values.events.recording.webhookComponent | quote }}
+      backoff:
+        baseInterval: {{ .Values.events.recording.backoff.baseInterval | quote }}
+        maxInterval: {{ .Values.events.recording.backoff.maxInterval | quote }}
+{{- end }}

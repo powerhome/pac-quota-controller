@@ -96,6 +96,11 @@ spec:
               mountPath: {{ .Values.metrics.certPath | default "/tmp/k8s-metrics-server/metrics-certs" }}
               readOnly: true
             {{- end }}
+            {{- if .Values.events.enable }}
+            - name: event-config
+              mountPath: /etc/pac-quota-controller/events
+              readOnly: true
+            {{- end }}
       securityContext:
         {{- toYaml .Values.controllerManager.securityContext | nindent 8 }}
       serviceAccountName: {{ .Values.controllerManager.serviceAccount.name }}
@@ -122,4 +127,9 @@ spec:
           secret:
             secretName: {{ .Values.metrics.customTLS.secretName }}
         {{- end }}
+        {{- end }}
+        {{- if .Values.events.enable }}
+        - name: event-config
+          configMap:
+            name: pac-quota-controller-event-config
         {{- end }}

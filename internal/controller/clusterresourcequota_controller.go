@@ -6,8 +6,10 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/events"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/objectcount"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
@@ -15,6 +17,7 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 	"github.com/powerhome/pac-quota-controller/pkg/metrics"
+	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -32,12 +35,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
-
-var log = logf.Log.WithName("clusterresourcequota-controller")
 
 // resourceUpdatePredicate implements a custom predicate function to filter resource updates.
 // It's designed to trigger reconciliation only on meaningful changes, such as spec updates
@@ -102,8 +102,12 @@ type ClusterResourceQuotaReconciler struct {
 	StorageCalculator        *storage.StorageResourceCalculator
 	ServiceCalculator        *services.ServiceResourceCalculator
 	ObjectCountCalculator    *objectcount.ObjectCountCalculator
+	EventRecorder            *events.EventRecorder
+	logger                   *zap.Logger
 	ExcludeNamespaceLabelKey string
 	ExcludedNamespaces       []string
+	// previousNamespacesByQuota tracks namespaces from previous reconciliation for change detection
+	previousNamespacesByQuota map[string][]string
 }
 
 // isNamespaceExcluded checks if a namespace should be ignored by the controller.
@@ -127,19 +131,18 @@ func (r *ClusterResourceQuotaReconciler) isNamespaceExcluded(ns *corev1.Namespac
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := log.WithValues("clusterresourcequota", req.NamespacedName)
-	log.Info("Reconciling ClusterResourceQuota")
+	r.logger.Info("Reconciling ClusterResourceQuota")
 
 	// Fetch the ClusterResourceQuota instance
 	crq := &quotav1alpha1.ClusterResourceQuota{}
 	if err := r.Get(ctx, req.NamespacedName, crq); err != nil {
 		if errors.IsNotFound(err) {
 			// Object not found, likely deleted, return without error
-			log.Info("ClusterResourceQuota resource not found. Ignoring since object must have been deleted")
+			r.logger.Info("ClusterResourceQuota resource not found. Ignoring since object must have been deleted")
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request
-		log.Error(err, "Failed to get ClusterResourceQuota")
+		r.logger.Error("Failed to get ClusterResourceQuota", zap.Error(err))
 		return ctrl.Result{}, err
 	}
 
@@ -148,6 +151,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	if crq.Spec.NamespaceSelector != nil {
 		selector, err := metav1.LabelSelectorAsSelector(crq.Spec.NamespaceSelector)
 		if err != nil {
+			r.EventRecorder.InvalidSelector(crq, err)
 			return ctrl.Result{}, fmt.Errorf("failed to create selector from CRQ spec: %w", err)
 		}
 
@@ -157,7 +161,8 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 
 		if err := r.List(ctx, namespaceList, listOpts); err != nil {
-			log.Error(err, "Failed to list namespaces")
+			r.logger.Error("Failed to list namespaces", zap.Error(err))
+			r.EventRecorder.CalculationFailed(crq, err)
 			return ctrl.Result{}, err
 		}
 
@@ -172,10 +177,19 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		sort.Strings(selectedNamespaces)
 	}
 
-	log.Info("Found namespaces matching selection criteria", "count", len(selectedNamespaces), "namespaces", selectedNamespaces)
+	// Check for namespace changes and emit events
+	r.handleNamespaceChanges(crq, selectedNamespaces)
+
+	r.logger.Info("Found namespaces matching selection criteria",
+		zap.Int("count", len(selectedNamespaces)),
+		zap.Strings("namespaces", selectedNamespaces),
+	)
 
 	// Calculate aggregated resource usage across all selected namespaces
 	totalUsage, usageByNamespace := r.calculateAndAggregateUsage(ctx, crq, selectedNamespaces)
+
+	// Check for quota warnings and violations
+	r.checkQuotaThresholds(crq, totalUsage)
 
 	// Expose custom metrics: per-namespace and total usage as percent (0-1 float)
 	for _, nsUsage := range usageByNamespace {
@@ -205,14 +219,19 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	// Update the status of the ClusterResourceQuota
 	if err := r.updateStatus(ctx, crq, totalUsage, usageByNamespace); err != nil {
 		if errors.IsNotFound(err) {
-			log.Info("CRQ not found during status update, likely deleted. Skipping status update.", "name", crq.Name)
+			r.logger.Info("CRQ not found during status update, likely deleted. Skipping status update.", zap.String("name", crq.Name))
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "Failed to update ClusterResourceQuota status")
+		r.logger.Error("Failed to update ClusterResourceQuota status", zap.Error(err))
 		return ctrl.Result{}, err
 	}
 
-	log.Info("Finished reconciliation")
+	// Record successful reconciliation (only every 10 minutes to reduce noise)
+	if r.shouldRecordReconciliationEvent() {
+		r.EventRecorder.QuotaReconciled(crq, len(selectedNamespaces))
+	}
+
+	r.logger.Info("Finished reconciliation")
 	return ctrl.Result{}, nil
 }
 
@@ -222,7 +241,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	crq *quotav1alpha1.ClusterResourceQuota,
 	namespaces []string,
 ) (quotav1alpha1.ResourceList, []quotav1alpha1.ResourceQuotaStatusByNamespace) {
-	log.Info("Calculating resource usage", "crq", crq.Name)
+	r.logger.Info("Calculating resource usage", zap.String("crq", crq.Name))
 
 	totalUsage := make(quotav1alpha1.ResourceList)
 	usageByNamespace := make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))
@@ -254,13 +273,18 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 				if r.StorageCalculator != nil {
 					storageUsage, err := r.StorageCalculator.CalculateStorageClassUsage(ctx, nsName, storageClass)
 					if err != nil {
-						log.Error(err, "Failed to calculate storage class usage", "resource", resourceName, "namespace", nsName, "storageClass", storageClass)
+						r.logger.Error("Failed to calculate storage class usage",
+							zap.Error(err),
+							zap.String("resource", string(resourceName)),
+							zap.String("namespace", nsName),
+							zap.String("storageClass", storageClass),
+						)
 						currentUsage = resource.MustParse("0")
 					} else {
 						currentUsage = storageUsage
 					}
 				} else {
-					log.Error(nil, "StorageCalculator is nil", "namespace", nsName, "resource", resourceName)
+					r.logger.Error("StorageCalculator is nil", zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
 					currentUsage = resource.MustParse("0")
 				}
 				nsIndex := nsIndexMap[nsName]
@@ -282,13 +306,18 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 				if r.StorageCalculator != nil {
 					count, err := r.StorageCalculator.CalculateStorageClassCount(ctx, nsName, storageClass)
 					if err != nil {
-						log.Error(err, "Failed to calculate storage class PVC count", "resource", resourceName, "namespace", nsName, "storageClass", storageClass)
+						r.logger.Error("Failed to calculate storage class PVC count",
+							zap.Error(err),
+							zap.Stringer("resource", resourceName),
+							zap.String("namespace", nsName),
+							zap.String("storageClass", storageClass),
+						)
 						currentCount = 0
 					} else {
 						currentCount = count
 					}
 				} else {
-					log.Error(nil, "StorageCalculator is nil", "namespace", nsName, "resource", resourceName)
+					r.logger.Error("StorageCalculator is nil", zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
 					currentCount = 0
 				}
 				nsIndex := nsIndexMap[nsName]
@@ -306,7 +335,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 		for _, nsName := range namespaces {
 			// If nsName is empty, skip usage calculation for this entry
 			if nsName == "" {
-				log.Info("Skipping usage calculation for empty namespace name")
+				r.logger.Info("Skipping usage calculation for empty namespace name")
 				continue
 			}
 			var currentUsage resource.Quantity
@@ -350,7 +379,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 		}
 	}
 
-	log.Info("Usage calculation finished.")
+	r.logger.Info("Usage calculation finished.")
 	return totalUsage, usageByNamespace
 }
 
@@ -363,12 +392,15 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(ctx context.Contex
 		usage.ResourceJobs, usage.ResourceCronJobs, usage.ResourceHorizontalPodAutoscalers, usage.ResourceIngresses:
 		objectCount, err := r.ObjectCountCalculator.CalculateUsage(ctx, ns, resourceName)
 		if err != nil {
-			log.Error(err, "Failed to calculate object count usage", "resource", resourceName, "namespace", ns)
+			r.logger.Error("Failed to calculate object count usage", zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
 			return resource.MustParse("0")
 		}
 		return objectCount
 	default:
-		log.Info("Unsupported object count resource for calculateObjectCount", "resource", resourceName, "namespace", ns)
+		r.logger.Info("Unsupported object count resource for calculateObjectCount",
+			zap.Stringer("resource", resourceName),
+			zap.String("namespace", ns),
+		)
 		return resource.MustParse("0")
 	}
 }
@@ -377,7 +409,7 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(ctx context.Contex
 func (r *ClusterResourceQuotaReconciler) calculateComputeResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
 	computeUsage, err := r.ComputeCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
-		log.Error(err, "Failed to calculate compute resources", "resource", resourceName, "namespace", ns)
+		r.logger.Error("Failed to calculate compute resources", zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
 		return resource.MustParse("0")
 	}
 	return computeUsage
@@ -386,13 +418,13 @@ func (r *ClusterResourceQuotaReconciler) calculateComputeResources(ctx context.C
 // calculateStorageResources calculates the usage for storage resource quotas.
 func (r *ClusterResourceQuotaReconciler) calculateStorageResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
 	if r.StorageCalculator == nil {
-		log.Error(nil, "StorageCalculator is nil", "namespace", ns, "resource", resourceName)
+		r.logger.Error("StorageCalculator is nil", zap.String("namespace", ns), zap.Stringer("resource", resourceName))
 		return resource.MustParse("0")
 	}
 
 	storageUsage, err := r.StorageCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
-		log.Error(err, "Failed to calculate storage resources", "resource", resourceName, "namespace", ns)
+		r.logger.Error("Failed to calculate storage resources", zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
 		return resource.MustParse("0")
 	}
 	return storageUsage
@@ -401,13 +433,13 @@ func (r *ClusterResourceQuotaReconciler) calculateStorageResources(ctx context.C
 // calculateServiceResources calculates the usage for service resource quotas.
 func (r *ClusterResourceQuotaReconciler) calculateServiceResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
 	if r.ServiceCalculator == nil {
-		log.Error(nil, "ServiceCalculator is nil", "namespace", ns, "resource", resourceName)
+		r.logger.Error("ServiceCalculator is nil", zap.String("namespace", ns), zap.Stringer("resource", resourceName))
 		return resource.MustParse("0")
 	}
 
 	serviceUsage, err := r.ServiceCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
-		log.Error(err, "Failed to calculate service resources", "resource", resourceName, "namespace", ns)
+		r.logger.Error("Failed to calculate service resources", zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
 		return resource.MustParse("0")
 	}
 	return serviceUsage
@@ -456,7 +488,7 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 		// For other objects, get the namespace they belong to
 		ns = &corev1.Namespace{}
 		if err = r.Get(ctx, types.NamespacedName{Name: namespaceName}, ns); err != nil {
-			log.Error(err, "Failed to get namespace for object to check for exclusion", "object", client.ObjectKeyFromObject(obj))
+			r.logger.Error("Failed to get namespace for object to check for exclusion", zap.Error(err), zap.String("object", client.ObjectKeyFromObject(obj).String()))
 			return nil
 		}
 	}
@@ -467,23 +499,23 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 
 	// Get object GVK for better logging
 	gvk := obj.GetObjectKind().GroupVersionKind()
-	log.Info("Processing object event, finding relevant CRQs",
-		"object", client.ObjectKeyFromObject(obj),
-		"group", gvk.Group,
-		"version", gvk.Version,
-		"kind", gvk.Kind,
-		"namespace", ns.Name)
+	r.logger.Info("Processing object event, finding relevant CRQs",
+		zap.Stringer("object", client.ObjectKeyFromObject(obj)),
+		zap.String("group", gvk.Group),
+		zap.String("version", gvk.Version),
+		zap.String("kind", gvk.Kind),
+		zap.String("namespace", ns.Name))
 
 	// Find which CRQ selects this namespace.
 	crq, err := r.crqClient.GetCRQByNamespace(ctx, ns)
 	if err != nil {
-		log.Error(err, "Failed to get ClusterResourceQuota for namespace")
+		r.logger.Error("Failed to get ClusterResourceQuota for namespace", zap.Error(err))
 		return nil
 	}
 	if crq != nil {
-		log.Info("Found ClusterResourceQuota for namespace", "crq", crq.Name, "namespace", ns.Name)
+		r.logger.Info("Found ClusterResourceQuota for namespace", zap.String("crq", crq.Name), zap.String("namespace", ns.Name))
 	} else {
-		log.Info("No ClusterResourceQuota found for namespace", "namespace", ns.Name)
+		r.logger.Info("No ClusterResourceQuota found for namespace", zap.String("namespace", ns.Name))
 	}
 
 	if crq != nil {
@@ -527,6 +559,11 @@ func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.R
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Initialize logger
+	if r.logger == nil {
+		r.logger = zap.L().Named("clusterresourcequota-controller")
+	}
+
 	// Initialize the KubeClient using the manager's config if not already set
 	if r.KubeClient == nil {
 		cfg := mgr.GetConfig()
@@ -554,7 +591,41 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		r.ObjectCountCalculator = objectcount.NewObjectCountCalculator(clientset)
 	}
 
-	log.Info("Setting up ClusterResourceQuota controller")
+	// Initialize EventRecorder
+	if r.EventRecorder == nil {
+		r.EventRecorder = events.NewEventRecorder(
+			mgr.GetEventRecorderFor("pac-quota-controller"),
+			mgr.GetClient(),
+			r.logger,
+		)
+	}
+
+	// Initialize previous namespaces tracking
+	if r.previousNamespacesByQuota == nil {
+		r.previousNamespacesByQuota = make(map[string][]string)
+	}
+
+	// Start cleanup manager
+	cleanupConfig := events.DefaultCleanupConfig()
+	// TODO: Read cleanup config from environment or config file
+	cleanupManager := events.NewEventCleanupManager(mgr.GetClient(), cleanupConfig, r.logger)
+
+	// Start cleanup in background
+	go func() {
+		cleanupManager.Start(context.Background())
+	}()
+
+	// Start periodic violation cache cleanup
+	go func() {
+		ticker := time.NewTicker(15 * time.Minute)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			r.EventRecorder.CleanupExpiredViolations()
+		}
+	}()
+
+	r.logger.Info("Setting up ClusterResourceQuota controller")
 
 	// Predicate to filter out updates to status subresource
 	// This prevents reconcile loops caused by status updates
