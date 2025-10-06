@@ -61,7 +61,7 @@ func main() {
 			}
 
 			// Set up controllers
-			if err := manager.SetupControllers(mgr, cfg); err != nil {
+			if err := manager.SetupControllers(ctx, mgr, cfg); err != nil {
 				zapLogger.Error("unable to set up controllers", zap.Error(err))
 				os.Exit(1)
 			}

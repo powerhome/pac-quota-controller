@@ -555,7 +555,7 @@ func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.R
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	// Initialize logger
 	if r.logger == nil {
 		r.logger = zap.L().Named("clusterresourcequota-controller")
@@ -628,7 +628,7 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(mgr ctrl.Manager) erro
 
 	// Start cleanup in background
 	go func() {
-		cleanupManager.Start(context.Background())
+		cleanupManager.Start(ctx)
 	}()
 
 	// Start periodic violation cache cleanup
