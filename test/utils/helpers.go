@@ -167,50 +167,133 @@ func GetCRQEvents(ctx context.Context, clientSet *kubernetes.Clientset, namespac
 
 	var crqEvents []corev1.Event
 	for _, event := range events.Items {
-		// Check if event is related to the CRQ
-		if event.InvolvedObject.Kind == "ClusterResourceQuota" && event.InvolvedObject.Name == crqName {
-			crqEvents = append(crqEvents, event)
+		// Check if event is related to the CRQ by looking at annotations
+		// Events are recorded against the controller pod but contain CRQ info in annotations
+		if event.InvolvedObject.Kind == "Pod" {
+			// Check for CRQ name in event annotations
+			if annotatedCRQName, exists := event.Annotations["quota.pac.io/crq-name"]; exists && annotatedCRQName == crqName {
+				crqEvents = append(crqEvents, event)
+			}
 		}
 	}
 	return crqEvents, nil
 }
 
 // WaitForCRQEvent waits for a specific event type to be recorded for a ClusterResourceQuota.
+// Since events now use unique reasons (with suffix), we check the original reason in annotations.
 func WaitForCRQEvent(ctx context.Context, clientSet *kubernetes.Clientset, namespace, crqName, eventReason string,
 	timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		events, err := GetCRQEvents(ctx, clientSet, namespace, crqName)
-		if err != nil {
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
+	// First check if the event already exists
+	events, err := GetCRQEvents(ctx, clientSet, namespace, crqName)
+	if err == nil {
 		for _, event := range events {
-			if event.Reason == eventReason {
+			if matchesEventReason(event, eventReason) {
 				return nil
 			}
 		}
-		time.Sleep(1 * time.Second)
 	}
-	return fmt.Errorf("event %s for CRQ %s not found within %v", eventReason, crqName, timeout)
+
+	// If not found, use lazy reader approach with watch
+	return WaitForCRQEventWithWatch(ctx, clientSet, namespace, crqName, eventReason, timeout)
+}
+
+// WaitForCRQEventWithWatch uses Kubernetes watch API to efficiently wait for events
+func WaitForCRQEventWithWatch(ctx context.Context, clientSet *kubernetes.Clientset, namespace, crqName, eventReason string,
+	timeout time.Duration) error {
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Create a watch for events in the namespace
+	watcher, err := clientSet.CoreV1().Events(namespace).Watch(ctxWithTimeout, metav1.ListOptions{
+		Watch: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create event watcher: %w", err)
+	}
+	defer watcher.Stop()
+
+	// Create a channel to receive matching events
+	eventChan := make(chan *corev1.Event, 1)
+	defer close(eventChan)
+
+	// Start a goroutine to process watch events
+	go func() {
+		defer watcher.Stop()
+		for {
+			select {
+			case <-ctxWithTimeout.Done():
+				return
+			case watchEvent, ok := <-watcher.ResultChan():
+				if !ok {
+					return
+				}
+
+				if watchEvent.Type == "ADDED" || watchEvent.Type == "MODIFIED" {
+					if event, ok := watchEvent.Object.(*corev1.Event); ok {
+						// Check if this event matches our CRQ and reason
+						if isCRQEvent(event, crqName) && matchesEventReason(*event, eventReason) {
+							select {
+							case eventChan <- event:
+							case <-ctxWithTimeout.Done():
+								return
+							}
+							return
+						}
+					}
+				}
+			}
+		}
+	}()
+
+	// Wait for either the event or timeout
+	select {
+	case <-ctxWithTimeout.Done():
+		return fmt.Errorf("event %s for CRQ %s not found within %v", eventReason, crqName, timeout)
+	case <-eventChan:
+		return nil
+	}
+}
+
+// isCRQEvent checks if an event is related to a specific CRQ
+func isCRQEvent(event *corev1.Event, crqName string) bool {
+	if event.InvolvedObject.Kind == "Pod" {
+		if annotatedCRQName, exists := event.Annotations["quota.pac.io/crq-name"]; exists && annotatedCRQName == crqName {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesEventReason checks if an event matches the expected reason
+func matchesEventReason(event corev1.Event, expectedReason string) bool {
+	return event.Reason == expectedReason ||
+		(event.Annotations != nil && event.Annotations["quota.pac.io/event-type"] == expectedReason) ||
+		strings.HasPrefix(event.Reason, expectedReason+"-")
 }
 
 // ValidateEventContent validates that an event contains expected content.
+// This function handles both regular events and events with unique suffixes.
 func ValidateEventContent(event corev1.Event, expectedReason, expectedType string, messageContains string) error {
-	if event.Reason != expectedReason {
+	// Check the reason using our helper function
+	if !matchesEventReason(event, expectedReason) {
 		return fmt.Errorf("expected event reason %s, got %s", expectedReason, event.Reason)
 	}
 	if event.Type != expectedType {
 		return fmt.Errorf("expected event type %s, got %s", expectedType, event.Type)
 	}
-	if messageContains != "" && !strings.Contains(event.Message, messageContains) {
-		return fmt.Errorf("expected event message to contain %s, got %s", messageContains, event.Message)
+	if messageContains != "" {
+		// Check the Message field (combined events will have the details in the message)
+		if !strings.Contains(event.Message, messageContains) {
+			return fmt.Errorf("expected event message to contain %s, got message: %s",
+				messageContains, event.Message)
+		}
 	}
 	return nil
 }
 
 // GetEventsByReason filters events by reason for a specific CRQ.
+// Since events now use unique reasons (with suffix), we check the original reason in annotations.
 func GetEventsByReason(ctx context.Context, clientSet *kubernetes.Clientset, namespace, crqName, reason string) (
 	[]corev1.Event, error) {
 	allEvents, err := GetCRQEvents(ctx, clientSet, namespace, crqName)
@@ -220,7 +303,7 @@ func GetEventsByReason(ctx context.Context, clientSet *kubernetes.Clientset, nam
 
 	var filteredEvents []corev1.Event
 	for _, event := range allEvents {
-		if event.Reason == reason {
+		if matchesEventReason(event, reason) {
 			filteredEvents = append(filteredEvents, event)
 		}
 	}

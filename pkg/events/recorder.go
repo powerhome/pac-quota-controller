@@ -2,9 +2,12 @@ package events
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -40,6 +43,8 @@ type EventRecorder struct {
 	client         client.Client
 	violationCache map[string]*ViolationTracker
 	logger         *zap.Logger
+	namespace      string
+	podName        string
 }
 
 // ViolationTracker tracks webhook violations for exponential backoff
@@ -51,13 +56,35 @@ type ViolationTracker struct {
 }
 
 // NewEventRecorder creates a new EventRecorder
-func NewEventRecorder(recorder record.EventRecorder, k8sClient client.Client, logger *zap.Logger) *EventRecorder {
+func NewEventRecorder(
+	recorder record.EventRecorder,
+	k8sClient client.Client,
+	namespace string,
+	logger *zap.Logger) *EventRecorder {
 	return &EventRecorder{
 		recorder:       recorder,
 		client:         k8sClient,
 		violationCache: make(map[string]*ViolationTracker),
 		logger:         logger,
+		namespace:      namespace,
+		podName:        getPodName(), // Get current pod name
 	}
+}
+
+// getPodName gets the current pod name from environment or hostname
+func getPodName() string {
+	// Try to get pod name from downward API environment variable first
+	if podName := os.Getenv("POD_NAME"); podName != "" {
+		return podName
+	}
+
+	// Fallback to hostname (which is usually the pod name in Kubernetes)
+	if hostname, err := os.Hostname(); err == nil {
+		return hostname
+	}
+
+	// Final fallback
+	return "pac-quota-controller-manager"
 }
 
 // QuotaExceeded records an event when quota is exceeded
@@ -92,16 +119,32 @@ func (r *EventRecorder) InvalidSelector(crq *quotav1alpha1.ClusterResourceQuota,
 	r.recordEvent(crq, EventTypeWarning, ReasonInvalidSelector, message)
 }
 
-// recordEvent records an event with PAC-specific labels and uses the standard recorder
+// recordEvent records an event with PAC-specific labels using the current pod as the event target
 func (r *EventRecorder) recordEvent(crq *quotav1alpha1.ClusterResourceQuota,
 	eventType, reason, message string) {
 
-	// Use the standard recorder which handles deduplication and proper event management
-	r.recorder.AnnotatedEventf(crq, map[string]string{
+	// So we use the controller pod as a "proxy"
+	// CRQ are cluster-scoped, so the events would default to "default" namespace
+	controllerPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      r.podName,
+			Namespace: r.namespace,
+		},
+	}
+
+	// Create the event using the standard recorder, against the controller pod
+	// Include the actual CRQ information in the message and annotations
+	enhancedMessage := fmt.Sprintf("ClusterResourceQuota '%s': %s", crq.Name, message)
+
+	// AnnotatedEventf uses the object NS for event creation
+	r.recorder.AnnotatedEventf(controllerPod, map[string]string{
 		LabelEventSource: "controller",
 		LabelEventType:   reason,
 		LabelCRQName:     crq.Name,
-	}, eventType, reason, message)
+		"crq.apiVersion": crq.APIVersion,
+		"crq.kind":       crq.Kind,
+		"crq.uid":        string(crq.UID),
+	}, eventType, reason, enhancedMessage)
 }
 
 // CleanupExpiredViolations removes old violation tracking entries
