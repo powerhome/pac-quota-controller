@@ -80,10 +80,6 @@ var _ = Describe("Manager", Ordered, func() {
 			logs := utils.GetPodLogs(ctx, clientSet, namespace, controllerPodName)
 			_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", logs)
 
-			By("Fetching Kubernetes events")
-			events := utils.GetEvents(ctx, clientSet, namespace)
-			_, _ = fmt.Fprintf(GinkgoWriter, "Kubernetes events:\n%s", events)
-
 			By("Fetching curl-metrics logs")
 			metricsOutput := utils.GetPodLogs(ctx, clientSet, namespace, "curl-metrics")
 			_, _ = fmt.Fprintf(GinkgoWriter, "Metrics logs:\n %s", metricsOutput)
