@@ -38,7 +38,11 @@ type BackoffFile struct {
 // 1. Environment variables (highest priority)
 // 2. Configuration file (if exists)
 // 3. Default values (lowest priority)
-func LoadEventCleanupConfig(configPath string, envTTL string, envMaxEvents int, envInterval string) (CleanupConfig, error) {
+func LoadEventCleanupConfig(
+	configPath string,
+	envTTL string,
+	envMaxEvents int,
+	envInterval string) (CleanupConfig, error) {
 	config := DefaultCleanupConfig()
 
 	// Try to load from config file if it exists
