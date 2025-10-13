@@ -53,7 +53,7 @@ ClusterResourceQuota '<crq-name>' <resource> limit exceeded: requested <amount>,
 Example:
 
 ```text
-ClusterResourceQuota 'team-alpha-quota' requests.cpu limit exceeded: requested 500m, current usage 3500m, quota limit 4000m, total would be 4500m
+ClusterResourceQuota 'team-alpha-quota' requests.cpu limit exceeded: requested <x>, current usage <y>, quota limit <z>, total would be <x+y>
 ```
 
 ### Event Backoff Strategy
