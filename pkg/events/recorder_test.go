@@ -11,7 +11,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
@@ -40,8 +39,7 @@ var _ = Describe("EventRecorder", func() {
 		scheme := runtime.NewScheme()
 		Expect(quotav1alpha1.AddToScheme(scheme)).To(Succeed())
 
-		fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-		eventRecorder = NewEventRecorder(fakeRecorder, fakeClient, testNamespace, logger)
+		eventRecorder = NewEventRecorder(fakeRecorder, testNamespace, logger)
 
 		testCRQ = &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{
@@ -65,7 +63,6 @@ var _ = Describe("EventRecorder", func() {
 		It("should create a valid EventRecorder", func() {
 			Expect(eventRecorder).ToNot(BeNil())
 			Expect(eventRecorder.recorder).To(Equal(fakeRecorder))
-			Expect(eventRecorder.client).ToNot(BeNil())
 			Expect(eventRecorder.logger).To(Equal(logger))
 		})
 	})

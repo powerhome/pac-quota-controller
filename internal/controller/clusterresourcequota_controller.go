@@ -592,7 +592,6 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, c
 	if r.EventRecorder == nil {
 		r.EventRecorder = events.NewEventRecorder(
 			mgr.GetEventRecorderFor("pac-quota-controller"),
-			mgr.GetClient(),
 			cfg.OwnNamespace,
 			r.logger,
 		)

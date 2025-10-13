@@ -6,10 +6,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
@@ -40,7 +37,6 @@ const (
 // EventRecorder wraps the Kubernetes event recorder with PAC-specific functionality
 type EventRecorder struct {
 	recorder       record.EventRecorder
-	client         client.Client
 	violationCache map[string]*ViolationTracker
 	logger         *zap.Logger
 	namespace      string
@@ -58,12 +54,10 @@ type ViolationTracker struct {
 // NewEventRecorder creates a new EventRecorder
 func NewEventRecorder(
 	recorder record.EventRecorder,
-	k8sClient client.Client,
 	namespace string,
 	logger *zap.Logger) *EventRecorder {
 	return &EventRecorder{
 		recorder:       recorder,
-		client:         k8sClient,
 		violationCache: make(map[string]*ViolationTracker),
 		logger:         logger,
 		namespace:      namespace,
@@ -123,28 +117,8 @@ func (r *EventRecorder) InvalidSelector(crq *quotav1alpha1.ClusterResourceQuota,
 func (r *EventRecorder) recordEvent(crq *quotav1alpha1.ClusterResourceQuota,
 	eventType, reason, message string) {
 
-	// So we use the controller pod as a "proxy"
-	// CRQ are cluster-scoped, so the events would default to "default" namespace
-	controllerPod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      r.podName,
-			Namespace: r.namespace,
-		},
-	}
-
-	// Create the event using the standard recorder, against the controller pod
-	// Include the actual CRQ information in the message and annotations
-	enhancedMessage := fmt.Sprintf("ClusterResourceQuota '%s': %s", crq.Name, message)
-
 	// AnnotatedEventf uses the object NS for event creation
-	r.recorder.AnnotatedEventf(controllerPod, map[string]string{
-		LabelEventSource: "controller",
-		LabelEventType:   reason,
-		LabelCRQName:     crq.Name,
-		"crq.apiVersion": crq.APIVersion,
-		"crq.kind":       crq.Kind,
-		"crq.uid":        string(crq.UID),
-	}, eventType, reason, enhancedMessage)
+	r.recorder.Eventf(crq, eventType, reason, message)
 }
 
 // CleanupExpiredViolations removes old violation tracking entries
