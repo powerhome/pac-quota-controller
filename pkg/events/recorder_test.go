@@ -75,11 +75,16 @@ var _ = Describe("EventRecorder", func() {
 			Expect(fakeRecorder.Events).To(HaveLen(1))
 			event := <-fakeRecorder.Events
 			Expect(event).To(ContainSubstring("QuotaExceeded"))
-			Expect(event).To(ContainSubstring("Resource requests.cpu exceeded quota: requested 3, limit 2"))
+			Expect(event).To(ContainSubstring("Resource requests.cpu has exceeded quota: current 3, limit 2"))
 		})
 
 		It("should record event with correct metadata", func() {
-			eventRecorder.QuotaExceeded(testCRQ, "requests.memory", resource.MustParse("5Gi"), resource.MustParse("4Gi")) // 5GB requested, 4GB limit
+			eventRecorder.QuotaExceeded(
+				testCRQ,
+				"requests.memory",
+				resource.MustParse("5Gi"),
+				resource.MustParse("4Gi"),
+			) // 5GB requested, 4GB limit
 
 			Expect(fakeRecorder.Events).To(HaveLen(1))
 			event := <-fakeRecorder.Events

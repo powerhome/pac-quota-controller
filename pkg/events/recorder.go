@@ -83,10 +83,10 @@ func getPodName() string {
 }
 
 // QuotaExceeded records an event when quota is exceeded
-func (r *EventRecorder) QuotaExceeded(crq *quotav1alpha1.ClusterResourceQuota, resource string,
+func (r *EventRecorder) QuotaExceeded(crq *quotav1alpha1.ClusterResourceQuota, resourceExceeded string,
 	requested, limit resource.Quantity) {
-	message := fmt.Sprintf("Resource %s exceeded quota: requested %s, limit %s",
-		resource, requested.String(), limit.String())
+	message := fmt.Sprintf("Resource %s has exceeded quota: current %s, limit %s",
+		resourceExceeded, requested.String(), limit.String())
 	r.recordEvent(crq, EventTypeWarning, ReasonQuotaExceeded, message)
 }
 
