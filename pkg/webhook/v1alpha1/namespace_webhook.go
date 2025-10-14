@@ -108,12 +108,8 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 
 	switch admissionReview.Request.Operation {
 	case admissionv1.Create:
-		h.log.Info("Validating Namespace on create",
-			zap.String("name", namespace.GetName()))
 		err = h.validateCreate(c.Request.Context(), &namespace)
 	case admissionv1.Update:
-		h.log.Info("Validating Namespace on update",
-			zap.String("name", namespace.GetName()))
 		err = h.validateUpdate(c.Request.Context(), &namespace)
 	default:
 		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
@@ -146,7 +142,7 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 
 //nolint:unparam // This function is now properly implemented
 func (h *NamespaceWebhook) validateCreate(ctx context.Context, namespace *corev1.Namespace) error {
-	h.log.Info("Validating namespace for CRQ conflicts",
+	h.log.Debug("Validating namespace for CRQ conflicts",
 		zap.String("namespace", namespace.Name))
 
 	return h.validateNamespaceAgainstCRQs(ctx, namespace)
@@ -154,7 +150,7 @@ func (h *NamespaceWebhook) validateCreate(ctx context.Context, namespace *corev1
 
 //nolint:unparam // This function is now properly implemented
 func (h *NamespaceWebhook) validateUpdate(ctx context.Context, namespace *corev1.Namespace) error {
-	h.log.Info("Validating namespace update for CRQ conflicts",
+	h.log.Debug("Validating namespace update for CRQ conflicts",
 		zap.String("namespace", namespace.Name))
 
 	return h.validateNamespaceAgainstCRQs(ctx, namespace)

@@ -133,7 +133,7 @@ func (r *ClusterResourceQuotaReconciler) isNamespaceExcluded(ns *corev1.Namespac
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.logger.Info("Reconciling ClusterResourceQuota")
+	r.logger.Debug("Reconciling ClusterResourceQuota")
 
 	// Fetch the ClusterResourceQuota instance
 	crq := &quotav1alpha1.ClusterResourceQuota{}
@@ -182,7 +182,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	// Check for namespace changes and emit events
 	r.handleNamespaceChanges(crq, selectedNamespaces)
 
-	r.logger.Info("Found namespaces matching selection criteria",
+	r.logger.Debug("Found namespaces matching selection criteria",
 		zap.Int("count", len(selectedNamespaces)),
 		zap.Strings("namespaces", selectedNamespaces),
 	)
@@ -228,7 +228,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	r.logger.Info("Finished reconciliation")
+	r.logger.Debug("Finished reconciliation")
 	return ctrl.Result{}, nil
 }
 
@@ -238,7 +238,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	crq *quotav1alpha1.ClusterResourceQuota,
 	namespaces []string,
 ) (quotav1alpha1.ResourceList, []quotav1alpha1.ResourceQuotaStatusByNamespace) {
-	r.logger.Info("Calculating resource usage", zap.String("crq", crq.Name))
+	r.logger.Debug("Calculating resource usage", zap.String("crq", crq.Name))
 
 	totalUsage := make(quotav1alpha1.ResourceList)
 	usageByNamespace := make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))
@@ -376,7 +376,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 		}
 	}
 
-	r.logger.Info("Usage calculation finished.")
+	r.logger.Debug("Usage calculation finished.")
 	return totalUsage, usageByNamespace
 }
 
@@ -501,9 +501,9 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 		return nil
 	}
 	if crq != nil {
-		r.logger.Info("Found ClusterResourceQuota for namespace", zap.String("crq", crq.Name), zap.String("namespace", ns.Name))
+		r.logger.Debug("Found ClusterResourceQuota for namespace", zap.String("crq", crq.Name), zap.String("namespace", ns.Name))
 	} else {
-		r.logger.Info("No ClusterResourceQuota found for namespace", zap.String("namespace", ns.Name))
+		r.logger.Debug("No ClusterResourceQuota found for namespace", zap.String("namespace", ns.Name))
 	}
 
 	if crq != nil {

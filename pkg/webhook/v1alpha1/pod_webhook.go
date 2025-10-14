@@ -130,8 +130,6 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 	warnings, err = handleWebhookOperation(
 		h.log,
 		admissionReview.Request.Operation,
-		podObj.GetName(),
-		podObj.GetNamespace(),
 		func() ([]string, error) { return h.validateCreate(ctx, &podObj) },
 		func() ([]string, error) { return h.validateUpdate(ctx, &podObj) },
 		c,
@@ -217,7 +215,7 @@ func (h *PodWebhook) validatePodOperation(
 		return nil, fmt.Errorf("ClusterResourceQuota pod count validation failed: %w", err)
 	}
 
-	h.log.Info("Pod CRQ validation passed",
+	h.log.Debug("Pod CRQ validation passed",
 		zap.String("pod", podObj.Name),
 		zap.String("namespace", podObj.Namespace),
 		zap.String("operation", string(operation)),

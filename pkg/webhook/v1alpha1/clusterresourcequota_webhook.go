@@ -114,12 +114,8 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 
 	switch admissionReview.Request.Operation {
 	case admissionv1.Create:
-		h.log.Info("Validating ClusterResourceQuota on create",
-			zap.String("name", crq.GetName()))
 		err = h.validateCreate(ctx, &crq)
 	case admissionv1.Update:
-		h.log.Info("Validating ClusterResourceQuota on update",
-			zap.String("name", crq.GetName()))
 		err = h.validateUpdate(ctx, &crq)
 	default:
 		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))

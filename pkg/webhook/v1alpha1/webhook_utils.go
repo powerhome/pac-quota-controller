@@ -49,7 +49,7 @@ func validateCRQResourceQuotaWithNamespace(
 		return nil
 	}
 
-	log.Info("Starting CRQ validation",
+	log.Debug("Starting CRQ validation",
 		zap.String("namespace", ns.Name),
 		zap.String("resource", string(resourceName)),
 		zap.String("requested", requestedQuantity.String()),
@@ -66,20 +66,20 @@ func validateCRQResourceQuotaWithNamespace(
 
 	// If no CRQ applies to this namespace, allow the operation
 	if crq == nil {
-		log.Info("No CRQ applies to namespace, allowing operation",
+		log.Debug("No CRQ applies to namespace, allowing operation",
 			zap.String("namespace", ns.Name),
 			zap.String("resource", string(resourceName)))
 		return nil
 	}
 
-	log.Info("Found matching CRQ",
+	log.Debug("Found matching CRQ",
 		zap.String("namespace", ns.Name),
 		zap.String("crq", crq.Name),
 		zap.String("resource", string(resourceName)))
 
 	// Check if the requested quantity would exceed the quota
 	if quotaLimit, exists := crq.Spec.Hard[resourceName]; exists {
-		log.Info("Found quota limit for resource",
+		log.Debug("Found quota limit for resource",
 			zap.String("resource", string(resourceName)),
 			zap.String("limit", quotaLimit.String()))
 
@@ -97,7 +97,7 @@ func validateCRQResourceQuotaWithNamespace(
 		totalUsage := currentUsage.DeepCopy()
 		totalUsage.Add(requestedQuantity)
 
-		log.Info("Quota validation check",
+		log.Debug("Quota validation check",
 			zap.String("namespace", ns.Name),
 			zap.String("resource", string(resourceName)),
 			zap.String("current_usage", currentUsage.String()),
@@ -121,13 +121,13 @@ func validateCRQResourceQuotaWithNamespace(
 				crq.Name, resourceName, requestedQuantity.String(), currentUsage.String(), quotaLimit.String(), totalUsage.String())
 		}
 	} else {
-		log.Info("No quota limit defined for resource, allowing operation",
+		log.Debug("No quota limit defined for resource, allowing operation",
 			zap.String("namespace", ns.Name),
 			zap.String("resource", string(resourceName)),
 			zap.String("crq", crq.Name))
 	}
 
-	log.Info("CRQ validation passed",
+	log.Debug("CRQ validation passed",
 		zap.String("namespace", ns.Name),
 		zap.String("resource", string(resourceName)),
 		zap.String("requested", requestedQuantity.String()),
@@ -151,7 +151,7 @@ func calculateCRQCurrentUsage(
 		return resource.Quantity{}, fmt.Errorf("failed to get namespaces matching CRQ selector: %w", err)
 	}
 
-	log.Info("Calculating usage across CRQ namespaces",
+	log.Debug("Calculating usage across CRQ namespaces",
 		zap.String("crq", crq.Name),
 		zap.String("resource", string(resourceName)),
 		zap.Strings("namespaces", namespaceNames))
@@ -175,7 +175,7 @@ func calculateCRQCurrentUsage(
 			zap.String("usage", nsUsage.String()))
 	}
 
-	log.Info("Total CRQ usage calculated",
+	log.Debug("Total CRQ usage calculated",
 		zap.String("crq", crq.Name),
 		zap.String("resource", string(resourceName)),
 		zap.String("total_usage", totalUsage.String()),
@@ -211,7 +211,6 @@ func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.Admissi
 func handleWebhookOperation(
 	log *zap.Logger,
 	operation admissionv1.Operation,
-	name, ns string,
 	createFn func() ([]string, error),
 	updateFn func() ([]string, error),
 	c *gin.Context,
@@ -222,14 +221,8 @@ func handleWebhookOperation(
 	var err error
 	switch operation {
 	case admissionv1.Create:
-		log.Info(fmt.Sprintf("Validating %s on create", resourceType),
-			zap.String("name", name),
-			zap.String("namespace", ns))
 		warnings, err = createFn()
 	case admissionv1.Update:
-		log.Info(fmt.Sprintf("Validating %s on update", resourceType),
-			zap.String("name", name),
-			zap.String("namespace", ns))
 		warnings, err = updateFn()
 	default:
 		log.Info("Unsupported operation", zap.String("operation", string(operation)))

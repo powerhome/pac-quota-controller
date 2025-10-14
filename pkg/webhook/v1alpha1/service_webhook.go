@@ -122,8 +122,6 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 	warnings, err = handleWebhookOperation(
 		h.log,
 		admissionReview.Request.Operation,
-		svc.GetName(),
-		svc.GetNamespace(),
 		func() ([]string, error) { return h.validateCreate(ctx, &svc) },
 		func() ([]string, error) { return h.validateUpdate(ctx, &svc) },
 		c,
@@ -191,7 +189,7 @@ func (h *ServiceWebhook) validateServiceOperation(
 		}
 	}
 
-	h.log.Info("Service CRQ validation passed",
+	h.log.Debug("Service CRQ validation passed",
 		zap.String("service", svc.Name),
 		zap.String("namespace", svc.Namespace),
 		zap.String("operation", operation))
