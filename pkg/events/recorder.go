@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/tools/record"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
@@ -83,9 +84,9 @@ func getPodName() string {
 
 // QuotaExceeded records an event when quota is exceeded
 func (r *EventRecorder) QuotaExceeded(crq *quotav1alpha1.ClusterResourceQuota, resource string,
-	requested, limit int64) {
-	message := fmt.Sprintf("Resource %s exceeded quota: requested %d, limit %d",
-		resource, requested, limit)
+	requested, limit resource.Quantity) {
+	message := fmt.Sprintf("Resource %s exceeded quota: requested %s, limit %s",
+		resource, requested.String(), limit.String())
 	r.recordEvent(crq, EventTypeWarning, ReasonQuotaExceeded, message)
 }
 

@@ -69,7 +69,7 @@ var _ = Describe("EventRecorder", func() {
 
 	Describe("QuotaExceeded", func() {
 		It("should record a QuotaExceeded event", func() {
-			eventRecorder.QuotaExceeded(testCRQ, "requests.cpu", 3, 2)
+			eventRecorder.QuotaExceeded(testCRQ, "requests.cpu", resource.MustParse("3"), resource.MustParse("2"))
 
 			// FakeRecorder is synchronous, so events should be immediately available
 			Expect(fakeRecorder.Events).To(HaveLen(1))
@@ -79,7 +79,7 @@ var _ = Describe("EventRecorder", func() {
 		})
 
 		It("should record event with correct metadata", func() {
-			eventRecorder.QuotaExceeded(testCRQ, "requests.memory", 5368709120, 4294967296) // 5GB requested, 4GB limit
+			eventRecorder.QuotaExceeded(testCRQ, "requests.memory", resource.MustParse("5Gi"), resource.MustParse("4Gi")) // 5GB requested, 4GB limit
 
 			Expect(fakeRecorder.Events).To(HaveLen(1))
 			event := <-fakeRecorder.Events
@@ -176,7 +176,7 @@ var _ = Describe("EventRecorder", func() {
 	Describe("Event Annotations", func() {
 		It("should include PAC-specific annotations on events", func() {
 			// Test with QuotaExceeded as an example
-			eventRecorder.QuotaExceeded(testCRQ, "requests.cpu", 3, 2)
+			eventRecorder.QuotaExceeded(testCRQ, "requests.cpu", resource.MustParse("3"), resource.MustParse("2"))
 
 			// FakeRecorder doesn't capture annotations directly, but we can verify
 			// the recordEvent method is called with correct parameters

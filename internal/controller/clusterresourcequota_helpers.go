@@ -41,14 +41,12 @@ func (r *ClusterResourceQuotaReconciler) checkQuotaThresholds(crq *quotav1alpha1
 	for resourceName, limit := range crq.Spec.Hard {
 		used := usage[resourceName]
 
-		usedQuantity := used.Value()
-		limitQuantity := limit.Value()
-
-		if limitQuantity > 0 {
-			// Record violation event
-			if usedQuantity > limitQuantity {
-				r.EventRecorder.QuotaExceeded(crq, string(resourceName), usedQuantity, limitQuantity)
-			}
+		// Use resource.Quantity comparison instead of .Value() to preserve fractional values
+		// Only check if limit is greater than zero to avoid division by zero scenarios
+		if !limit.IsZero() && used.Cmp(limit) > 0 {
+			// Record violation event with human-readable format using resource.Quantity
+			// This preserves the original unit format (e.g., "1500m" for CPU, "200Mi" for memory)
+			r.EventRecorder.QuotaExceeded(crq, string(resourceName), used, limit)
 		}
 	}
 }

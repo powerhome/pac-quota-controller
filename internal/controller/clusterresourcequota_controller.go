@@ -494,15 +494,6 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 		return nil // Ignore events from excluded namespaces
 	}
 
-	// Get object GVK for better logging
-	gvk := obj.GetObjectKind().GroupVersionKind()
-	r.logger.Info("Processing object event, finding relevant CRQs",
-		zap.Stringer("object", client.ObjectKeyFromObject(obj)),
-		zap.String("group", gvk.Group),
-		zap.String("version", gvk.Version),
-		zap.String("kind", gvk.Kind),
-		zap.String("namespace", ns.Name))
-
 	// Find which CRQ selects this namespace.
 	crq, err := r.crqClient.GetCRQByNamespace(ctx, ns)
 	if err != nil {
