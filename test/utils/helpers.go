@@ -143,19 +143,6 @@ func GetPodLogs(ctx context.Context, clientSet *kubernetes.Clientset, namespace,
 	return buf.String()
 }
 
-// GetEvents lists all events in a specified namespace.
-func GetEvents(ctx context.Context, clientSet *kubernetes.Clientset, namespace string) string {
-	events, err := clientSet.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
-		return fmt.Sprintf("Failed to get events: %v", err)
-	}
-	var out bytes.Buffer
-	for _, e := range events.Items {
-		fmt.Fprintf(&out, "%s\t%s\t%s\n", e.LastTimestamp, e.InvolvedObject.Name, e.Message)
-	}
-	return out.String()
-}
-
 // DescribePod provides a description of a specified pod.
 func DescribePod(ctx context.Context, k8sClient client.Client, namespace, podName string) string {
 	pod := &corev1.Pod{}

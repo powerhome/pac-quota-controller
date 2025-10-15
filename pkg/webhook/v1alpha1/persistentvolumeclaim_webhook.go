@@ -130,14 +130,8 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 	ctx := c.Request.Context()
 	switch admissionReview.Request.Operation {
 	case admissionv1.Create:
-		h.log.Info("Validating PersistentVolumeClaim on create",
-			zap.String("name", pvc.GetName()),
-			zap.String("namespace", pvc.GetNamespace()))
 		err = h.validateCreate(ctx, &pvc)
 	case admissionv1.Update:
-		h.log.Info("Validating PersistentVolumeClaim on update",
-			zap.String("name", pvc.GetName()),
-			zap.String("namespace", pvc.GetNamespace()))
 		err = h.validateUpdate(ctx, &pvc)
 	default:
 		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
@@ -237,14 +231,14 @@ func (h *PersistentVolumeClaimWebhook) validateStorageQuota(
 			return fmt.Errorf("ClusterResourceQuota storage class '%s' PVC count validation failed: %w", storageClass, err)
 		}
 
-		h.log.Info("PVC storage class specific CRQ validation passed",
+		h.log.Debug("PVC storage class specific CRQ validation passed",
 			zap.String("pvc", pvc.Name),
 			zap.String("namespace", pvc.Namespace),
 			zap.String("storageClass", storageClass),
 			zap.String("storageRequest", storageRequest.String()))
 	}
 
-	h.log.Info("PVC CRQ validation passed",
+	h.log.Debug("PVC CRQ validation passed",
 		zap.String("pvc", pvc.Name),
 		zap.String("namespace", pvc.Namespace),
 		zap.String("storageRequest", storageRequest.String()))

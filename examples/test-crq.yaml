@@ -1,0 +1,14 @@
+apiVersion: quota.powerapp.cloud/v1alpha1
+kind: ClusterResourceQuota
+metadata:
+  name: test-crq
+spec:
+  namespaceSelector:
+    matchLabels:
+      basic-test: limited
+  hard:
+    pods: "5"
+    limits.cpu: "2"
+    limits.memory: 2Gi
+    requests.cpu: "750m"
+    requests.memory: 1Gi

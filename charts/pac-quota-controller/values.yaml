@@ -78,6 +78,30 @@ controllerManager:
 rbac:
   enable: true
 
+events:
+  # Configuration for Kubernetes Events recording
+  enable: true
+  # Event cleanup configuration
+  cleanup:
+    # Time-to-live for events (default: 24h)
+    ttl: "24h"
+    # Maximum number of events to retain per ClusterResourceQuota (default: 100)
+    maxEventsPerCRQ: 100
+    # Cleanup interval (default: 1h)
+    interval: "1h"
+  # Event recording configuration
+  recording:
+    # Component name for controller events (default: pac-quota-controller-controller)
+    controllerComponent: "pac-quota-controller-controller"
+    # Component name for webhook events (default: pac-quota-controller-webhook)
+    webhookComponent: "pac-quota-controller-webhook"
+    # Exponential backoff configuration for quota violation events
+    backoff:
+      # Base interval for first event (default: 30s)
+      baseInterval: "30s"
+      # Maximum interval between events (default: 15m)
+      maxInterval: "15m"
+
 metrics:
   enable: true
   port: 8443

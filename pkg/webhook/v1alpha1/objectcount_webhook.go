@@ -32,7 +32,8 @@ type ObjectCountWebhook struct {
 func NewObjectCountWebhook(
 	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
-	log *zap.Logger) *ObjectCountWebhook {
+	log *zap.Logger,
+) *ObjectCountWebhook {
 	return &ObjectCountWebhook{
 		client:                k8sClient,
 		objectCountCalculator: objectcount.NewObjectCountCalculator(k8sClient),
@@ -86,21 +87,14 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 		crqKey = crqKey + "." + admissionReview.Request.Resource.Group
 	}
 	resourceName := corev1.ResourceName(crqKey)
-	h.log.Info("Determined resource name for CRQ", zap.String("resourceName", string(resourceName)))
 	namespace := admissionReview.Request.Namespace
 	var warnings []string
 	var err error
 	ctx := c.Request.Context()
 	switch admissionReview.Request.Operation {
 	case admissionv1.Create:
-		h.log.Info("Validating ObjectCount on create",
-			zap.String("name", resourceName.String()),
-			zap.String("namespace", namespace))
 		warnings, err = h.validateCreate(ctx, namespace, resourceName)
 	case admissionv1.Update:
-		h.log.Info("Validating ObjectCount on update",
-			zap.String("name", resourceName.String()),
-			zap.String("namespace", namespace))
 		warnings, err = h.validateUpdate(ctx, namespace, resourceName)
 	default:
 		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
@@ -161,7 +155,7 @@ func (h *ObjectCountWebhook) validateObjectOperation(
 	if err != nil {
 		return nil, err
 	}
-	h.log.Info("Object CRQ validation passed",
+	h.log.Debug("Object CRQ validation passed",
 		zap.String("object", resourceName.String()),
 		zap.String("namespace", namespace),
 		zap.String("operation", operation))

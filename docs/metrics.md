@@ -42,6 +42,31 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 
 ---
 
+### Event Message Format
+
+QuotaViolation events include detailed information:
+
+```text
+ClusterResourceQuota '<crq-name>' <resource> limit exceeded: requested <amount>, current usage <amount>, quota limit <amount>, total would be <amount>
+```
+
+Example:
+
+```text
+ClusterResourceQuota 'team-alpha-quota' requests.cpu limit exceeded: requested <x>, current usage <y>, quota limit <z>, total would be <x+y>
+```
+
+### Event Backoff Strategy
+
+Events use exponential backoff to prevent spam:
+
+- Initial: 30 seconds
+- Progression: 30s → 1m → 2m → 4m → 8m → 15m (max)
+- Same violation type for same resource in same namespace will be throttled
+- Different violations or different namespaces are tracked separately
+
+---
+
 ## Example Prometheus Queries
 
 - **Total webhook requests per type:**

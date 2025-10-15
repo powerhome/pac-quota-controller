@@ -1,6 +1,7 @@
 package manager
 
 import (
+	"context"
 	"os"
 	"time"
 
@@ -62,7 +63,7 @@ func SetupManager(
 }
 
 // SetupControllers sets up all controllers with the manager
-func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
+func SetupControllers(ctx context.Context, mgr ctrl.Manager, cfg *config.Config) error {
 	// Initialize compute resource calculator
 	// Convert controller-runtime client to kubernetes clientset
 	k8sConfig := mgr.GetConfig()
@@ -77,9 +78,10 @@ func SetupControllers(mgr ctrl.Manager, cfg *config.Config) error {
 		Client:                   mgr.GetClient(),
 		Scheme:                   mgr.GetScheme(),
 		ComputeCalculator:        computeCalculator,
+		Config:                   cfg,
 		ExcludeNamespaceLabelKey: cfg.ExcludeNamespaceLabelKey,
 		ExcludedNamespaces:       cfg.ExcludedNamespaces,
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(ctx, cfg, mgr); err != nil {
 		setupLog.Error("unable to create controller", zap.Error(err), zap.String("controller", "ClusterResourceQuota"))
 		return err
 	}
