@@ -322,16 +322,25 @@ ghcr-login: ## Log in to GitHub Container Registry (requires GITHUB_TOKEN)
 # Release and Chart Tagging
 #
 # Usage:
-#   make tag-release [APP_VERSION=v0.1.1] [CHART_VERSION=v0.1.1]
+#   make tag-release [APP_VERSION=v0.1.1] [CHART_VERSION=v0.1.1] [IGNORE_BRANCH_CHECK=true]
 #
 # Variables:
-#   APP_VERSION    - Version for the application (optional, if set must start with 'v')
-#   CHART_VERSION  - Version for the Helm chart (optional, if set must start with 'v')
+#   APP_VERSION         - Version for the application (optional, if set must start with 'v')
+#   CHART_VERSION       - Version for the Helm chart (optional, if set must start with 'v')
+#   IGNORE_BRANCH_CHECK - Skip the main branch check (optional, default: false)
 
 .PHONY: tag-release
 tag-release: ## Tag and push git tags for app and/or chart releases.
 	@if [ -z "$(APP_VERSION)" ] && [ -z "$(CHART_VERSION)" ]; then \
 		echo "At least one of APP_VERSION or CHART_VERSION must be set (e.g. APP_VERSION=v0.1.1 or CHART_VERSION=v0.1.1)"; exit 1; \
+	fi
+	@if [ "$(IGNORE_BRANCH_CHECK)" != "true" ]; then \
+		CURRENT_BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+		if [ "$$CURRENT_BRANCH" != "main" ]; then \
+			echo "Error: You must be on the 'main' branch to create releases. Current branch: $$CURRENT_BRANCH"; \
+			echo "Use IGNORE_BRANCH_CHECK=true to skip this check."; \
+			exit 1; \
+		fi; \
 	fi
 	@if [ -n "$(APP_VERSION)" ]; then \
 		if ! echo $(APP_VERSION) | grep -Eq '^v[0-9]'; then \
