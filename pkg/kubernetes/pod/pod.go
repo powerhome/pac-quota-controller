@@ -38,7 +38,7 @@ func IsPodTerminal(pod *corev1.Pod) bool {
 }
 
 // CalculatePodUsage calculates the resource usage for a single pod
-// by summing all resources from both init containers and regular containers.
+// by summing all active resources from both init containers and regular containers.
 func CalculatePodUsage(pod *corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
 	if pod == nil {
 		return resource.Quantity{}
@@ -47,16 +47,27 @@ func CalculatePodUsage(pod *corev1.Pod, resourceName corev1.ResourceName) resour
 	// Calculate total usage for all containers (init + regular)
 	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
 
+	isActive := func(name string, statuses []corev1.ContainerStatus) bool {
+		for _, status := range statuses {
+			if status.Name == name {
+				return status.State.Terminated == nil
+			}
+		}
+		return false
+	}
+
 	// Add usage from init containers
 	for _, container := range pod.Spec.InitContainers {
-		containerUsage := getContainerResourceUsage(container, resourceName)
-		totalUsage.Add(containerUsage)
+		if isActive(container.Name, pod.Status.InitContainerStatuses) {
+			totalUsage.Add(getContainerResourceUsage(container, resourceName))
+		}
 	}
 
 	// Add usage from regular containers
 	for _, container := range pod.Spec.Containers {
-		containerUsage := getContainerResourceUsage(container, resourceName)
-		totalUsage.Add(containerUsage)
+		if isActive(container.Name, pod.Status.ContainerStatuses) {
+			totalUsage.Add(getContainerResourceUsage(container, resourceName))
+		}
 	}
 
 	return *totalUsage
