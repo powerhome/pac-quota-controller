@@ -8,9 +8,11 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
+type contextKey string
+
 const (
 	// CorrelationIDKey is the key for the correlation ID in the context
-	CorrelationIDKey = "correlation_id"
+	CorrelationIDKey contextKey = "correlation_id"
 )
 
 // GetCorrelationID safely retrieves the correlation ID from the context.

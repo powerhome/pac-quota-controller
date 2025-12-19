@@ -1,16 +1,13 @@
 package server
 
 import (
+	"context"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"go.uber.org/zap"
-)
-
-const (
-	// CorrelationIDKey is the key for the correlation ID in the context
-	CorrelationIDKey = "correlation_id"
 )
 
 // RequestLogger returns a gin.HandlerFunc that logs requests using Zap
@@ -27,7 +24,12 @@ func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 		}
 
 		// Inject into context for downstream handlers
-		c.Set(CorrelationIDKey, correlationID)
+		c.Set(string(quota.CorrelationIDKey), correlationID)
+
+		// Also inject into the internal Request context for compatibility with standard context.Context patterns
+		ctx := context.WithValue(c.Request.Context(), quota.CorrelationIDKey, correlationID)
+		c.Request = c.Request.WithContext(ctx)
+
 		// Also set in response header for traceability
 		c.Header("X-Correlation-ID", correlationID)
 
