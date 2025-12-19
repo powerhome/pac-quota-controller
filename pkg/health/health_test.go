@@ -12,7 +12,7 @@ import (
 )
 
 func TestHealthManager(t *testing.T) {
-	logger := zap.NewNop()
+	logger, _ := zap.NewDevelopment()
 	manager := NewHealthManager(logger)
 
 	t.Run("should be healthy when no checkers", func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestHealthManager(t *testing.T) {
 }
 
 func TestHealthHandler(t *testing.T) {
-	logger := zap.NewNop()
+	logger, _ := zap.NewDevelopment()
 	manager := NewHealthManager(logger)
 
 	// Set up Gin

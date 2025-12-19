@@ -8,6 +8,21 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
+const (
+	// CorrelationIDKey is the key for the correlation ID in the context
+	CorrelationIDKey = "correlation_id"
+)
+
+// GetCorrelationID safely retrieves the correlation ID from the context.
+// It returns an empty string if the context is nil or the key is not found.
+func GetCorrelationID(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	id, _ := ctx.Value(CorrelationIDKey).(string)
+	return id
+}
+
 //go:generate mockery
 
 // CRQClientInterface defines the interface for ClusterResourceQuota operations

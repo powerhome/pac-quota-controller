@@ -22,13 +22,13 @@ type CertWatcher struct {
 	cert       *tls.Certificate
 	certMutex  sync.RWMutex
 	watcher    *fsnotify.Watcher
-	log        *zap.Logger
+	logger     *zap.Logger
 	stopChan   chan struct{}
 	reloadChan chan struct{}
 }
 
 // NewCertWatcher creates a new certificate watcher
-func NewCertWatcher(certPath, keyPath string, log *zap.Logger) (*CertWatcher, error) {
+func NewCertWatcher(certPath, keyPath string, logger *zap.Logger) (*CertWatcher, error) {
 	// Don't validate files exist immediately - we'll wait for them with retries
 
 	// Create fsnotify watcher
@@ -41,7 +41,7 @@ func NewCertWatcher(certPath, keyPath string, log *zap.Logger) (*CertWatcher, er
 		certPath:   certPath,
 		keyPath:    keyPath,
 		watcher:    watcher,
-		log:        log,
+		logger:     logger,
 		stopChan:   make(chan struct{}),
 		reloadChan: make(chan struct{}, 1), // Buffered to avoid blocking
 	}
@@ -57,12 +57,12 @@ func (cw *CertWatcher) waitForCertificateFiles(ctx context.Context, maxRetries i
 			if _, err := os.Stat(cw.keyPath); err == nil {
 				// Both files exist, try to load the certificate
 				if err := cw.loadCertificate(); err != nil {
-					cw.log.Warn("Certificate files exist but failed to load, retrying",
+					cw.logger.Warn("Certificate files exist but failed to load, retrying",
 						zap.Int("attempt", i+1),
 						zap.Int("maxRetries", maxRetries),
 						zap.Error(err))
 				} else {
-					cw.log.Info("Successfully loaded certificates",
+					cw.logger.Info("Successfully loaded certificates",
 						zap.Int("attempt", i+1))
 					return nil
 				}
@@ -70,7 +70,7 @@ func (cw *CertWatcher) waitForCertificateFiles(ctx context.Context, maxRetries i
 		}
 
 		if i < maxRetries-1 { // Don't sleep on the last iteration
-			cw.log.Info("Waiting for certificate files to become available",
+			cw.logger.Info("Waiting for certificate files to become available",
 				zap.String("certPath", cw.certPath),
 				zap.String("keyPath", cw.keyPath),
 				zap.Int("attempt", i+1),
@@ -131,7 +131,7 @@ func (cw *CertWatcher) loadCertificate() error {
 	}
 
 	cw.cert = &tlsCert
-	cw.log.Info("Certificate loaded successfully",
+	cw.logger.Info("Certificate loaded successfully",
 		zap.String("subject", cert.Subject.CommonName),
 		zap.Time("notAfter", cert.NotAfter),
 		zap.Time("notBefore", cert.NotBefore))
@@ -141,7 +141,7 @@ func (cw *CertWatcher) loadCertificate() error {
 
 // Start starts watching for certificate changes
 func (cw *CertWatcher) Start(ctx context.Context) error {
-	cw.log.Info("Starting certificate watcher",
+	cw.logger.Info("Starting certificate watcher",
 		zap.String("certPath", cw.certPath),
 		zap.String("keyPath", cw.keyPath))
 
@@ -168,15 +168,15 @@ func (cw *CertWatcher) watchLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			cw.log.Info("Certificate watcher context cancelled")
+			cw.logger.Info("Certificate watcher context cancelled")
 			return
 		case <-cw.stopChan:
-			cw.log.Info("Certificate watcher stopped")
+			cw.logger.Info("Certificate watcher stopped")
 			return
 		case event := <-cw.watcher.Events:
 			cw.handleFileEvent(event)
 		case err := <-cw.watcher.Errors:
-			cw.log.Error("Certificate watcher error", zap.Error(err))
+			cw.logger.Error("Certificate watcher error", zap.Error(err))
 		}
 	}
 }
@@ -193,7 +193,7 @@ func (cw *CertWatcher) handleFileEvent(event fsnotify.Event) {
 		return
 	}
 
-	cw.log.Info("Certificate file changed, reloading",
+	cw.logger.Info("Certificate file changed, reloading",
 		zap.String("file", event.Name),
 		zap.String("operation", event.Op.String()))
 
@@ -202,7 +202,7 @@ func (cw *CertWatcher) handleFileEvent(event fsnotify.Event) {
 
 	// Reload certificate
 	if err := cw.loadCertificate(); err != nil {
-		cw.log.Error("Failed to reload certificate", zap.Error(err))
+		cw.logger.Error("Failed to reload certificate", zap.Error(err))
 		return
 	}
 
@@ -253,11 +253,11 @@ func (cw *CertWatcher) Stop() {
 	// Close the file watcher
 	if cw.watcher != nil {
 		if err := cw.watcher.Close(); err != nil {
-			cw.log.Error("Failed to close watcher", zap.Error(err))
+			cw.logger.Error("Failed to close watcher", zap.Error(err))
 		}
 	}
 
-	cw.log.Info("Certificate watcher stopped")
+	cw.logger.Info("Certificate watcher stopped")
 }
 
 // GetReloadChannel returns a channel that receives events when certificates are reloaded

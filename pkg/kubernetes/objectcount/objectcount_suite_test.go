@@ -5,9 +5,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 )
 
-func TestObjectCountCalculator(t *testing.T) {
+func TestObjectCount(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "ObjectCountCalculator Suite")
+	RunSpecs(t, "ObjectCount Package Suite")
 }
+
+var _ = BeforeSuite(func() {
+	pkglogger.InitTest()
+})

@@ -28,16 +28,22 @@ type ServiceWebhook struct {
 	client            kubernetes.Interface
 	serviceCalculator services.ServiceResourceCalculator
 	crqClient         *quota.CRQClient
-	log               *zap.Logger
+	logger            *zap.Logger
 }
 
 // NewServiceWebhook creates a new ServiceWebhook
-func NewServiceWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClient, log *zap.Logger) *ServiceWebhook {
+func NewServiceWebhook(
+	k8sClient kubernetes.Interface,
+	crqClient *quota.CRQClient,
+	logger *zap.Logger) *ServiceWebhook {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &ServiceWebhook{
 		client:            k8sClient,
-		serviceCalculator: *services.NewServiceResourceCalculator(k8sClient),
+		serviceCalculator: *services.NewServiceResourceCalculator(k8sClient, logger),
 		crqClient:         crqClient,
-		log:               log,
+		logger:            logger,
 	}
 }
 
@@ -45,20 +51,20 @@ func NewServiceWebhook(k8sClient kubernetes.Interface, crqClient *quota.CRQClien
 func (h *ServiceWebhook) Handle(c *gin.Context) {
 	var admissionReview admissionv1.AdmissionReview
 	if err := c.ShouldBindJSON(&admissionReview); err != nil {
-		h.log.Error("Failed to bind admission review", zap.Error(err))
+		h.logger.Error("Failed to bind admission review", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Check for malformed requests
 	if admissionReview.Request == nil {
-		h.log.Error("Malformed admission review request")
+		h.logger.Error("Malformed admission review request")
 		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
 		return
 	}
 
 	if namespace := admissionReview.Request.Namespace; namespace == "" {
-		h.log.Info("Admission review request namespace is empty")
+		h.logger.Info("Admission review request namespace is empty")
 		admissionReview.Response = &admissionv1.AdmissionResponse{
 			UID:     admissionReview.Request.UID,
 			Allowed: false,
@@ -89,7 +95,7 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 		Kind:    "Service",
 	}
 	if admissionReview.Request.Kind != expectedGVK {
-		h.log.Info("Unexpected resource type", zap.String("got", admissionReview.Request.Kind.Kind))
+		h.logger.Info("Unexpected resource type", zap.String("got", admissionReview.Request.Kind.Kind))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusBadRequest,
@@ -106,7 +112,7 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 		admissionReview.Request.Object.Raw,
 		&svc,
 	); err != nil {
-		h.log.Error("Failed to decode Service", zap.Error(err))
+		h.logger.Error("Failed to decode Service", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusBadRequest,
@@ -120,7 +126,7 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 	var err error
 	ctx := c.Request.Context()
 	warnings, err = handleWebhookOperation(
-		h.log,
+		h.logger,
 		admissionReview.Request.Operation,
 		func() ([]string, error) { return h.validateCreate(ctx, &svc) },
 		func() ([]string, error) { return h.validateUpdate(ctx, &svc) },
@@ -130,7 +136,7 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 	)
 
 	if err != nil {
-		h.log.Error("Validation failed", zap.Error(err))
+		h.logger.Error("Validation failed", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusForbidden,
@@ -163,7 +169,7 @@ func (h *ServiceWebhook) validateServiceOperation(
 	operation string,
 ) ([]string, error) {
 	if svc == nil {
-		h.log.Info("Skipping CRQ validation for nil service on " + operation)
+		h.logger.Info("Skipping CRQ validation for nil service on " + operation)
 		return nil, nil
 	}
 
@@ -189,7 +195,7 @@ func (h *ServiceWebhook) validateServiceOperation(
 		}
 	}
 
-	h.log.Debug("Service CRQ validation passed",
+	h.logger.Debug("Service CRQ validation passed",
 		zap.String("service", svc.Name),
 		zap.String("namespace", svc.Namespace),
 		zap.String("operation", operation))
@@ -211,7 +217,7 @@ func (h *ServiceWebhook) validateResourceQuota(
 	return validateCRQResourceQuotaWithNamespace(ctx, h.crqClient, h.client, ns, resourceName, requestedQuantity,
 		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
 			return h.calculateCurrentUsage(ctx, ns, rn)
-		}, h.log)
+		}, h.logger)
 }
 
 // calculateCurrentUsage calculates the current usage of a resource in a namespace

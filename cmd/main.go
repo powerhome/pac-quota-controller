@@ -19,7 +19,7 @@ import (
 
 	"github.com/powerhome/pac-quota-controller/cmd/version"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
-	"github.com/powerhome/pac-quota-controller/pkg/logger"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 	"github.com/powerhome/pac-quota-controller/pkg/manager"
 	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 	"github.com/powerhome/pac-quota-controller/pkg/webhook"
@@ -40,10 +40,11 @@ func main() {
 			ctx := context.Background()
 
 			// Set up logging
-			zapLogger := logger.SetupLogger(cfg)
+			pkglogger.Initialize(cfg)
+			logger := pkglogger.L()
 			defer func() {
-				if err := zapLogger.Sync(); err != nil {
-					zapLogger.Error("Failed to sync logger", zap.Error(err))
+				if err := logger.Sync(); err != nil {
+					logger.Error("Failed to sync logger", zap.Error(err))
 				}
 			}()
 
@@ -56,46 +57,46 @@ func main() {
 			// Create controller manager
 			mgr, err := manager.SetupManager(cfg, scheme)
 			if err != nil {
-				zapLogger.Error("unable to start manager", zap.Error(err))
+				logger.Error("unable to start manager", zap.Error(err))
 				os.Exit(1)
 			}
 
 			// Set up controllers
-			if err := manager.SetupControllers(ctx, mgr, cfg); err != nil {
-				zapLogger.Error("unable to set up controllers", zap.Error(err))
+			if err := manager.SetupControllers(ctx, mgr, cfg, logger); err != nil {
+				logger.Error("unable to set up controllers", zap.Error(err))
 				os.Exit(1)
 			}
 
 			// Create kubernetes clientset for webhook server
 			clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 			if err != nil {
-				zapLogger.Error("unable to create kubernetes clientset", zap.Error(err))
+				logger.Error("unable to create kubernetes clientset", zap.Error(err))
 				os.Exit(1)
 			}
 
 			// Set up Gin webhook server with manager's client for CRQ operations
-			webhookServer, webhookCertWatcher := webhook.SetupGinWebhookServer(cfg, clientset, mgr.GetClient(), zapLogger)
+			webhookServer, webhookCertWatcher := webhook.SetupGinWebhookServer(cfg, clientset, mgr.GetClient(), logger)
 
 			// Start webhook server
 			go func() {
 				if err := webhookServer.Start(ctx); err != nil {
-					zapLogger.Error("webhook server failed", zap.Error(err))
+					logger.Error("webhook server failed", zap.Error(err))
 				}
 			}()
 
 			if webhookCertWatcher != nil {
 				go func() {
 					if err := webhookCertWatcher.Start(ctx); err != nil {
-						zapLogger.Error("webhook certificate watcher failed", zap.Error(err))
+						logger.Error("webhook certificate watcher failed", zap.Error(err))
 					}
 				}()
 			}
 
 			// Start metrics server if enabled
 			if cfg.MetricsEnable && cfg.MetricsPort > 0 {
-				metricsServer, err := metrics.NewMetricsServer(cfg, zapLogger)
+				metricsServer, err := metrics.NewMetricsServer(cfg, logger)
 				if err != nil {
-					zapLogger.Error("metrics server setup failed", zap.Error(err))
+					logger.Error("metrics server setup failed", zap.Error(err))
 					os.Exit(1)
 				}
 				stopCh := make(chan struct{})
@@ -112,23 +113,23 @@ func main() {
 			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 			// Start the manager
-			zapLogger.Info("Starting controller manager")
+			logger.Info("Starting controller manager")
 			go func() {
 				if err := mgr.Start(ctx); err != nil {
-					zapLogger.Error("controller manager failed", zap.Error(err))
+					logger.Error("controller manager failed", zap.Error(err))
 				}
 			}()
 
 			// Log when manager is elected as leader
 			go func() {
 				<-mgr.Elected()
-				zapLogger.Info("Controller manager elected as leader and ready to process resources")
+				logger.Info("Controller manager elected as leader and ready to process resources")
 			}()
 
 			// Wait for shutdown signal
-			zapLogger.Info("Controller manager startup completed, waiting for shutdown signal")
+			logger.Info("Controller manager startup completed, waiting for shutdown signal")
 			<-sigChan
-			zapLogger.Info("Received shutdown signal, starting graceful shutdown")
+			logger.Info("Received shutdown signal, starting graceful shutdown")
 
 			// Stop certificate watchers
 			if webhookCertWatcher != nil {
@@ -138,7 +139,7 @@ func main() {
 			// Stop webhook server by canceling context
 			cancel()
 
-			zapLogger.Info("Graceful shutdown completed")
+			logger.Info("Graceful shutdown completed")
 		},
 	}
 

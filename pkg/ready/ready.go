@@ -24,14 +24,17 @@ type ReadinessStatus struct {
 // ReadinessManager manages readiness checks for the application
 type ReadinessManager struct {
 	checkers []ReadinessChecker
-	log      *zap.Logger
+	logger   *zap.Logger
 }
 
 // NewReadinessManager creates a new readiness manager
-func NewReadinessManager(log *zap.Logger) *ReadinessManager {
+func NewReadinessManager(logger *zap.Logger) *ReadinessManager {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &ReadinessManager{
 		checkers: make([]ReadinessChecker, 0),
-		log:      log,
+		logger:   logger.Named("readiness-manager"),
 	}
 }
 

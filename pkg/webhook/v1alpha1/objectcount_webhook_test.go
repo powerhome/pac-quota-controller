@@ -22,6 +22,7 @@ import (
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 )
 
 var _ = Describe("ObjectCountWebhook", func() {
@@ -41,7 +42,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 		_ = corev1.AddToScheme(scheme)
 		_ = appsv1.AddToScheme(scheme)
 		fakeClient = fake.NewSimpleClientset()
-		logger = zap.NewNop()
+		logger = pkglogger.L()
 		gin.SetMode(gin.TestMode)
 		ginEngine = gin.New()
 		nsName = "test-namespace"
@@ -54,16 +55,16 @@ var _ = Describe("ObjectCountWebhook", func() {
 	Describe("NewObjectCountWebhook", func() {
 		It("should create a new object count webhook", func() {
 			fakeClient = fake.NewSimpleClientset()
-			crqClient = quota.NewCRQClient(nil)
+			crqClient = quota.NewCRQClient(nil, logger)
 			webhook = NewObjectCountWebhook(fakeClient, crqClient, logger)
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(Equal(fakeClient))
-			Expect(webhook.log).To(Equal(logger))
+			Expect(webhook.logger).To(Equal(logger))
 			Expect(webhook.crqClient).To(Equal(crqClient))
 		})
 
 		It("should create webhook with nil client", func() {
-			crqClient = quota.NewCRQClient(nil)
+			crqClient = quota.NewCRQClient(nil, logger)
 			webhook = NewObjectCountWebhook(nil, crqClient, logger)
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(BeNil())
@@ -71,10 +72,10 @@ var _ = Describe("ObjectCountWebhook", func() {
 
 		It("should create webhook with nil logger", func() {
 			fakeClient = fake.NewSimpleClientset()
-			crqClient = quota.NewCRQClient(nil)
+			crqClient = quota.NewCRQClient(nil, logger)
 			webhook = NewObjectCountWebhook(fakeClient, crqClient, nil)
 			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.log).To(BeNil())
+			Expect(webhook.logger).NotTo(BeNil())
 		})
 
 		It("should create webhook with nil CRQ client", func() {
@@ -89,7 +90,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(BeNil())
 			Expect(webhook.crqClient).To(BeNil())
-			Expect(webhook.log).To(BeNil())
+			Expect(webhook.logger).NotTo(BeNil())
 		})
 	})
 
@@ -121,7 +122,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 				fakeRuntimeClient := ctrlclientfake.NewClientBuilder().
 					WithScheme(scheme).
 					WithObjects(crq, ns).Build()
-				crqClient = quota.NewCRQClient(fakeRuntimeClient)
+				crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 				webhook = NewObjectCountWebhook(fakeClient, crqClient, logger)
 				ginEngine.POST("/webhook", webhook.Handle)
 			})
@@ -357,7 +358,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 
 			It("should allow creation when CRQClient fails", func() {
 				// Simulate CRQClient failure by passing nil client
-				webhook.crqClient = quota.NewCRQClient(nil)
+				webhook.crqClient = quota.NewCRQClient(nil, logger)
 				review := createObjectCountAdmissionReview("1819", nsName, "configmaps")
 				body, _ := json.Marshal(review)
 				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
