@@ -50,6 +50,30 @@ var (
 		},
 		[]string{"webhook", "operation", "decision"},
 	)
+
+	// New metrics for controller reconciliation
+	QuotaReconcileTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pac_quota_controller_reconcile_total",
+			Help: "Total number of ClusterResourceQuota reconciliations.",
+		},
+		[]string{"crq_name", "status"},
+	)
+	QuotaReconcileErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pac_quota_controller_reconcile_errors_total",
+			Help: "Total number of reconciliation errors per ClusterResourceQuota.",
+		},
+		[]string{"crq_name"},
+	)
+	QuotaAggregationDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "pac_quota_controller_aggregation_duration_seconds",
+			Help: "Time taken to aggregate resource usage across namespaces.",
+		},
+		[]string{"crq_name"},
+	)
+
 	// Custom registry for webhook metrics only
 	WebhookRegistry = prometheus.NewRegistry()
 	registerOnce    sync.Once
@@ -62,6 +86,10 @@ func RegisterWebhookMetrics() {
 		WebhookRegistry.MustRegister(WebhookValidationCount)
 		WebhookRegistry.MustRegister(WebhookValidationDuration)
 		WebhookRegistry.MustRegister(WebhookAdmissionDecision)
+		// New metrics for controller reconciliation
+		WebhookRegistry.MustRegister(QuotaReconcileTotal)
+		WebhookRegistry.MustRegister(QuotaReconcileErrors)
+		WebhookRegistry.MustRegister(QuotaAggregationDuration)
 	})
 }
 
