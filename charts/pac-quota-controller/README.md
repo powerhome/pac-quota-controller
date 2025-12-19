@@ -1,6 +1,6 @@
 # pac-quota-controller
 
-![Version: 0.4.0](https://img.shields.io/badge/Version-0.4.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.0](https://img.shields.io/badge/AppVersion-0.4.0-informational?style=flat-square)
+![Version: 0.4.1](https://img.shields.io/badge/Version-0.4.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.1](https://img.shields.io/badge/AppVersion-0.4.1-informational?style=flat-square)
 
 A Helm chart for PAC Quota Controller - Managing cluster resource quotas across namespaces
 
@@ -71,7 +71,7 @@ spec:
 This chart can use container images from GitHub Container Registry:
 
 ```console
-ghcr.io/powerhome/pac-quota-controller:0.4.0
+ghcr.io/powerhome/pac-quota-controller:0.4.1
 ```
 
 You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
@@ -135,13 +135,19 @@ The command removes all the Kubernetes components associated with the chart and 
 
 The controller exposes a Prometheus-compatible `/metrics` endpoint on a dedicated HTTPS port and service:
 
-- **Service name:** `pac-quota-controller-metrics-service`
-- **Port:** `<metrics-port>` (default: 8443)
+- **Service name:** `pac-quota-controller-webhook-service`
+- **Port name:** `metrics-server` (default: 8443)
 - **Path:** `/metrics`
 - **Enabled by default:** Set `metrics.enable: true|false` in `values.yaml` to enable or disable the metrics server.
+- **ServiceMonitor:** A `ServiceMonitor` resource can be automatically created by setting `prometheus.enable: true`.
 - **TLS:** Uses cert-manager or user-provided certificates (see [Certificates](#certificates)).
 
-No network policy is applied; the endpoint is public within the cluster.
+The controller exposes the following key metrics:
+- `pac_quota_controller_reconcile_total`: Total number of reconciliations, with labels for status (started, success, failed, etc.).
+- `pac_quota_controller_reconcile_errors_total`: Total number of reconciliation errors.
+- `pac_quota_controller_aggregation_duration_seconds`: A histogram of the time taken to aggregate resource usage for a ClusterResourceQuota.
+- `pac_quota_controller_crq_usage`: Current usage percentage per resource/namespace.
+- `pac_quota_controller_crq_total_usage`: Current aggregated usage percentage per resource.
 
 #### Example Prometheus Scrape Config
 
@@ -171,6 +177,36 @@ metrics:
 ```
 
 The controller will always look for `tls.crt` and `tls.key` in the specified directory.
+
+### Alerting Rules
+
+This chart can optionally deploy a `PrometheusRule` resource containing alerting rules for the controller. To enable alerting, set `prometheus.enable: true` and `prometheus.alerting.enable: true`.
+
+Default alerts include:
+- `QuotaControllerReconcileErrors`: Fires when reconciliation errors are detected.
+- `QuotaBreached`: Fires when a ClusterResourceQuota limit is breached (usage > 100%).
+- `HighAggregationLatency`: Fires when resource aggregation takes longer than the configured threshold.
+- `QuotaControllerDown`: Fires when the controller manager deployment has no ready replicas.
+
+You can configure and enable/disable individual rules via `values.yaml`:
+
+```yaml
+prometheus:
+  alerting:
+    enable: true
+    rules:
+      reconcileErrors:
+        enable: true
+        threshold: 0
+        for: 5m
+      quotaBreach:
+        enable: true
+        for: 1m
+      highLatency:
+        enable: true
+        threshold: 5
+        for: 10m
+```
 
 ## Events
 
@@ -318,7 +354,17 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | metrics.certPath | string | `"/tmp/k8s-metrics-server/metrics-certs"` |  |
 | metrics.enable | bool | `true` |  |
 | metrics.port | int | `8443` |  |
+| prometheus.alerting.enable | bool | `false` |  |
+| prometheus.alerting.rules.highLatency.enable | bool | `true` |  |
+| prometheus.alerting.rules.highLatency.for | string | `"10m"` |  |
+| prometheus.alerting.rules.highLatency.threshold | int | `5` |  |
+| prometheus.alerting.rules.quotaBreach.enable | bool | `true` |  |
+| prometheus.alerting.rules.quotaBreach.for | string | `"1m"` |  |
+| prometheus.alerting.rules.reconcileErrors.enable | bool | `true` |  |
+| prometheus.alerting.rules.reconcileErrors.for | string | `"5m"` |  |
+| prometheus.alerting.rules.reconcileErrors.threshold | int | `0` |  |
 | prometheus.enable | bool | `false` |  |
+| prometheus.serviceMonitor.enable | bool | `true` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |
 | webhook.enable | bool | `true` |  |
