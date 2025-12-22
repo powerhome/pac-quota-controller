@@ -337,7 +337,7 @@ var _ = Describe("Pod", func() {
 			}
 
 			// All init containers are terminated, so they don't count.
-			// Result should be: overhead (50m) + sum(app containers: 200m + 300m) = 550m
+			// Result should be: overhead (50m) + sum(app containers: 200m + 300m = 500m) = 550m
 			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
 			expected := resource.MustParse("550m")
 			Expect(result.Equal(expected)).To(BeTrue())
