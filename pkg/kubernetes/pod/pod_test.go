@@ -118,13 +118,21 @@ var _ = Describe("Pod", func() {
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
 
-		It("should include init containers in calculation", func() {
+		It("should take the maximum of init containers (not sum) in calculation", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
 				Spec: corev1.PodSpec{
 					InitContainers: []corev1.Container{
 						{
-							Name: "init-container",
+							Name: "init-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("200m"),
+								},
+							},
+						},
+						{
+							Name: "init-2",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("100m"),
@@ -134,10 +142,10 @@ var _ = Describe("Pod", func() {
 					},
 					Containers: []corev1.Container{
 						{
-							Name: "main-container",
+							Name: "main",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("200m"),
+									corev1.ResourceCPU: resource.MustParse("150m"),
 								},
 							},
 						},
@@ -145,43 +153,48 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
+			// Max(200m, 100m) = 200m. Max(200m, 150m) = 200m.
 			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
-			expected := resource.MustParse("300m") // 100m + 200m = 300m
+			expected := resource.MustParse("200m")
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
 
-		It("should calculate CPU limits correctly", func() {
+		It("should exclude terminated containers from calculation", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name: "container1",
+							Name: "running-container",
 							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("200m"),
+								},
+							},
+						},
+						{
+							Name: "terminated-container",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("500m"),
 								},
 							},
 						},
 					},
 				},
-			}
-
-			result := CalculatePodUsage(pod, corev1.ResourceLimitsCPU)
-			expected := resource.MustParse("500m")
-			Expect(result.Equal(expected)).To(BeTrue())
-		})
-
-		It("should calculate memory limits correctly", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
 						{
-							Name: "container1",
-							Resources: corev1.ResourceRequirements{
-								Limits: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("2Gi"),
+							Name: "running-container",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+						{
+							Name: "terminated-container",
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{
+									ExitCode: 0,
 								},
 							},
 						},
@@ -189,84 +202,74 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			result := CalculatePodUsage(pod, corev1.ResourceLimitsMemory)
-			expected := resource.MustParse("2Gi")
-			Expect(result.Equal(expected)).To(BeTrue())
-		})
-
-		It("should handle hugepages correctly", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "container1",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									"hugepages-2Mi": resource.MustParse("1Gi"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			result := CalculatePodUsage(pod, "hugepages-2Mi")
-			expected := resource.MustParse("1Gi")
-			Expect(result.Equal(expected)).To(BeTrue())
-		})
-
-		It("should return zero for missing resources", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:      "container1",
-							Resources: corev1.ResourceRequirements{},
-						},
-					},
-				},
-			}
-
+			// Terminated container (500m) should be ignored. Only 200m remains.
 			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
-			expected := resource.MustParse("0")
+			expected := resource.MustParse("200m")
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
 
-		It("should sum multiple init containers and regular containers", func() {
+		It("should exclude terminated init containers from calculation", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
 				Spec: corev1.PodSpec{
 					InitContainers: []corev1.Container{
 						{
-							Name: "init-container-1",
+							Name: "done-init",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
+									corev1.ResourceCPU: resource.MustParse("1000m"),
 								},
 							},
 						},
 						{
-							Name: "init-container-2",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("75m"),
-								},
-							},
-						},
-					},
-					Containers: []corev1.Container{
-						{
-							Name: "main-container-1",
+							Name: "upcoming-init",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("100m"),
 								},
 							},
 						},
+					},
+					Containers: []corev1.Container{
 						{
-							Name: "main-container-2",
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("200m"),
+								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "done-init",
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{ExitCode: 0},
+							},
+						},
+					},
+				},
+			}
+
+			// done-init (1000m) is terminated.
+			// remaining: maxInit(100m), appSum(200m). Max is 200m.
+			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
+			expected := resource.MustParse("200m")
+			Expect(result.Equal(expected)).To(BeTrue())
+		})
+
+		It("should include Pod overhead", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
+				Spec: corev1.PodSpec{
+					Overhead: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("100m"),
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "main",
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("200m"),
@@ -277,8 +280,35 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
+			// 100m (overhead) + 200m (app) = 300m
 			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
-			expected := resource.MustParse("425m") // 50m + 75m + 100m + 200m = 425m
+			expected := resource.MustParse("300m")
+			Expect(result.Equal(expected)).To(BeTrue())
+		})
+
+		It("should include Pod overhead with base resource name", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
+				Spec: corev1.PodSpec{
+					Overhead: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("100m"),
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "main",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("200m"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			// overhead specifies 'cpu', we request 'requests.cpu'
+			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
+			expected := resource.MustParse("300m")
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
 	})

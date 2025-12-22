@@ -62,11 +62,21 @@ func (resourceUpdatePredicate) Update(e event.UpdateEvent) bool {
 		return true
 	}
 
-	// Special handling for Pods: reconcile if the pod transitions to or from a terminal state.
-	// This is important for releasing quota resources when a pod completes.
+	// Special handling for Pods: reconcile if the pod transitions to or from a terminal state
+	// or if there's a significant status change (like an init container finishing).
 	if podOld, ok := e.ObjectOld.(*corev1.Pod); ok {
 		if podNew, ok := e.ObjectNew.(*corev1.Pod); ok {
+			// Trigger on terminal state transition
 			if pod.IsPodTerminal(podOld) != pod.IsPodTerminal(podNew) {
+				return true
+			}
+			// Trigger on phase change (e.g., Pending -> Running)
+			if podOld.Status.Phase != podNew.Status.Phase {
+				return true
+			}
+			// Trigger if any container (init or app) has terminated since last update
+			if containerTerminated(podOld.Status.InitContainerStatuses, podNew.Status.InitContainerStatuses) ||
+				containerTerminated(podOld.Status.ContainerStatuses, podNew.Status.ContainerStatuses) {
 				return true
 			}
 		}
@@ -90,6 +100,24 @@ func (resourceUpdatePredicate) Delete(e event.DeleteEvent) bool {
 		return true
 	}
 
+	return false
+}
+
+// containerTerminated returns true if any container in the new statuses has transitioned to Terminated
+// while it was not terminated in the old statuses.
+func containerTerminated(oldStatuses, newStatuses []corev1.ContainerStatus) bool {
+	oldTerminated := make(map[string]bool)
+	for _, s := range oldStatuses {
+		if s.State.Terminated != nil {
+			oldTerminated[s.Name] = true
+		}
+	}
+
+	for _, s := range newStatuses {
+		if s.State.Terminated != nil && !oldTerminated[s.Name] {
+			return true
+		}
+	}
 	return false
 }
 

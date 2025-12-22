@@ -408,7 +408,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			Expect(predicate.Update(event)).To(BeTrue())
 		})
 
-		It("should not reconcile for non-terminal phase changes", func() {
+		It("should reconcile for non-terminal phase changes (e.g., Pending -> Running)", func() {
 			oldPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Generation: 1,
@@ -429,7 +429,35 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				ObjectOld: oldPod,
 				ObjectNew: newPod,
 			}
-			Expect(predicate.Update(event)).To(BeFalse())
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should reconcile when a container terminates within a pod", func() {
+			oldPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  "init",
+							State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+						},
+					},
+				},
+			}
+			newPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  "init",
+							State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+						},
+					},
+				},
+			}
+			event := event.UpdateEvent{
+				ObjectOld: oldPod,
+				ObjectNew: newPod,
+			}
+			Expect(predicate.Update(event)).To(BeTrue())
 		})
 	})
 

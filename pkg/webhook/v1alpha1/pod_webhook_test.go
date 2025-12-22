@@ -1130,8 +1130,8 @@ var _ = Describe("PodWebhook", func() {
 					corev1.ResourceName("requests.cpu"),
 				)
 				Expect(err).NotTo(HaveOccurred())
-				// Should include resources from both init and regular containers: 50m + 100m = 150m
-				Expect(usage.MilliValue()).To(Equal(int64(150)))
+				// Should use Max(init: 50m, main: 100m) = 100m
+				Expect(usage.MilliValue()).To(Equal(int64(100)))
 			})
 
 			It("should return error for unsupported resource types", func() {

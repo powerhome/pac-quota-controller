@@ -38,25 +38,65 @@ func IsPodTerminal(pod *corev1.Pod) bool {
 }
 
 // CalculatePodUsage calculates the resource usage for a single pod
-// by summing all resources from both init containers and regular containers.
+// following the Kubernetes standard: Max(sum(containers), max(initContainers)) + podOverhead.
+// It also excludes terminated containers that are no longer consuming resources.
 func CalculatePodUsage(pod *corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
 	if pod == nil {
 		return resource.Quantity{}
 	}
 
-	// Calculate total usage for all containers (init + regular)
+	// 1. Start with Pod Overhead if specified
 	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
-
-	// Add usage from init containers
-	for _, container := range pod.Spec.InitContainers {
-		containerUsage := getContainerResourceUsage(container, resourceName)
-		totalUsage.Add(containerUsage)
+	if pod.Spec.Overhead != nil {
+		if overhead, ok := pod.Spec.Overhead[resourceName]; ok {
+			totalUsage.Add(overhead)
+		} else {
+			// Overhead might contain the base resource name (e.g., cpu) even for requests.cpu
+			baseResource := usage.GetBaseResourceName(resourceName)
+			if overhead, ok := pod.Spec.Overhead[baseResource]; ok {
+				totalUsage.Add(overhead)
+			}
+		}
 	}
 
-	// Add usage from regular containers
+	// Helper to check if a container is terminated
+	isTerminated := func(containerName string, statuses []corev1.ContainerStatus) bool {
+		for _, s := range statuses {
+			if s.Name == containerName {
+				return s.State.Terminated != nil
+			}
+		}
+		return false
+	}
+
+	// 2. Calculate sum of non-terminated regular containers
+	appUsage := resource.NewQuantity(0, resource.DecimalSI)
 	for _, container := range pod.Spec.Containers {
+		if isTerminated(container.Name, pod.Status.ContainerStatuses) {
+			continue
+		}
 		containerUsage := getContainerResourceUsage(container, resourceName)
-		totalUsage.Add(containerUsage)
+		appUsage.Add(containerUsage)
+	}
+
+	// 3. Calculate max of non-terminated init containers
+	maxInitUsage := resource.NewQuantity(0, resource.DecimalSI)
+	for _, container := range pod.Spec.InitContainers {
+		if isTerminated(container.Name, pod.Status.InitContainerStatuses) {
+			continue
+		}
+		containerUsage := getContainerResourceUsage(container, resourceName)
+		if containerUsage.Cmp(*maxInitUsage) > 0 {
+			usageCopy := containerUsage.DeepCopy()
+			maxInitUsage = &usageCopy
+		}
+	}
+
+	// Result is Overhead + Max(sum(apps), max(inits))
+	if appUsage.Cmp(*maxInitUsage) > 0 {
+		totalUsage.Add(*appUsage)
+	} else {
+		totalUsage.Add(*maxInitUsage)
 	}
 
 	return *totalUsage
