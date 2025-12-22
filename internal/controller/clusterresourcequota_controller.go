@@ -104,16 +104,25 @@ func (resourceUpdatePredicate) Delete(e event.DeleteEvent) bool {
 }
 
 // containerTerminated returns true if any container in the new statuses has transitioned to Terminated
-// while it was not terminated in the old statuses.
+// while it was not terminated in the old statuses, or if the set of containers has changed.
 func containerTerminated(oldStatuses, newStatuses []corev1.ContainerStatus) bool {
+	if len(oldStatuses) != len(newStatuses) {
+		return true
+	}
+
 	oldTerminated := make(map[string]bool)
+	oldExists := make(map[string]bool)
 	for _, s := range oldStatuses {
+		oldExists[s.Name] = true
 		if s.State.Terminated != nil {
 			oldTerminated[s.Name] = true
 		}
 	}
 
 	for _, s := range newStatuses {
+		if !oldExists[s.Name] {
+			return true
+		}
 		if s.State.Terminated != nil && !oldTerminated[s.Name] {
 			return true
 		}
