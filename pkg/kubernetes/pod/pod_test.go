@@ -260,6 +260,89 @@ var _ = Describe("Pod", func() {
 			Expect(result.Equal(expected)).To(BeTrue())
 		})
 
+		It("should use only app container sum when all init containers are terminated", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},
+				Spec: corev1.PodSpec{
+					Overhead: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("50m"),
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name: "init-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("500m"),
+								},
+							},
+						},
+						{
+							Name: "init-2",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("800m"),
+								},
+							},
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name: "app-1",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("200m"),
+								},
+							},
+						},
+						{
+							Name: "app-2",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("300m"),
+								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "init-1",
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{ExitCode: 0},
+							},
+						},
+						{
+							Name: "init-2",
+							State: corev1.ContainerState{
+								Terminated: &corev1.ContainerStateTerminated{ExitCode: 0},
+							},
+						},
+					},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "app-1",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+						{
+							Name: "app-2",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+					},
+				},
+			}
+
+			// All init containers are terminated, so they don't count.
+			// Result should be: overhead (50m) + sum(app containers: 200m + 300m) = 550m
+			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
+			expected := resource.MustParse("550m")
+			Expect(result.Equal(expected)).To(BeTrue())
+		})
+
 		It("should include Pod overhead", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-pod"},

@@ -59,18 +59,14 @@ func CalculatePodUsage(pod *corev1.Pod, resourceName corev1.ResourceName) resour
 		}
 	}
 
-	// Helper to check if a container is terminated.
-	// If there is no matching status entry for the container, we treat it as non-running
-	// and exclude it from resource accounting by returning true.
+	// Helper to check if a container is terminated
 	isTerminated := func(containerName string, statuses []corev1.ContainerStatus) bool {
 		for _, s := range statuses {
 			if s.Name == containerName {
 				return s.State.Terminated != nil
 			}
 		}
-		// No matching status found: container has likely not started yet, so we do not
-		// count its resources as currently consumed.
-		return true
+		return false
 	}
 
 	// 2. Calculate sum of non-terminated regular containers
