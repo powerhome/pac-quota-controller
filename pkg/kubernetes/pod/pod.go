@@ -87,8 +87,7 @@ func CalculatePodUsage(pod *corev1.Pod, resourceName corev1.ResourceName) resour
 		}
 		containerUsage := getContainerResourceUsage(container, resourceName)
 		if containerUsage.Cmp(*maxInitUsage) > 0 {
-			usageCopy := containerUsage.DeepCopy()
-			maxInitUsage = &usageCopy
+			*maxInitUsage = containerUsage.DeepCopy()
 		}
 	}
 
