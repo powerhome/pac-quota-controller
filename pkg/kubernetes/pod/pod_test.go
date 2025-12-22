@@ -81,6 +81,22 @@ var _ = Describe("Pod", func() {
 						},
 					},
 				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "container1",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+						{
+							Name: "container2",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+					},
+				},
 			}
 
 			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
@@ -107,6 +123,22 @@ var _ = Describe("Pod", func() {
 								Requests: corev1.ResourceList{
 									corev1.ResourceMemory: resource.MustParse("1Gi"),
 								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "container1",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+						{
+							Name: "container2",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
 							},
 						},
 					},
@@ -147,6 +179,30 @@ var _ = Describe("Pod", func() {
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("150m"),
 								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "init-1",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+						{
+							Name: "init-2",
+							State: corev1.ContainerState{
+								Waiting: &corev1.ContainerStateWaiting{},
+							},
+						},
+					},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "main",
+							State: corev1.ContainerState{
+								Waiting: &corev1.ContainerStateWaiting{},
 							},
 						},
 					},
@@ -249,6 +305,20 @@ var _ = Describe("Pod", func() {
 								Terminated: &corev1.ContainerStateTerminated{ExitCode: 0},
 							},
 						},
+						{
+							Name: "upcoming-init",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+					},
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "main",
+							State: corev1.ContainerState{
+								Waiting: &corev1.ContainerStateWaiting{},
+							},
+						},
 					},
 				},
 			}
@@ -278,6 +348,16 @@ var _ = Describe("Pod", func() {
 						},
 					},
 				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "main",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+					},
+				},
 			}
 
 			// 100m (overhead) + 200m (app) = 300m
@@ -300,6 +380,16 @@ var _ = Describe("Pod", func() {
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU: resource.MustParse("200m"),
 								},
+							},
+						},
+					},
+				},
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "main",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
 							},
 						},
 					},
@@ -346,6 +436,14 @@ var _ = Describe("Pod", func() {
 					},
 				},
 				Status: corev1.PodStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name: "init-container",
+							State: corev1.ContainerState{
+								Running: &corev1.ContainerStateRunning{},
+							},
+						},
+					},
 					ContainerStatuses: []corev1.ContainerStatus{
 						{
 							Name: "terminated-container-1",
@@ -367,7 +465,7 @@ var _ = Describe("Pod", func() {
 				},
 			}
 
-			// All app containers are terminated (600m total would be ignored).
+			// All app containers are terminated (200m + 400m = 600m total would be ignored).
 			// Only the init container (300m) should count.
 			result := CalculatePodUsage(pod, corev1.ResourceRequestsCPU)
 			expected := resource.MustParse("300m")
