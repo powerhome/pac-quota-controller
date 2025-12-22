@@ -307,4 +307,145 @@ var _ = Describe("Usage", func() {
 			Expect(result.GetTotalUsage("resource-999")).To(Equal(resource.MustParse("999m")))
 		})
 	})
+
+	Describe("GetBaseResourceName", func() {
+		It("should strip requests prefix from resource name", func() {
+			result := GetBaseResourceName("requests.cpu")
+			Expect(result).To(Equal(corev1.ResourceName("cpu")))
+		})
+
+		It("should strip requests prefix from memory resource", func() {
+			result := GetBaseResourceName("requests.memory")
+			Expect(result).To(Equal(corev1.ResourceName("memory")))
+		})
+
+		It("should strip limits prefix from resource name", func() {
+			result := GetBaseResourceName("limits.cpu")
+			Expect(result).To(Equal(corev1.ResourceName("cpu")))
+		})
+
+		It("should strip limits prefix from memory resource", func() {
+			result := GetBaseResourceName("limits.memory")
+			Expect(result).To(Equal(corev1.ResourceName("memory")))
+		})
+
+		It("should return resource name as-is when no prefix", func() {
+			result := GetBaseResourceName("cpu")
+			Expect(result).To(Equal(corev1.ResourceName("cpu")))
+		})
+
+		It("should return memory resource name as-is when no prefix", func() {
+			result := GetBaseResourceName("memory")
+			Expect(result).To(Equal(corev1.ResourceName("memory")))
+		})
+
+		It("should handle empty string", func() {
+			result := GetBaseResourceName("")
+			Expect(result).To(Equal(corev1.ResourceName("")))
+		})
+
+		It("should handle resource name with requests prefix only", func() {
+			result := GetBaseResourceName("requests.")
+			Expect(result).To(Equal(corev1.ResourceName("")))
+		})
+
+		It("should handle resource name with limits prefix only", func() {
+			result := GetBaseResourceName("limits.")
+			Expect(result).To(Equal(corev1.ResourceName("")))
+		})
+
+		It("should strip requests prefix from extended resource", func() {
+			result := GetBaseResourceName("requests.nvidia.com/gpu")
+			Expect(result).To(Equal(corev1.ResourceName("nvidia.com/gpu")))
+		})
+
+		It("should strip limits prefix from extended resource", func() {
+			result := GetBaseResourceName("limits.nvidia.com/gpu")
+			Expect(result).To(Equal(corev1.ResourceName("nvidia.com/gpu")))
+		})
+
+		It("should return extended resource as-is when no prefix", func() {
+			result := GetBaseResourceName("nvidia.com/gpu")
+			Expect(result).To(Equal(corev1.ResourceName("nvidia.com/gpu")))
+		})
+
+		It("should handle extended resource with multiple dots", func() {
+			result := GetBaseResourceName("requests.example.com/custom.resource")
+			Expect(result).To(Equal(corev1.ResourceName("example.com/custom.resource")))
+		})
+
+		It("should handle resource with limits and multiple dots", func() {
+			result := GetBaseResourceName("limits.example.com/custom.resource")
+			Expect(result).To(Equal(corev1.ResourceName("example.com/custom.resource")))
+		})
+
+		It("should not strip prefix-like patterns in the middle", func() {
+			result := GetBaseResourceName("cpu.requests.memory")
+			Expect(result).To(Equal(corev1.ResourceName("cpu.requests.memory")))
+		})
+
+		It("should handle ephemeral storage with requests prefix", func() {
+			result := GetBaseResourceName("requests.ephemeral-storage")
+			Expect(result).To(Equal(corev1.ResourceName("ephemeral-storage")))
+		})
+
+		It("should handle ephemeral storage with limits prefix", func() {
+			result := GetBaseResourceName("limits.ephemeral-storage")
+			Expect(result).To(Equal(corev1.ResourceName("ephemeral-storage")))
+		})
+
+		It("should handle storage with requests prefix", func() {
+			result := GetBaseResourceName("requests.storage")
+			Expect(result).To(Equal(corev1.ResourceName("storage")))
+		})
+
+		It("should handle hugepages with requests prefix", func() {
+			result := GetBaseResourceName("requests.hugepages-2Mi")
+			Expect(result).To(Equal(corev1.ResourceName("hugepages-2Mi")))
+		})
+
+		It("should handle hugepages with limits prefix", func() {
+			result := GetBaseResourceName("limits.hugepages-1Gi")
+			Expect(result).To(Equal(corev1.ResourceName("hugepages-1Gi")))
+		})
+
+		It("should handle resource with special characters", func() {
+			result := GetBaseResourceName("requests.custom-resource_v1")
+			Expect(result).To(Equal(corev1.ResourceName("custom-resource_v1")))
+		})
+
+		It("should handle resource that starts with 'requests' but not prefix", func() {
+			result := GetBaseResourceName("requestscpu")
+			Expect(result).To(Equal(corev1.ResourceName("requestscpu")))
+		})
+
+		It("should handle resource that starts with 'limits' but not prefix", func() {
+			result := GetBaseResourceName("limitsmemory")
+			Expect(result).To(Equal(corev1.ResourceName("limitsmemory")))
+		})
+
+		It("should handle standard Kubernetes resource names", func() {
+			testCases := []struct {
+				input    corev1.ResourceName
+				expected corev1.ResourceName
+			}{
+				{corev1.ResourceRequestsCPU, corev1.ResourceCPU},
+				{corev1.ResourceLimitsCPU, corev1.ResourceCPU},
+				{corev1.ResourceRequestsMemory, corev1.ResourceMemory},
+				{corev1.ResourceLimitsMemory, corev1.ResourceMemory},
+				{corev1.ResourceRequestsStorage, corev1.ResourceStorage},
+				{corev1.ResourceRequestsEphemeralStorage, corev1.ResourceEphemeralStorage},
+				{corev1.ResourceLimitsEphemeralStorage, corev1.ResourceEphemeralStorage},
+				{corev1.ResourceCPU, corev1.ResourceCPU},
+				{corev1.ResourceMemory, corev1.ResourceMemory},
+				{corev1.ResourceStorage, corev1.ResourceStorage},
+				{corev1.ResourcePods, corev1.ResourcePods},
+			}
+
+			for _, tc := range testCases {
+				result := GetBaseResourceName(tc.input)
+				Expect(result).To(Equal(tc.expected), fmt.Sprintf("Failed for input: %s", tc.input))
+			}
+		})
+	})
 })
