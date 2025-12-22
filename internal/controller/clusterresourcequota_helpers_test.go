@@ -312,4 +312,220 @@ var _ = Describe("ClusterResourceQuota Helpers", func() {
 			})
 		})
 	})
+
+	Describe("containerTerminated", func() {
+		Context("when handling container state transitions", func() {
+			It("should return true when oldStatuses is empty and newStatuses has a terminated container", func() {
+				oldStatuses := []corev1.ContainerStatus{}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "new-container",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeTrue())
+			})
+
+			It("should return true when oldStatuses has fewer containers and new container is terminated", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "existing-container",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "existing-container",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+					{
+						Name:  "new-container",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeTrue())
+			})
+
+			It("should return true when a container transitions from running to terminated", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeTrue())
+			})
+
+			It("should return true when a container transitions from waiting to terminated", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "init-container",
+						State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "PodInitializing"}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "init-container",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeTrue())
+			})
+
+			It("should return false when container is already terminated in both old and new statuses", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeFalse())
+			})
+
+			It("should return false when no containers are terminated", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeFalse())
+			})
+
+			It("should return true when one of multiple containers transitions to terminated", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container-1",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+					{
+						Name:  "app-container-2",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+					{
+						Name:  "app-container-3",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container-1",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+					{
+						Name:  "app-container-2",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+					{
+						Name:  "app-container-3",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeTrue())
+			})
+
+			It("should return false when multiple containers are terminated but were already terminated", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container-1",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+					{
+						Name:  "app-container-2",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container-1",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+					{
+						Name:  "app-container-2",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeFalse())
+			})
+
+			It("should return false when both oldStatuses and newStatuses are empty", func() {
+				oldStatuses := []corev1.ContainerStatus{}
+				newStatuses := []corev1.ContainerStatus{}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeFalse())
+			})
+
+			It("should return false when newStatuses is empty", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "app-container",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeFalse())
+			})
+
+			It("should handle containers with error exit codes correctly", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "failing-container",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "failing-container",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error"}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeTrue())
+			})
+
+			It("should correctly handle mixed scenarios with some containers terminated and some new", func() {
+				oldStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "already-terminated",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+					{
+						Name:  "running-container",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+				}
+				newStatuses := []corev1.ContainerStatus{
+					{
+						Name:  "already-terminated",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+					{
+						Name:  "running-container",
+						State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+					},
+					{
+						Name:  "newly-terminated",
+						State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+					},
+				}
+				Expect(containerTerminated(oldStatuses, newStatuses)).To(BeTrue())
+			})
+		})
+	})
 })
