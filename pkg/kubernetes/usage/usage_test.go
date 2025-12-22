@@ -309,143 +309,202 @@ var _ = Describe("Usage", func() {
 	})
 
 	Describe("GetBaseResourceName", func() {
-		It("should strip requests prefix from resource name", func() {
-			result := GetBaseResourceName("requests.cpu")
-			Expect(result).To(Equal(corev1.ResourceName("cpu")))
-		})
+		type testCase struct {
+			input       corev1.ResourceName
+			expected    corev1.ResourceName
+			description string
+		}
 
-		It("should strip requests prefix from memory resource", func() {
-			result := GetBaseResourceName("requests.memory")
-			Expect(result).To(Equal(corev1.ResourceName("memory")))
-		})
-
-		It("should strip limits prefix from resource name", func() {
-			result := GetBaseResourceName("limits.cpu")
-			Expect(result).To(Equal(corev1.ResourceName("cpu")))
-		})
-
-		It("should strip limits prefix from memory resource", func() {
-			result := GetBaseResourceName("limits.memory")
-			Expect(result).To(Equal(corev1.ResourceName("memory")))
-		})
-
-		It("should return resource name as-is when no prefix", func() {
-			result := GetBaseResourceName("cpu")
-			Expect(result).To(Equal(corev1.ResourceName("cpu")))
-		})
-
-		It("should return memory resource name as-is when no prefix", func() {
-			result := GetBaseResourceName("memory")
-			Expect(result).To(Equal(corev1.ResourceName("memory")))
-		})
-
-		It("should handle empty string", func() {
-			result := GetBaseResourceName("")
-			Expect(result).To(Equal(corev1.ResourceName("")))
-		})
-
-		It("should handle resource name with requests prefix only", func() {
-			result := GetBaseResourceName("requests.")
-			Expect(result).To(Equal(corev1.ResourceName("")))
-		})
-
-		It("should handle resource name with limits prefix only", func() {
-			result := GetBaseResourceName("limits.")
-			Expect(result).To(Equal(corev1.ResourceName("")))
-		})
-
-		It("should strip requests prefix from extended resource", func() {
-			result := GetBaseResourceName("requests.nvidia.com/gpu")
-			Expect(result).To(Equal(corev1.ResourceName("nvidia.com/gpu")))
-		})
-
-		It("should strip limits prefix from extended resource", func() {
-			result := GetBaseResourceName("limits.nvidia.com/gpu")
-			Expect(result).To(Equal(corev1.ResourceName("nvidia.com/gpu")))
-		})
-
-		It("should return extended resource as-is when no prefix", func() {
-			result := GetBaseResourceName("nvidia.com/gpu")
-			Expect(result).To(Equal(corev1.ResourceName("nvidia.com/gpu")))
-		})
-
-		It("should handle extended resource with multiple dots", func() {
-			result := GetBaseResourceName("requests.example.com/custom.resource")
-			Expect(result).To(Equal(corev1.ResourceName("example.com/custom.resource")))
-		})
-
-		It("should handle resource with limits and multiple dots", func() {
-			result := GetBaseResourceName("limits.example.com/custom.resource")
-			Expect(result).To(Equal(corev1.ResourceName("example.com/custom.resource")))
-		})
-
-		It("should not strip prefix-like patterns in the middle", func() {
-			result := GetBaseResourceName("cpu.requests.memory")
-			Expect(result).To(Equal(corev1.ResourceName("cpu.requests.memory")))
-		})
-
-		It("should handle ephemeral storage with requests prefix", func() {
-			result := GetBaseResourceName("requests.ephemeral-storage")
-			Expect(result).To(Equal(corev1.ResourceName("ephemeral-storage")))
-		})
-
-		It("should handle ephemeral storage with limits prefix", func() {
-			result := GetBaseResourceName("limits.ephemeral-storage")
-			Expect(result).To(Equal(corev1.ResourceName("ephemeral-storage")))
-		})
-
-		It("should handle storage with requests prefix", func() {
-			result := GetBaseResourceName("requests.storage")
-			Expect(result).To(Equal(corev1.ResourceName("storage")))
-		})
-
-		It("should handle hugepages with requests prefix", func() {
-			result := GetBaseResourceName("requests.hugepages-2Mi")
-			Expect(result).To(Equal(corev1.ResourceName("hugepages-2Mi")))
-		})
-
-		It("should handle hugepages with limits prefix", func() {
-			result := GetBaseResourceName("limits.hugepages-1Gi")
-			Expect(result).To(Equal(corev1.ResourceName("hugepages-1Gi")))
-		})
-
-		It("should handle resource with special characters", func() {
-			result := GetBaseResourceName("requests.custom-resource_v1")
-			Expect(result).To(Equal(corev1.ResourceName("custom-resource_v1")))
-		})
-
-		It("should handle resource that starts with 'requests' but not prefix", func() {
-			result := GetBaseResourceName("requestscpu")
-			Expect(result).To(Equal(corev1.ResourceName("requestscpu")))
-		})
-
-		It("should handle resource that starts with 'limits' but not prefix", func() {
-			result := GetBaseResourceName("limitsmemory")
-			Expect(result).To(Equal(corev1.ResourceName("limitsmemory")))
-		})
-
-		It("should handle standard Kubernetes resource names", func() {
-			testCases := []struct {
-				input    corev1.ResourceName
-				expected corev1.ResourceName
-			}{
-				{corev1.ResourceRequestsCPU, corev1.ResourceCPU},
-				{corev1.ResourceLimitsCPU, corev1.ResourceCPU},
-				{corev1.ResourceRequestsMemory, corev1.ResourceMemory},
-				{corev1.ResourceLimitsMemory, corev1.ResourceMemory},
-				{corev1.ResourceRequestsStorage, corev1.ResourceStorage},
-				{corev1.ResourceRequestsEphemeralStorage, corev1.ResourceEphemeralStorage},
-				{corev1.ResourceLimitsEphemeralStorage, corev1.ResourceEphemeralStorage},
-				{corev1.ResourceCPU, corev1.ResourceCPU},
-				{corev1.ResourceMemory, corev1.ResourceMemory},
-				{corev1.ResourceStorage, corev1.ResourceStorage},
-				{corev1.ResourcePods, corev1.ResourcePods},
-			}
-
-			for _, tc := range testCases {
+		DescribeTable("should correctly handle resource names",
+			func(tc testCase) {
 				result := GetBaseResourceName(tc.input)
-				Expect(result).To(Equal(tc.expected), fmt.Sprintf("Failed for input: %s", tc.input))
-			}
-		})
+				Expect(result).To(Equal(tc.expected))
+			},
+			// Basic requests prefix stripping
+			Entry("strip requests prefix from cpu", testCase{
+				input:       "requests.cpu",
+				expected:    "cpu",
+				description: "requests.cpu -> cpu",
+			}),
+			Entry("strip requests prefix from memory", testCase{
+				input:       "requests.memory",
+				expected:    "memory",
+				description: "requests.memory -> memory",
+			}),
+			Entry("strip requests prefix from storage", testCase{
+				input:       "requests.storage",
+				expected:    "storage",
+				description: "requests.storage -> storage",
+			}),
+			Entry("strip requests prefix from ephemeral storage", testCase{
+				input:       "requests.ephemeral-storage",
+				expected:    "ephemeral-storage",
+				description: "requests.ephemeral-storage -> ephemeral-storage",
+			}),
+
+			// Basic limits prefix stripping
+			Entry("strip limits prefix from cpu", testCase{
+				input:       "limits.cpu",
+				expected:    "cpu",
+				description: "limits.cpu -> cpu",
+			}),
+			Entry("strip limits prefix from memory", testCase{
+				input:       "limits.memory",
+				expected:    "memory",
+				description: "limits.memory -> memory",
+			}),
+			Entry("strip limits prefix from ephemeral storage", testCase{
+				input:       "limits.ephemeral-storage",
+				expected:    "ephemeral-storage",
+				description: "limits.ephemeral-storage -> ephemeral-storage",
+			}),
+
+			// Resources without prefixes
+			Entry("return cpu as-is when no prefix", testCase{
+				input:       "cpu",
+				expected:    "cpu",
+				description: "cpu -> cpu",
+			}),
+			Entry("return memory as-is when no prefix", testCase{
+				input:       "memory",
+				expected:    "memory",
+				description: "memory -> memory",
+			}),
+
+			// Edge cases
+			Entry("handle empty string", testCase{
+				input:       "",
+				expected:    "",
+				description: "empty string -> empty string",
+			}),
+			Entry("handle requests prefix only", testCase{
+				input:       "requests.",
+				expected:    "",
+				description: "requests. -> empty string",
+			}),
+			Entry("handle limits prefix only", testCase{
+				input:       "limits.",
+				expected:    "",
+				description: "limits. -> empty string",
+			}),
+
+			// Extended resources
+			Entry("strip requests prefix from extended resource", testCase{
+				input:       "requests.nvidia.com/gpu",
+				expected:    "nvidia.com/gpu",
+				description: "requests.nvidia.com/gpu -> nvidia.com/gpu",
+			}),
+			Entry("strip limits prefix from extended resource", testCase{
+				input:       "limits.nvidia.com/gpu",
+				expected:    "nvidia.com/gpu",
+				description: "limits.nvidia.com/gpu -> nvidia.com/gpu",
+			}),
+			Entry("return extended resource as-is when no prefix", testCase{
+				input:       "nvidia.com/gpu",
+				expected:    "nvidia.com/gpu",
+				description: "nvidia.com/gpu -> nvidia.com/gpu",
+			}),
+			Entry("handle extended resource with multiple dots (requests)", testCase{
+				input:       "requests.example.com/custom.resource",
+				expected:    "example.com/custom.resource",
+				description: "requests.example.com/custom.resource -> example.com/custom.resource",
+			}),
+			Entry("handle extended resource with multiple dots (limits)", testCase{
+				input:       "limits.example.com/custom.resource",
+				expected:    "example.com/custom.resource",
+				description: "limits.example.com/custom.resource -> example.com/custom.resource",
+			}),
+
+			// Hugepages
+			Entry("handle hugepages with requests prefix", testCase{
+				input:       "requests.hugepages-2Mi",
+				expected:    "hugepages-2Mi",
+				description: "requests.hugepages-2Mi -> hugepages-2Mi",
+			}),
+			Entry("handle hugepages with limits prefix", testCase{
+				input:       "limits.hugepages-1Gi",
+				expected:    "hugepages-1Gi",
+				description: "limits.hugepages-1Gi -> hugepages-1Gi",
+			}),
+
+			// Special cases
+			Entry("handle resource with special characters", testCase{
+				input:       "requests.custom-resource_v1",
+				expected:    "custom-resource_v1",
+				description: "requests.custom-resource_v1 -> custom-resource_v1",
+			}),
+			Entry("not strip prefix-like patterns in the middle", testCase{
+				input:       "cpu.requests.memory",
+				expected:    "cpu.requests.memory",
+				description: "cpu.requests.memory -> cpu.requests.memory (no stripping)",
+			}),
+			Entry("handle resource starting with 'requests' but not prefix", testCase{
+				input:       "requestscpu",
+				expected:    "requestscpu",
+				description: "requestscpu -> requestscpu (no dot, so no stripping)",
+			}),
+			Entry("handle resource starting with 'limits' but not prefix", testCase{
+				input:       "limitsmemory",
+				expected:    "limitsmemory",
+				description: "limitsmemory -> limitsmemory (no dot, so no stripping)",
+			}),
+
+			// Standard Kubernetes resource names
+			Entry("handle standard requests.cpu", testCase{
+				input:       corev1.ResourceRequestsCPU,
+				expected:    corev1.ResourceCPU,
+				description: "corev1.ResourceRequestsCPU -> corev1.ResourceCPU",
+			}),
+			Entry("handle standard limits.cpu", testCase{
+				input:       corev1.ResourceLimitsCPU,
+				expected:    corev1.ResourceCPU,
+				description: "corev1.ResourceLimitsCPU -> corev1.ResourceCPU",
+			}),
+			Entry("handle standard requests.memory", testCase{
+				input:       corev1.ResourceRequestsMemory,
+				expected:    corev1.ResourceMemory,
+				description: "corev1.ResourceRequestsMemory -> corev1.ResourceMemory",
+			}),
+			Entry("handle standard limits.memory", testCase{
+				input:       corev1.ResourceLimitsMemory,
+				expected:    corev1.ResourceMemory,
+				description: "corev1.ResourceLimitsMemory -> corev1.ResourceMemory",
+			}),
+			Entry("handle standard requests.storage", testCase{
+				input:       corev1.ResourceRequestsStorage,
+				expected:    corev1.ResourceStorage,
+				description: "corev1.ResourceRequestsStorage -> corev1.ResourceStorage",
+			}),
+			Entry("handle standard requests.ephemeral-storage", testCase{
+				input:       corev1.ResourceRequestsEphemeralStorage,
+				expected:    corev1.ResourceEphemeralStorage,
+				description: "corev1.ResourceRequestsEphemeralStorage -> corev1.ResourceEphemeralStorage",
+			}),
+			Entry("handle standard limits.ephemeral-storage", testCase{
+				input:       corev1.ResourceLimitsEphemeralStorage,
+				expected:    corev1.ResourceEphemeralStorage,
+				description: "corev1.ResourceLimitsEphemeralStorage -> corev1.ResourceEphemeralStorage",
+			}),
+			Entry("handle standard cpu", testCase{
+				input:       corev1.ResourceCPU,
+				expected:    corev1.ResourceCPU,
+				description: "corev1.ResourceCPU -> corev1.ResourceCPU",
+			}),
+			Entry("handle standard memory", testCase{
+				input:       corev1.ResourceMemory,
+				expected:    corev1.ResourceMemory,
+				description: "corev1.ResourceMemory -> corev1.ResourceMemory",
+			}),
+			Entry("handle standard storage", testCase{
+				input:       corev1.ResourceStorage,
+				expected:    corev1.ResourceStorage,
+				description: "corev1.ResourceStorage -> corev1.ResourceStorage",
+			}),
+			Entry("handle standard pods", testCase{
+				input:       corev1.ResourcePods,
+				expected:    corev1.ResourcePods,
+				description: "corev1.ResourcePods -> corev1.ResourcePods",
+			}),
+		)
 	})
 })
