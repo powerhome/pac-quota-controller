@@ -109,6 +109,22 @@ metrics:
 
 prometheus:
   enable: false
+  serviceMonitor:
+    enable: true
+  alerting:
+    enable: false
+    rules:
+      reconcileErrors:
+        enable: true
+        threshold: 0
+        for: 5m
+      quotaBreach:
+        enable: true
+        for: 1m
+      highLatency:
+        enable: true
+        threshold: 5
+        for: 10m
 
 certmanager:
   # If true, the chart will create Certificate resources for cert-manager to issue certificates for webhooks and metrics.
