@@ -18,6 +18,7 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 	"github.com/powerhome/pac-quota-controller/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
@@ -170,7 +171,16 @@ func (r *ClusterResourceQuotaReconciler) isNamespaceExcluded(ns *corev1.Namespac
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.logger.Debug("Reconciling ClusterResourceQuota")
+	r.logger.Info("Reconciling ClusterResourceQuota", zap.String("crq", req.Name))
+	metrics.QuotaReconcileTotal.WithLabelValues(req.Name, "started").Inc()
+	startTime := time.Now()
+	defer func() {
+		duration := time.Since(startTime)
+		r.logger.Info("Finished reconciliation",
+			zap.String("crq", req.Name),
+			zap.Duration("duration", duration),
+		)
+	}()
 
 	// Fetch the ClusterResourceQuota instance
 	crq := &quotav1alpha1.ClusterResourceQuota{}
@@ -181,7 +191,9 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request
-		r.logger.Error("Failed to get ClusterResourceQuota", zap.Error(err))
+		r.logger.Error("Failed to get ClusterResourceQuota", zap.Error(err), zap.String("crq", req.Name))
+		metrics.QuotaReconcileErrors.WithLabelValues(req.Name).Inc()
+		metrics.QuotaReconcileTotal.WithLabelValues(req.Name, "failed").Inc()
 		return ctrl.Result{}, err
 	}
 
@@ -190,7 +202,10 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	if crq.Spec.NamespaceSelector != nil {
 		selector, err := metav1.LabelSelectorAsSelector(crq.Spec.NamespaceSelector)
 		if err != nil {
+			r.logger.Error("Failed to create selector from CRQ spec", zap.Error(err), zap.String("crq", crq.Name))
 			r.EventRecorder.InvalidSelector(crq, err)
+			metrics.QuotaReconcileErrors.WithLabelValues(crq.Name).Inc()
+			metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "invalid_selector").Inc()
 			return ctrl.Result{}, fmt.Errorf("failed to create selector from CRQ spec: %w", err)
 		}
 
@@ -237,7 +252,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 			hard, hasHard := crq.Spec.Hard[resourceName]
 			var percent float64
 			if hasHard && hard.Value() > 0 {
-				percent = float64(used.Value()) / float64(hard.Value())
+				percent = used.AsApproximateFloat64() / hard.AsApproximateFloat64()
 			} else {
 				percent = 0.0
 			}
@@ -248,7 +263,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		hard, hasHard := crq.Spec.Hard[resourceName]
 		var percent float64
 		if hasHard && hard.Value() > 0 {
-			percent = float64(total.Value()) / float64(hard.Value())
+			percent = total.AsApproximateFloat64() / hard.AsApproximateFloat64()
 		} else {
 			percent = 0.0
 		}
@@ -261,11 +276,13 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 			r.logger.Info("CRQ not found during status update, likely deleted. Skipping status update.", zap.String("name", crq.Name))
 			return ctrl.Result{}, nil
 		}
-		r.logger.Error("Failed to update ClusterResourceQuota status", zap.Error(err))
+		r.logger.Error("Failed to update ClusterResourceQuota status", zap.Error(err), zap.String("crq", crq.Name))
+		metrics.QuotaReconcileErrors.WithLabelValues(crq.Name).Inc()
+		metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "status_update_failed").Inc()
 		return ctrl.Result{}, err
 	}
 
-	r.logger.Debug("Finished reconciliation")
+	metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "success").Inc()
 	return ctrl.Result{}, nil
 }
 
@@ -276,6 +293,8 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	namespaces []string,
 ) (quotav1alpha1.ResourceList, []quotav1alpha1.ResourceQuotaStatusByNamespace) {
 	r.logger.Debug("Calculating resource usage", zap.String("crq", crq.Name))
+	timer := prometheus.NewTimer(metrics.QuotaAggregationDuration.WithLabelValues(crq.Name))
+	defer timer.ObserveDuration()
 
 	totalUsage := make(quotav1alpha1.ResourceList)
 	usageByNamespace := make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))

@@ -1,0 +1,58 @@
+{{- if and .Values.prometheus.enable .Values.prometheus.alerting.enable -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "chart.name" . }}-alerting-rules
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: pac-quota-controller.rules
+      rules:
+        {{- if .Values.prometheus.alerting.rules.reconcileErrors.enable }}
+        - alert: QuotaControllerReconcileErrors
+          annotations:
+            summary: ClusterResourceQuota controller reconciliation errors
+            description: "The ClusterResourceQuota controller is experiencing reconciliation errors for {{`{{ $labels.crq_name }}`}}."
+          expr: |
+            rate(pac_quota_controller_reconcile_errors_total[5m]) > {{ .Values.prometheus.alerting.rules.reconcileErrors.threshold }}
+          for: {{ .Values.prometheus.alerting.rules.reconcileErrors.for }}
+          labels:
+            severity: warning
+        {{- end }}
+
+        {{- if .Values.prometheus.alerting.rules.quotaBreach.enable }}
+        - alert: QuotaBreached
+          annotations:
+            summary: ClusterResourceQuota limit breached
+            description: "ClusterResourceQuota {{`{{ $labels.crq_name }}`}} has exceeded its assigned limit for resource {{`{{ $labels.resource }}`}}."
+          expr: |
+            pac_quota_controller_crq_total_usage > 1.0
+          for: {{ .Values.prometheus.alerting.rules.quotaBreach.for }}
+          labels:
+            severity: critical
+        {{- end }}
+
+        {{- if .Values.prometheus.alerting.rules.highLatency.enable }}
+        - alert: HighAggregationLatency
+          annotations:
+            summary: High latency in resource aggregation
+            description: "Resource aggregation for ClusterResourceQuota {{`{{ $labels.crq_name }}`}} is taking longer than {{ .Values.prometheus.alerting.rules.highLatency.threshold }}s."
+          expr: |
+            histogram_quantile(0.95, sum(rate(pac_quota_controller_aggregation_duration_seconds_bucket[5m])) by (le, crq_name)) > {{ .Values.prometheus.alerting.rules.highLatency.threshold }}
+          for: {{ .Values.prometheus.alerting.rules.highLatency.for }}
+          labels:
+            severity: warning
+        {{- end }}
+
+        - alert: QuotaControllerDown
+          annotations:
+            summary: ClusterResourceQuota controller is down
+            description: "The ClusterResourceQuota controller manager has no ready replicas."
+          expr: |
+            kube_deployment_status_replicas_ready{deployment="pac-quota-controller-manager"} == 0
+          for: 5m
+          labels:
+            severity: critical
+{{- end }}
