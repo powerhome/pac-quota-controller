@@ -11,24 +11,24 @@ metadata:
 spec:
   endpoints:
     - path: /metrics
-      port: metrics-server
+      port: metrics
       scheme: {{ if .Values.metrics.secure }}https{{ else }}http{{ end }}
       {{- if .Values.metrics.secure }}
       bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
       tlsConfig:
         {{- if .Values.certmanager.enable }}
-        serverName: pac-quota-controller-webhook-service.{{ .Release.Namespace }}.svc
+        serverName: pac-quota-controller.{{ .Release.Namespace }}.svc
         insecureSkipVerify: false
         ca:
           secret:
-            name: metrics-server-cert
+            name: pac-quota-controller-cert
             key: ca.crt
         cert:
           secret:
-            name: metrics-server-cert
+            name: pac-quota-controller-cert
             key: tls.crt
         keySecret:
-          name: metrics-server-cert
+          name: pac-quota-controller-cert
           key: tls.key
         {{- else }}
         insecureSkipVerify: true
@@ -37,5 +37,4 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: pac-quota-controller
-      control-plane: controller-manager
 {{- end }}

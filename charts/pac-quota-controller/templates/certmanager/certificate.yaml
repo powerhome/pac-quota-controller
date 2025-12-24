@@ -20,8 +20,8 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   dnsNames:
-    - pac-quota-controller-webhook-service.{{ .Release.Namespace }}.svc
-    - pac-quota-controller-webhook-service.{{ .Release.Namespace }}.svc.cluster.local
+    - pac-quota-controller-service.{{ .Release.Namespace }}.svc
+    - pac-quota-controller-service.{{ .Release.Namespace }}.svc.cluster.local
     - pac-quota-controller-manager.{{ .Release.Namespace }}.svc
     - pac-quota-controller-manager.{{ .Release.Namespace }}.svc.cluster.local
   issuerRef:
@@ -41,7 +41,8 @@ spec:
   dnsNames:
     - pac-quota-controller.{{ .Release.Namespace }}.svc
     - pac-quota-controller.{{ .Release.Namespace }}.svc.cluster.local
-    - pac-quota-controller-metrics-service.{{ .Release.Namespace }}.svc
+    - pac-quota-controller-service.{{ .Release.Namespace }}.svc
+    - pac-quota-controller-service.{{ .Release.Namespace }}.svc.cluster.local
   issuerRef:
     kind: Issuer
     name: selfsigned-issuer

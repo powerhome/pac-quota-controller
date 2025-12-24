@@ -135,7 +135,7 @@ The command removes all the Kubernetes components associated with the chart and 
 
 The controller exposes a Prometheus-compatible `/metrics` endpoint on a dedicated HTTPS port and service:
 
-- **Service name:** `pac-quota-controller-webhook-service`
+- **Service name:** `pac-quota-controller-service`
 - **Port name:** `metrics-server` (default: 8443)
 - **Path:** `/metrics`
 - **Enabled by default:** Set `metrics.enable: true|false` in `values.yaml` to enable or disable the metrics server.
@@ -351,10 +351,9 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | events.recording.controllerComponent | string | `"pac-quota-controller-controller"` |  |
 | events.recording.webhookComponent | string | `"pac-quota-controller-webhook"` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
-| metrics.certPath | string | `"/tmp/k8s-metrics-server/metrics-certs"` |  |
 | metrics.enable | bool | `true` |  |
 | metrics.port | int | `8443` |  |
-| prometheus.alerting.enable | bool | `false` |  |
+| prometheus.alerting.enable | bool | `true` |  |
 | prometheus.alerting.rules.highLatency.enable | bool | `true` |  |
 | prometheus.alerting.rules.highLatency.for | string | `"10m"` |  |
 | prometheus.alerting.rules.highLatency.threshold | int | `5` |  |
@@ -363,7 +362,7 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | prometheus.alerting.rules.reconcileErrors.enable | bool | `true` |  |
 | prometheus.alerting.rules.reconcileErrors.for | string | `"5m"` |  |
 | prometheus.alerting.rules.reconcileErrors.threshold | int | `0` |  |
-| prometheus.enable | bool | `false` |  |
+| prometheus.enable | bool | `true` |  |
 | prometheus.serviceMonitor.enable | bool | `true` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |

@@ -139,7 +139,7 @@ The command removes all the Kubernetes components associated with the chart and 
 
 The controller exposes a Prometheus-compatible `/metrics` endpoint on a dedicated HTTPS port and service:
 
-- **Service name:** `pac-quota-controller-webhook-service`
+- **Service name:** `pac-quota-controller-service`
 - **Port name:** `metrics-server` (default: 8443)
 - **Path:** `/metrics`
 - **Enabled by default:** Set `metrics.enable: true|false` in `values.yaml` to enable or disable the metrics server.
