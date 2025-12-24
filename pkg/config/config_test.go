@@ -23,14 +23,11 @@ var _ = Describe("InitConfig", func() {
 	AfterEach(func() {
 		// Clean up any environment variables that might have been set
 		envVars := []string{
-			"METRICS_BIND_ADDRESS",
 			"HEALTH_PROBE_BIND_ADDRESS",
 			"LEADER_ELECT",
-			"METRICS_SECURE",
 			"WEBHOOK_CERT_PATH",
 			"WEBHOOK_CERT_NAME",
 			"WEBHOOK_CERT_KEY",
-			"METRICS_CERT_PATH",
 			"ENABLE_HTTP2",
 			"LOG_LEVEL",
 			"LOG_FORMAT",
@@ -43,10 +40,8 @@ var _ = Describe("InitConfig", func() {
 
 	It("should initialize with default values", func() {
 		cfg := InitConfig()
-		Expect(cfg.MetricsPort).To(Equal(8443))
 		Expect(cfg.ProbeAddr).To(Equal(":8081"))
 		Expect(cfg.EnableLeaderElection).To(BeFalse())
-		Expect(cfg.SecureMetrics).To(BeTrue())
 		Expect(cfg.WebhookCertName).To(Equal("tls.crt"))
 		Expect(cfg.WebhookCertKey).To(Equal("tls.key"))
 		Expect(cfg.EnableHTTP2).To(BeFalse())
@@ -59,11 +54,9 @@ var _ = Describe("InitConfig", func() {
 		envVars := map[string]string{
 			"HEALTH_PROBE_BIND_ADDRESS": ":9090",
 			"LEADER_ELECT":              "true",
-			"METRICS_SECURE":            "false",
 			"WEBHOOK_CERT_PATH":         "/certs/webhook",
 			"WEBHOOK_CERT_NAME":         "cert.pem",
 			"WEBHOOK_CERT_KEY":          "key.pem",
-			"METRICS_CERT_PATH":         "/certs/metrics",
 			"ENABLE_HTTP2":              "true",
 			"LOG_LEVEL":                 "debug",
 			"LOG_FORMAT":                "console",
@@ -78,11 +71,9 @@ var _ = Describe("InitConfig", func() {
 
 		Expect(cfg.ProbeAddr).To(Equal(":9090"))
 		Expect(cfg.EnableLeaderElection).To(BeTrue())
-		Expect(cfg.SecureMetrics).To(BeFalse())
 		Expect(cfg.WebhookCertPath).To(Equal("/certs/webhook"))
 		Expect(cfg.WebhookCertName).To(Equal("cert.pem"))
 		Expect(cfg.WebhookCertKey).To(Equal("key.pem"))
-		Expect(cfg.MetricsCertPath).To(Equal("/certs/metrics"))
 		Expect(cfg.EnableHTTP2).To(BeTrue())
 		Expect(cfg.LogLevel).To(Equal("debug"))
 		Expect(cfg.LogFormat).To(Equal("console"))
@@ -106,10 +97,6 @@ var _ = Describe("SetupFlags", func() {
 		flags := cmd.Flags()
 		Expect(flags.HasAvailableFlags()).To(BeTrue())
 
-		metricsPort, err := flags.GetInt("metrics-port")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(metricsPort).To(Equal(8443))
-
 		probeAddr, err := flags.GetString("health-probe-bind-address")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(probeAddr).To(Equal(":8081"))
@@ -117,10 +104,6 @@ var _ = Describe("SetupFlags", func() {
 		leaderElect, err := flags.GetBool("leader-elect")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(leaderElect).To(BeFalse())
-
-		secureMetrics, err := flags.GetBool("metrics-secure")
-		Expect(err).NotTo(HaveOccurred())
-		Expect(secureMetrics).To(BeTrue())
 
 		logLevel, err := flags.GetString("log-level")
 		Expect(err).NotTo(HaveOccurred())

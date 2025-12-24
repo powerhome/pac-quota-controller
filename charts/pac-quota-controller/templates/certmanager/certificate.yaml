@@ -28,24 +28,4 @@ spec:
     kind: Issuer
     name: selfsigned-issuer
   secretName: webhook-server-cert
-{{- if .Values.metrics.enable }}
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  labels:
-    {{- include "chart.labels" . | nindent 4 }}
-  name: metrics-certs
-  namespace: {{ .Release.Namespace }}
-spec:
-  dnsNames:
-    - pac-quota-controller.{{ .Release.Namespace }}.svc
-    - pac-quota-controller.{{ .Release.Namespace }}.svc.cluster.local
-    - pac-quota-controller-service.{{ .Release.Namespace }}.svc
-    - pac-quota-controller-service.{{ .Release.Namespace }}.svc.cluster.local
-  issuerRef:
-    kind: Issuer
-    name: selfsigned-issuer
-  secretName: metrics-server-cert
-{{- end }}
 {{- end }}

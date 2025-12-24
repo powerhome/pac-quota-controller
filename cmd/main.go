@@ -92,8 +92,8 @@ func main() {
 			}
 
 			// Start metrics server if enabled
-			if cfg.MetricsEnable && cfg.MetricsPort > 0 {
-				metricsServer, err := metrics.NewMetricsServer(cfg, zapLogger)
+			if cfg.MetricsEnable {
+				metricsServer, err := metrics.NewMetricsServer(zapLogger)
 				if err != nil {
 					zapLogger.Error("metrics server setup failed", zap.Error(err))
 					os.Exit(1)
