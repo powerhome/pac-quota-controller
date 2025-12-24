@@ -215,7 +215,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 			hard, hasHard := crq.Spec.Hard[resourceName]
 			var percent float64
 			if hasHard && hard.Value() > 0 {
-				percent = float64(used.Value()) / float64(hard.Value())
+				percent = used.AsApproximateFloat64() / hard.AsApproximateFloat64()
 			} else {
 				percent = 0.0
 			}
@@ -226,7 +226,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		hard, hasHard := crq.Spec.Hard[resourceName]
 		var percent float64
 		if hasHard && hard.Value() > 0 {
-			percent = float64(total.Value()) / float64(hard.Value())
+			percent = total.AsApproximateFloat64() / hard.AsApproximateFloat64()
 		} else {
 			percent = 0.0
 		}

@@ -6,7 +6,7 @@ metadata:
   labels:
     {{- include "chart.labels" . | nindent 4 }}
     control-plane: controller-manager
-  name: pac-quota-controller-manager-metrics-monitor
+  name: pac-quota-controller-manager-monitor
   namespace: {{ .Release.Namespace }}
 spec:
   endpoints:
