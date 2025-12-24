@@ -328,8 +328,8 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | prometheus.alerting.rules.reconcileErrors.enable | bool | `true` |  |
 | prometheus.alerting.rules.reconcileErrors.for | string | `"5m"` |  |
 | prometheus.alerting.rules.reconcileErrors.threshold | int | `0` |  |
-| prometheus.enable | bool | `true` |  |
-| prometheus.serviceMonitor.enable | bool | `true` |  |
+| prometheus.enable | bool | `false` |  |
+| prometheus.serviceMonitor.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |
 | webhook.enable | bool | `true` |  |

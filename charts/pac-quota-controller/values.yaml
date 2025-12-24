@@ -106,11 +106,11 @@ metrics:
   enable: true
 
 prometheus:
-  enable: true
+  enable: false
   serviceMonitor:
-    enable: true
+    enable: false
   alerting:
-    enable: true
+    enable: false
     rules:
       reconcileErrors:
         enable: true
