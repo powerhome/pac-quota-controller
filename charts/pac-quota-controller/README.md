@@ -319,7 +319,7 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | events.recording.webhookComponent | string | `"pac-quota-controller-webhook"` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
 | metrics.enable | bool | `true` |  |
-| prometheus.alerting.enable | bool | `true` |  |
+| prometheus.alerting.enable | bool | `false` |  |
 | prometheus.alerting.rules.highLatency.enable | bool | `true` |  |
 | prometheus.alerting.rules.highLatency.for | string | `"10m"` |  |
 | prometheus.alerting.rules.highLatency.threshold | int | `5` |  |
