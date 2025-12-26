@@ -6,8 +6,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
-
-	"github.com/powerhome/pac-quota-controller/pkg/config"
 )
 
 func TestMetrics(t *testing.T) {
@@ -17,16 +15,11 @@ func TestMetrics(t *testing.T) {
 
 var _ = Describe("MetricsServer", func() {
 	It("should setup metrics server struct and underlying http.Server", func() {
-		cfg := &config.Config{
-			MetricsPort:   8080,
-			SecureMetrics: false,
-			// No certificate paths provided for this test.
-		}
 		logger := zap.NewNop()
-		ms, err := NewMetricsServer(cfg, logger)
+		ms, err := NewMetricsServer(logger)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ms).NotTo(BeNil())
 		Expect(ms.server).NotTo(BeNil())
-		Expect(ms.server.Addr).To(Equal(":8080"))
+		Expect(ms.server.Addr).To(Equal(":8443"))
 	})
 })

@@ -20,7 +20,7 @@ webhooks:
       caBundle: {{ .Values.webhook.customTLS.caBundle }}
       {{- end }}
       service:
-        name: pac-quota-controller-webhook-service
+        name: pac-quota-controller-service
         namespace: {{ .Release.Namespace }}
         path: /validate-quota-powerapp-cloud-v1alpha1-clusterresourcequota
     rules:
@@ -46,7 +46,7 @@ webhooks:
       caBundle: {{ .Values.webhook.customTLS.caBundle }}
       {{- end }}
       service:
-        name: pac-quota-controller-webhook-service
+        name: pac-quota-controller-service
         namespace: {{ .Release.Namespace }}
         path: /validate--v1-namespace
     rules:
@@ -72,7 +72,7 @@ webhooks:
       caBundle: {{ .Values.webhook.customTLS.caBundle }}
       {{- end }}
       service:
-        name: pac-quota-controller-webhook-service
+        name: pac-quota-controller-service
         namespace: {{ .Release.Namespace }}
         path: /validate--v1-pod
     rules:
@@ -98,7 +98,7 @@ webhooks:
       caBundle: {{ .Values.webhook.customTLS.caBundle }}
       {{- end }}
       service:
-        name: pac-quota-controller-webhook-service
+        name: pac-quota-controller-service
         namespace: {{ .Release.Namespace }}
         path: /validate--v1-persistentvolumeclaim
     rules:
@@ -124,7 +124,7 @@ webhooks:
       caBundle: {{ .Values.webhook.customTLS.caBundle }}
       {{- end }}
       service:
-        name: pac-quota-controller-webhook-service
+        name: pac-quota-controller-service
         namespace: {{ .Release.Namespace }}
         path: /validate--v1-service
     rules:
@@ -150,7 +150,7 @@ webhooks:
       caBundle: {{ .Values.webhook.customTLS.caBundle }}
       {{- end }}
       service:
-        name: pac-quota-controller-webhook-service
+        name: pac-quota-controller-service
         namespace: {{ .Release.Namespace }}
         path: /validate-objectcount-v1
     rules:

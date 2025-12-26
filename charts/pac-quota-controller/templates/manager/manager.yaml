@@ -50,15 +50,12 @@ spec:
             - --webhook-dry-run-only=true
             {{- end }}
             - --webhook-cert-path={{ .Values.controllerManager.container.webhookCertPath }}
-            {{- if .Values.metrics.enable }}
-            - --metrics-cert-path={{ .Values.metrics.certPath }}
-            {{- end }}
           ports:
           - containerPort: 9443
             name: webhook-server
             protocol: TCP
           {{- if .Values.metrics.enable }}
-          - containerPort: {{ .Values.metrics.port }}
+          - containerPort: 8443
             name: metrics-server
             protocol: TCP
           {{- end }}
@@ -106,11 +103,6 @@ spec:
               mountPath: {{ .Values.controllerManager.container.webhookCertPath | default "/tmp/k8s-webhook-server/serving-certs" }}
               readOnly: true
             {{- end }}
-            {{- if .Values.metrics.enable }}
-            - name: metrics-certs
-              mountPath: {{ .Values.metrics.certPath | default "/tmp/k8s-metrics-server/metrics-certs" }}
-              readOnly: true
-            {{- end }}
             {{- if .Values.events.enable }}
             - name: event-config
               mountPath: /etc/pac-quota-controller/events
@@ -125,22 +117,11 @@ spec:
         {{- if .Values.certmanager.enable }}
         - name: webhook-certs
           secret:
-            secretName: webhook-server-cert # Default secret name for cert-manager managed webhook certs
+            secretName: webhook-server-cert
         {{- else if  .Values.webhook.customTLS.secretName }}
         - name: webhook-certs
           secret:
             secretName: {{ .Values.webhook.customTLS.secretName }}
-        {{- end }}
-        {{- end }}
-        {{- if .Values.metrics.enable }}
-        {{- if .Values.certmanager.enable }}
-        - name: metrics-certs
-          secret:
-            secretName: metrics-server-cert # Default secret name for cert-manager managed metrics certs
-        {{- else if .Values.metrics.customTLS.secretName }}
-        - name: metrics-certs
-          secret:
-            secretName: {{ .Values.metrics.customTLS.secretName }}
         {{- end }}
         {{- end }}
         {{- if .Values.events.enable }}

@@ -133,14 +133,12 @@ The command removes all the Kubernetes components associated with the chart and 
 
 ### Metrics Service
 
-The controller exposes a Prometheus-compatible `/metrics` endpoint on a dedicated HTTPS port and service:
+The controller exposes a Prometheus-compatible `/metrics` endpoint on a dedicated HTTP port and service:
 
-- **Service name:** `pac-quota-controller-webhook-service`
-- **Port name:** `metrics-server` (default: 8443)
+- **Service name:** `pac-quota-controller-service`
 - **Path:** `/metrics`
 - **Enabled by default:** Set `metrics.enable: true|false` in `values.yaml` to enable or disable the metrics server.
 - **ServiceMonitor:** A `ServiceMonitor` resource can be automatically created by setting `prometheus.enable: true`.
-- **TLS:** Uses cert-manager or user-provided certificates (see [Certificates](#certificates)).
 
 The controller exposes the following key metrics:
 - `pac_quota_controller_reconcile_total`: Total number of reconciliations, with labels for status (started, success, failed, etc.).
@@ -148,35 +146,6 @@ The controller exposes the following key metrics:
 - `pac_quota_controller_aggregation_duration_seconds`: A histogram of the time taken to aggregate resource usage for a ClusterResourceQuota.
 - `pac_quota_controller_crq_usage`: Current usage percentage per resource/namespace.
 - `pac_quota_controller_crq_total_usage`: Current aggregated usage percentage per resource.
-
-#### Example Prometheus Scrape Config
-
-```yaml
-- job_name: 'pac-quota-controller'
-  kubernetes_sd_configs:
-    - role: endpoints
-  relabel_configs:
-    - source_labels: [__meta_kubernetes_service_name, __meta_kubernetes_namespace]
-      action: keep
-      regex: pac-quota-controller-metrics-service;pac-quota-controller-system
-    - source_labels: [__meta_kubernetes_endpoint_port_name]
-      action: keep
-      regex: metrics-server
-  scheme: https
-  tls_config:
-    insecure_skip_verify: true # or use CA if available
-```
-
-You can configure the port and certificate mount path for metrics via `values.yaml`:
-
-```yaml
-metrics:
-  enable: true
-  port: 8443
-  certPath: /tmp/k8s-metrics-server/metrics-certs   # Path where the metrics cert secret is mounted
-```
-
-The controller will always look for `tls.crt` and `tls.key` in the specified directory.
 
 ### Alerting Rules
 
@@ -273,7 +242,7 @@ spec:
 
 ### Certmanager
 
-This chart supports integration with [cert-manager](https://cert-manager.io/) for automatic provisioning and management of TLS certificates for webhooks and metrics endpoints. It is **strongly recommended** to use cert-manager.
+This chart supports integration with [cert-manager](https://cert-manager.io/) for automatic provisioning and management of TLS certificates for the Webhook endpoint. It is **strongly recommended** to use cert-manager.
 
 If `certmanager.enable` is `true` (default), the chart will create `Certificate` resources, and cert-manager will be responsible for issuing and injecting the CA bundle and server certificates.
 
@@ -300,14 +269,12 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
     - `webhook.customTLS`:
         - `secretName`: Name of the Secret for the webhook server (must contain `tls.crt`, `tls.key`, `ca.crt`).
         - `caBundle`: Base64 encoded CA bundle (content of `ca.crt`) that the Kubernetes API server will use to trust your webhook.
-    - `metrics.customTLS.secretName`: Name of the Secret for the metrics server (must contain `tls.crt`, `tls.key`).
 
-| Name                        | Description                                                                                                                              | Type    | Default |
-|-----------------------------|------------------------------------------------------------------------------------------------------------------------------------------|---------|---------|
-| `certmanager.enable`        | Enable support for cert-manager. If `false`, manual certificate provisioning is required via `webhook.customTLS` and `metrics.customTLS`. | `bool`  | `true`  |
-| `webhook.customTLS.secretName` | Secret name for webhook TLS certs if `certmanager.enable` is `false`.                                                                      | `string`| `""`    |
-| `webhook.customTLS.caBundle`   | Base64 CA bundle for webhook if `certmanager.enable` is `false`.                                                                           | `string`| `""`    |
-| `metrics.customTLS.secretName` | Secret name for metrics TLS certs if `certmanager.enable` is `false` and metrics are HTTPS.                                                | `string`| `""`    |
+| Name                        | Description                                                                                                      | Type    | Default |
+|-----------------------------|------------------------------------------------------------------------------------------------------------------|---------|---------|
+| `certmanager.enable`        | Enable support for cert-manager. If `false`, manual certificate provisioning is required via `webhook.customTLS` | `bool`  | `true`  |
+| `webhook.customTLS.secretName` | Secret name for webhook TLS certs if `certmanager.enable` is `false`.                                         | `string`| `""`    |
+| `webhook.customTLS.caBundle`   | Base64 CA bundle for webhook if `certmanager.enable` is `false`.                                              | `string`| `""`    |
 
 ## Values
 
@@ -351,9 +318,7 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | events.recording.controllerComponent | string | `"pac-quota-controller-controller"` |  |
 | events.recording.webhookComponent | string | `"pac-quota-controller-webhook"` |  |
 | excludedNamespaces[0] | string | `"kube-system"` |  |
-| metrics.certPath | string | `"/tmp/k8s-metrics-server/metrics-certs"` |  |
 | metrics.enable | bool | `true` |  |
-| metrics.port | int | `8443` |  |
 | prometheus.alerting.enable | bool | `false` |  |
 | prometheus.alerting.rules.highLatency.enable | bool | `true` |  |
 | prometheus.alerting.rules.highLatency.for | string | `"10m"` |  |
@@ -364,7 +329,7 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | prometheus.alerting.rules.reconcileErrors.for | string | `"5m"` |  |
 | prometheus.alerting.rules.reconcileErrors.threshold | int | `0` |  |
 | prometheus.enable | bool | `false` |  |
-| prometheus.serviceMonitor.enable | bool | `true` |  |
+| prometheus.serviceMonitor.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |
 | webhook.dryRunOnly | bool | `false` |  |
 | webhook.enable | bool | `true` |  |
