@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -128,4 +129,17 @@ func NewDecimalQuantity(value int64, format resource.Format) resource.Quantity {
 
 func NewBinaryQuantity(value int64, format resource.Format) resource.Quantity {
 	return *resource.NewQuantity(value, format)
+}
+
+// GetBaseResourceName returns the base resource name for a given resource name.
+// For example, it maps 'requests.cpu' or 'limits.cpu' to 'cpu'.
+func GetBaseResourceName(resourceName corev1.ResourceName) corev1.ResourceName {
+	s := string(resourceName)
+	if strings.HasPrefix(s, "requests.") {
+		return corev1.ResourceName(s[len("requests."):])
+	}
+	if strings.HasPrefix(s, "limits.") {
+		return corev1.ResourceName(s[len("limits."):])
+	}
+	return resourceName
 }

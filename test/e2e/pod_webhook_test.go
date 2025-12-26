@@ -181,6 +181,39 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 				_ = k8sClient.Delete(ctx, pod)
 			})
 		})
+
+		It("should allow pod creation when init + app > limit but max(init, app) <= limit", func() {
+			// Limit is 100m.
+			// init=60m, app=70m. sum=130m (would have been denied before).
+			// max(60, 70)=70m. Within 100m limit.
+			pod, err := testutils.CreatePodWithContainers(
+				ctx, k8sClient, testNamespace, "test-pod-max-logic-"+testSuffix,
+				[]corev1.Container{
+					{
+						Name:  "main-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("70m"),
+							},
+						},
+					},
+				}, []corev1.Container{
+					{
+						Name:  "init-container",
+						Image: "nginx:latest",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU: resource.MustParse("60m"),
+							},
+						},
+					},
+				})
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() {
+				_ = k8sClient.Delete(ctx, pod)
+			})
+		})
 	})
 
 	Context("Pod Update Webhook", func() {
