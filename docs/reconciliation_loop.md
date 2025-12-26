@@ -45,7 +45,7 @@ graph TD
 1. **Fetch ClusterResourceQuota**: The controller starts by fetching the `ClusterResourceQuota` instance that triggered the reconciliation. If it's not found, the process stops, as the object was likely deleted.
 2. **Get Selected Namespaces**: It identifies all namespaces that match the `namespaceSelector` defined in the CRQ's spec.
 3. **Calculate Aggregated Usage**: The controller calculates the total usage of tracked resources (e.g., `pods`, `services`) across all selected namespaces.
-    - *Note: Currently, this is a placeholder and returns zeroed-out data. The actual calculation logic will be implemented here.*
+    - *Note: Pod resource calculation follows the Kubernetes standard: `Overhead + Max(sum(apps), max(inits))`, while excluding terminated containers.*
 4. **Update CRQ Status**: The controller updates the `.status` field of the CRQ with the newly calculated total usage and the per-namespace usage breakdown. It uses a server-side patch to prevent write conflicts.
 5. **End Reconciliation**: If all steps are successful, the reconciliation is complete. If any step fails, the request is requeued for a later attempt.
 

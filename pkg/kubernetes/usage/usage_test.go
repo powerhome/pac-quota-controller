@@ -307,4 +307,24 @@ var _ = Describe("Usage", func() {
 			Expect(result.GetTotalUsage("resource-999")).To(Equal(resource.MustParse("999m")))
 		})
 	})
+
+	Describe("GetBaseResourceName", func() {
+		It("should strip 'requests.' prefix", func() {
+			Expect(GetBaseResourceName(corev1.ResourceRequestsCPU)).To(Equal(corev1.ResourceCPU))
+			Expect(GetBaseResourceName(corev1.ResourceRequestsMemory)).To(Equal(corev1.ResourceMemory))
+			Expect(GetBaseResourceName(corev1.ResourceRequestsEphemeralStorage)).To(Equal(corev1.ResourceEphemeralStorage))
+		})
+
+		It("should strip 'limits.' prefix", func() {
+			Expect(GetBaseResourceName(corev1.ResourceLimitsCPU)).To(Equal(corev1.ResourceCPU))
+			Expect(GetBaseResourceName(corev1.ResourceLimitsMemory)).To(Equal(corev1.ResourceMemory))
+			Expect(GetBaseResourceName(corev1.ResourceLimitsEphemeralStorage)).To(Equal(corev1.ResourceEphemeralStorage))
+		})
+
+		It("should return unchanged for other resources", func() {
+			Expect(GetBaseResourceName(corev1.ResourcePods)).To(Equal(corev1.ResourcePods))
+			Expect(GetBaseResourceName(corev1.ResourceCPU)).To(Equal(corev1.ResourceCPU))
+			Expect(GetBaseResourceName("nvidia.com/gpu")).To(Equal(corev1.ResourceName("nvidia.com/gpu")))
+		})
+	})
 })

@@ -408,7 +408,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			Expect(predicate.Update(event)).To(BeTrue())
 		})
 
-		It("should not reconcile for non-terminal phase changes", func() {
+		It("should reconcile for non-terminal phase changes (e.g., Pending -> Running)", func() {
 			oldPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Generation: 1,
@@ -429,7 +429,148 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				ObjectOld: oldPod,
 				ObjectNew: newPod,
 			}
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should reconcile when a container terminates within a pod", func() {
+			oldPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  "init",
+							State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+						},
+					},
+				},
+			}
+			newPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					InitContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  "init",
+							State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+						},
+					},
+				},
+			}
+			event := event.UpdateEvent{
+				ObjectOld: oldPod,
+				ObjectNew: newPod,
+			}
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should reconcile for app container termination", func() {
+			oldPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  "app",
+							State: corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+						},
+					},
+				},
+			}
+			newPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  "app",
+							State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 0}},
+						},
+					},
+				},
+			}
+			event := event.UpdateEvent{
+				ObjectOld: oldPod,
+				ObjectNew: newPod,
+			}
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should reconcile when container count changes", func() {
+			oldPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "app1"},
+					},
+				},
+			}
+			newPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "app1"},
+						{Name: "app2"},
+					},
+				},
+			}
+			event := event.UpdateEvent{
+				ObjectOld: oldPod,
+				ObjectNew: newPod,
+			}
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should reconcile when a new container is added with different name", func() {
+			oldPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "app1"},
+					},
+				},
+			}
+			newPod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{Name: "app2"},
+					},
+				},
+			}
+			event := event.UpdateEvent{
+				ObjectOld: oldPod,
+				ObjectNew: newPod,
+			}
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should not reconcile when container is already terminated", func() {
+			pod := &corev1.Pod{
+				Status: corev1.PodStatus{
+					ContainerStatuses: []corev1.ContainerStatus{
+						{
+							Name:  "app",
+							State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{}},
+						},
+					},
+				},
+			}
+			event := event.UpdateEvent{
+				ObjectOld: pod,
+				ObjectNew: pod,
+			}
 			Expect(predicate.Update(event)).To(BeFalse())
+		})
+
+		It("should handle nil objects gracefully", func() {
+			event := event.UpdateEvent{
+				ObjectOld: nil,
+				ObjectNew: nil,
+			}
+			Expect(predicate.Update(event)).To(BeFalse())
+		})
+
+		It("should handle non-pod objects based on generation only", func() {
+			oldCm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
+			newCm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Generation: 1}}
+			event := event.UpdateEvent{
+				ObjectOld: oldCm,
+				ObjectNew: newCm,
+			}
+			Expect(predicate.Update(event)).To(BeFalse())
+
+			newCm.Generation = 2
+			event.ObjectNew = newCm
+			Expect(predicate.Update(event)).To(BeTrue())
 		})
 	})
 
