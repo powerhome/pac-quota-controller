@@ -16,6 +16,7 @@ import (
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -26,6 +27,10 @@ func TestGinWebhookServer(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Gin Webhook Server Package Suite")
 }
+
+var _ = BeforeSuite(func() {
+	pkglogger.InitTest()
+})
 
 var _ = Describe("GinWebhookServer", func() {
 	var (
@@ -45,7 +50,7 @@ var _ = Describe("GinWebhookServer", func() {
 		scheme := runtime.NewScheme()
 		_ = quotav1alpha1.AddToScheme(scheme)
 		fakeRuntimeClient = clientfake.NewClientBuilder().WithScheme(scheme).Build()
-		logger = zap.NewNop()
+		logger = pkglogger.L()
 		cfg = &config.Config{
 			WebhookPort: 8443,
 			LogLevel:    "info",
@@ -58,7 +63,7 @@ var _ = Describe("GinWebhookServer", func() {
 			Expect(server).NotTo(BeNil())
 			Expect(server.engine).NotTo(BeNil())
 			Expect(server.server).NotTo(BeNil())
-			Expect(server.log).To(Equal(logger))
+			Expect(server.logger).NotTo(BeNil())
 			Expect(server.port).To(Equal(cfg.WebhookPort))
 		})
 

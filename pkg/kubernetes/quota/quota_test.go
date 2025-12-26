@@ -6,6 +6,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,13 +26,14 @@ var _ = Describe("CRQClient", func() {
 		nsDev         *corev1.Namespace
 		nsProd        *corev1.Namespace
 		nsTest        *corev1.Namespace
+		logger        *zap.Logger
 	)
 	BeforeEach(func() {
 		ctx = context.Background() // Entry point context for all tests
 		sch = runtime.NewScheme()
 		Expect(corev1.AddToScheme(sch)).To(Succeed())
 		Expect(quotav1alpha1.AddToScheme(sch)).To(Succeed())
-
+		logger = pkglogger.L()
 		nsDev = &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{Name: "dev", Labels: map[string]string{"env": "development"}},
 		}
@@ -80,7 +83,7 @@ var _ = Describe("CRQClient", func() {
 	})
 
 	JustBeforeEach(func() {
-		crqClient = NewCRQClient(runtimeClient)
+		crqClient = NewCRQClient(runtimeClient, logger)
 	})
 
 	Describe("ListAllCRQs", func() {

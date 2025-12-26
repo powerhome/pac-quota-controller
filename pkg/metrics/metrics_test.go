@@ -22,7 +22,7 @@ var _ = Describe("MetricsServer", func() {
 			SecureMetrics: false,
 			// No certificate paths provided for this test.
 		}
-		logger := zap.NewNop()
+		logger, _ := zap.NewDevelopment()
 		ms, err := NewMetricsServer(cfg, logger)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ms).NotTo(BeNil())

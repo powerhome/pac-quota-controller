@@ -24,19 +24,22 @@ import (
 type NamespaceWebhook struct {
 	client    kubernetes.Interface
 	crqClient *quota.CRQClient
-	log       *zap.Logger
+	logger    *zap.Logger
 }
 
 // NewNamespaceWebhook creates a new NamespaceWebhook
 func NewNamespaceWebhook(
 	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
-	log *zap.Logger,
+	logger *zap.Logger,
 ) *NamespaceWebhook {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &NamespaceWebhook{
 		client:    k8sClient,
 		crqClient: crqClient,
-		log:       log,
+		logger:    logger,
 	}
 }
 
@@ -44,14 +47,14 @@ func NewNamespaceWebhook(
 func (h *NamespaceWebhook) Handle(c *gin.Context) {
 	var admissionReview admissionv1.AdmissionReview
 	if err := c.ShouldBindJSON(&admissionReview); err != nil {
-		h.log.Error("Failed to bind admission review", zap.Error(err))
+		h.logger.Error("Failed to bind admission review", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Check for malformed requests
 	if admissionReview.Request == nil {
-		h.log.Error("Malformed admission review request")
+		h.logger.Error("Malformed admission review request")
 		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
 		return
 	}
@@ -75,7 +78,7 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 		Kind:    "Namespace",
 	}
 	if admissionReview.Request.Kind != expectedGVK {
-		h.log.Error("Unexpected resource kind",
+		h.logger.Error("Unexpected resource kind",
 			zap.String("expected", fmt.Sprintf("%v", expectedGVK)),
 			zap.String("got", fmt.Sprintf("%v", admissionReview.Request.Kind)))
 		admissionReview.Response.Allowed = false
@@ -93,7 +96,7 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 		admissionReview.Request.Object.Raw,
 		&namespace,
 	); err != nil {
-		h.log.Error("Failed to decode Namespace", zap.Error(err))
+		h.logger.Error("Failed to decode Namespace", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Message: fmt.Sprintf("Failed to decode Namespace: %v", err),
@@ -112,7 +115,7 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 	case admissionv1.Update:
 		err = h.validateUpdate(c.Request.Context(), &namespace)
 	default:
-		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
+		h.logger.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Message: fmt.Sprintf("Unsupported operation: %s", admissionReview.Request.Operation),
@@ -122,7 +125,7 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 	}
 
 	if err != nil {
-		h.log.Error("Validation failed", zap.Error(err))
+		h.logger.Error("Validation failed", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusForbidden,
@@ -142,7 +145,7 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 
 //nolint:unparam // This function is now properly implemented
 func (h *NamespaceWebhook) validateCreate(ctx context.Context, namespace *corev1.Namespace) error {
-	h.log.Debug("Validating namespace for CRQ conflicts",
+	h.logger.Debug("Validating namespace for CRQ conflicts",
 		zap.String("namespace", namespace.Name))
 
 	return h.validateNamespaceAgainstCRQs(ctx, namespace)
@@ -150,7 +153,7 @@ func (h *NamespaceWebhook) validateCreate(ctx context.Context, namespace *corev1
 
 //nolint:unparam // This function is now properly implemented
 func (h *NamespaceWebhook) validateUpdate(ctx context.Context, namespace *corev1.Namespace) error {
-	h.log.Debug("Validating namespace update for CRQ conflicts",
+	h.logger.Debug("Validating namespace update for CRQ conflicts",
 		zap.String("namespace", namespace.Name))
 
 	return h.validateNamespaceAgainstCRQs(ctx, namespace)
@@ -159,7 +162,7 @@ func (h *NamespaceWebhook) validateUpdate(ctx context.Context, namespace *corev1
 // validateNamespaceAgainstCRQs checks if the namespace would conflict with existing CRQs
 func (h *NamespaceWebhook) validateNamespaceAgainstCRQs(ctx context.Context, ns *corev1.Namespace) error {
 	if h.crqClient == nil {
-		h.log.Info("No CRQ client available, skipping CRQ validation",
+		h.logger.Info("No CRQ client available, skipping CRQ validation",
 			zap.String("namespace", ns.Name))
 		return nil
 	}

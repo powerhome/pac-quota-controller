@@ -25,20 +25,23 @@ type ObjectCountWebhook struct {
 	client                kubernetes.Interface
 	objectCountCalculator *objectcount.ObjectCountCalculator
 	crqClient             *quota.CRQClient
-	log                   *zap.Logger
+	logger                *zap.Logger
 }
 
 // NewObjectCountWebhook creates a new ObjectCountWebhook
 func NewObjectCountWebhook(
 	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
-	log *zap.Logger,
+	logger *zap.Logger,
 ) *ObjectCountWebhook {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &ObjectCountWebhook{
 		client:                k8sClient,
-		objectCountCalculator: objectcount.NewObjectCountCalculator(k8sClient),
+		objectCountCalculator: objectcount.NewObjectCountCalculator(k8sClient, logger),
 		crqClient:             crqClient,
-		log:                   log,
+		logger:                logger,
 	}
 }
 
@@ -46,19 +49,19 @@ func NewObjectCountWebhook(
 func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 	var admissionReview admissionv1.AdmissionReview
 	if err := c.ShouldBindJSON(&admissionReview); err != nil {
-		h.log.Error("Failed to bind admission review", zap.Error(err))
+		h.logger.Error("Failed to bind admission review", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Check for malformed requests (like {}) that don't have proper AdmissionReview structure
 	if admissionReview.Request == nil {
-		h.log.Error("Malformed admission review request")
+		h.logger.Error("Malformed admission review request")
 		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
 		return
 	}
 	if namespace := admissionReview.Request.Namespace; namespace == "" {
-		h.log.Info("Admission review request namespace is empty")
+		h.logger.Info("Admission review request namespace is empty")
 		admissionReview.Response = &admissionv1.AdmissionResponse{
 			UID:     admissionReview.Request.UID,
 			Allowed: false,
@@ -97,7 +100,7 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 	case admissionv1.Update:
 		warnings, err = h.validateUpdate(ctx, namespace, resourceName)
 	default:
-		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
+		h.logger.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusBadRequest,
@@ -107,7 +110,7 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 		return
 	}
 	if err != nil {
-		h.log.Error("Validation failed", zap.Error(err))
+		h.logger.Error("Validation failed", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusForbidden,
@@ -148,14 +151,14 @@ func (h *ObjectCountWebhook) validateObjectOperation(
 	operation string,
 ) ([]string, error) {
 	if resourceName == "" {
-		h.log.Info("Skipping CRQ validation for nil object on " + operation)
+		h.logger.Info("Skipping CRQ validation for nil object on " + operation)
 		return nil, nil
 	}
 	err := h.validateResourceQuota(ctx, namespace, resourceName, resource.MustParse("1"))
 	if err != nil {
 		return nil, err
 	}
-	h.log.Debug("Object CRQ validation passed",
+	h.logger.Debug("Object CRQ validation passed",
 		zap.String("object", resourceName.String()),
 		zap.String("namespace", namespace),
 		zap.String("operation", operation))
@@ -177,7 +180,7 @@ func (h *ObjectCountWebhook) validateResourceQuota(
 	return validateCRQResourceQuotaWithNamespace(ctx, h.crqClient, h.client, ns, resourceName, requestedQuantity,
 		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
 			return h.calculateCurrentUsage(ctx, ns, rn)
-		}, h.log)
+		}, h.logger)
 }
 
 // calculateCurrentUsage calculates the current usage of a resource in a namespace

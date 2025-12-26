@@ -9,6 +9,7 @@ import (
 	"github.com/powerhome/pac-quota-controller/internal/controller"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 	"go.uber.org/zap"
 
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
@@ -18,7 +19,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-var setupLog = zap.NewNop()
+var logger = pkglogger.L().Named("manager")
 
 // InitScheme initializes the runtime scheme
 func InitScheme() *k8sruntime.Scheme {
@@ -63,16 +64,19 @@ func SetupManager(
 }
 
 // SetupControllers sets up all controllers with the manager
-func SetupControllers(ctx context.Context, mgr ctrl.Manager, cfg *config.Config) error {
+func SetupControllers(ctx context.Context, mgr ctrl.Manager, cfg *config.Config, loggerInstance *zap.Logger) error {
+	if loggerInstance != nil {
+		logger = loggerInstance.Named("setup")
+	}
 	// Initialize compute resource calculator
 	// Convert controller-runtime client to kubernetes clientset
 	k8sConfig := mgr.GetConfig()
 	clientset, err := kubernetes.NewForConfig(k8sConfig)
 	if err != nil {
-		setupLog.Error("unable to create kubernetes clientset", zap.Error(err))
+		logger.Error("unable to create kubernetes clientset", zap.Error(err))
 		return err
 	}
-	computeCalculator := pod.NewPodResourceCalculator(clientset)
+	computeCalculator := pod.NewPodResourceCalculator(clientset, logger)
 
 	if err := (&controller.ClusterResourceQuotaReconciler{
 		Client:                   mgr.GetClient(),
@@ -82,7 +86,7 @@ func SetupControllers(ctx context.Context, mgr ctrl.Manager, cfg *config.Config)
 		ExcludeNamespaceLabelKey: cfg.ExcludeNamespaceLabelKey,
 		ExcludedNamespaces:       cfg.ExcludedNamespaces,
 	}).SetupWithManager(ctx, cfg, mgr); err != nil {
-		setupLog.Error("unable to create controller", zap.Error(err), zap.String("controller", "ClusterResourceQuota"))
+		logger.Error("unable to create controller", zap.Error(err), zap.String("controller", "ClusterResourceQuota"))
 		return err
 	}
 
@@ -91,9 +95,9 @@ func SetupControllers(ctx context.Context, mgr ctrl.Manager, cfg *config.Config)
 
 // Start starts the manager with graceful shutdown
 func Start(mgr ctrl.Manager) {
-	setupLog.Info("starting manager")
+	logger.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error("problem running manager", zap.Error(err))
+		logger.Error("problem running manager", zap.Error(err))
 		os.Exit(1)
 	}
 }

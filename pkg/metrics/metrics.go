@@ -96,7 +96,7 @@ func RegisterWebhookMetrics() {
 // MetricsServer encapsulates the metrics HTTP server and its lifecycle.
 type MetricsServer struct {
 	cfg      *config.Config
-	log      *zap.Logger
+	logger   *zap.Logger
 	server   *http.Server
 	registry *prometheus.Registry
 }
@@ -106,11 +106,11 @@ type MetricsServer struct {
 // The metrics server requires a valid TLS certificate and key to be present at startup.
 // These are typically provisioned by cert-manager and mounted into the pod as files.
 // If the certificate or key is missing, server startup will fail with a clear error.
-func NewMetricsServer(cfg *config.Config, log *zap.Logger) (*MetricsServer, error) {
+func NewMetricsServer(cfg *config.Config, logger *zap.Logger) (*MetricsServer, error) {
 	RegisterWebhookMetrics()
 	ms := &MetricsServer{
 		cfg:      cfg,
-		log:      log,
+		logger:   logger,
 		registry: WebhookRegistry,
 	}
 	if err := ms.setupServer(); err != nil {
@@ -123,16 +123,16 @@ func NewMetricsServer(cfg *config.Config, log *zap.Logger) (*MetricsServer, erro
 func (ms *MetricsServer) Start(stopCh <-chan struct{}) {
 	go func() {
 		<-stopCh
-		ms.log.Info("Shutting down metrics server...")
+		ms.logger.Info("Shutting down metrics server...")
 		if err := ms.server.Close(); err != nil {
-			ms.log.Error("Error shutting down metrics server", zap.Error(err))
+			ms.logger.Error("Error shutting down metrics server", zap.Error(err))
 		}
 	}()
 
 	go func() {
-		ms.log.Info("Starting metrics server", zap.String("address", ms.server.Addr))
+		ms.logger.Info("Starting metrics server", zap.String("address", ms.server.Addr))
 		if err := ms.server.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
-			ms.log.Error("Metrics server failed", zap.Error(err))
+			ms.logger.Error("Metrics server failed", zap.Error(err))
 		}
 	}()
 }
@@ -150,7 +150,7 @@ func (ms *MetricsServer) setupServer() error {
 			Addr:    addr,
 			Handler: mux,
 		}
-		ms.log.Info("Standalone metrics server configured", zap.String("address", addr))
+		ms.logger.Info("Standalone metrics server configured", zap.String("address", addr))
 		return nil
 	}
 
@@ -182,6 +182,6 @@ func (ms *MetricsServer) setupServer() error {
 		TLSConfig: tlsConfig,
 	}
 
-	ms.log.Info("Standalone metrics server configured", zap.String("address", addr))
+	ms.logger.Info("Standalone metrics server configured", zap.String("address", addr))
 	return nil
 }

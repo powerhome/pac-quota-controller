@@ -80,7 +80,9 @@ func (f *fakeClient) Status() client.StatusWriter {
 
 var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 	var testQuota *quotav1alpha1.ClusterResourceQuota
+	var logger *zap.Logger
 	BeforeAll(func() {
+		logger, _ = zap.NewDevelopment()
 		testQuota = &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "test-quota",
@@ -123,7 +125,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 			reconciler := &ClusterResourceQuotaReconciler{
 				Client:                    fakeClient,
-				logger:                    zap.NewNop(),
+				logger:                    logger,
 				previousNamespacesByQuota: make(map[string][]string),
 			}
 			req := ctrl.Request{
@@ -153,7 +155,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			c := fake.NewClientBuilder().WithObjects(testNamespace).Build()
 			reconciler = &ClusterResourceQuotaReconciler{
 				Client:                    c,
-				logger:                    zap.NewNop(),
+				logger:                    logger,
 				previousNamespacesByQuota: make(map[string][]string),
 				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
@@ -593,7 +595,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 			reconciler = &ClusterResourceQuotaReconciler{
 				Client:                    basicClient,
-				logger:                    zap.NewNop(),
+				logger:                    logger,
 				previousNamespacesByQuota: make(map[string][]string),
 				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
@@ -726,7 +728,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			c := fake.NewClientBuilder().WithObjects(testNamespace).Build()
 			reconciler = &ClusterResourceQuotaReconciler{
 				Client:                    c,
-				logger:                    zap.NewNop(),
+				logger:                    logger,
 				previousNamespacesByQuota: make(map[string][]string),
 				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
@@ -809,7 +811,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			c := fake.NewClientBuilder().Build()
 			reconciler = &ClusterResourceQuotaReconciler{
 				Client:                    c,
-				logger:                    zap.NewNop(),
+				logger:                    logger,
 				previousNamespacesByQuota: make(map[string][]string),
 				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
@@ -879,7 +881,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			c := fake.NewClientBuilder().Build()
 			reconciler = &ClusterResourceQuotaReconciler{
 				Client:                    c,
-				logger:                    zap.NewNop(),
+				logger:                    logger,
 				previousNamespacesByQuota: make(map[string][]string),
 				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
@@ -912,7 +914,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			c := fake.NewClientBuilder().Build()
 			reconciler = &ClusterResourceQuotaReconciler{
 				Client:                    c,
-				logger:                    zap.NewNop(),
+				logger:                    logger,
 				previousNamespacesByQuota: make(map[string][]string),
 				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}
@@ -968,7 +970,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			c := fake.NewClientBuilder().WithObjects(testNamespace).Build()
 			reconciler = &ClusterResourceQuotaReconciler{
 				Client:                    c,
-				logger:                    zap.NewNop(),
+				logger:                    logger,
 				previousNamespacesByQuota: make(map[string][]string),
 				ExcludeNamespaceLabelKey:  "pac-quota-controller.powerapp.cloud/exclude",
 			}

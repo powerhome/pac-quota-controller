@@ -25,6 +25,7 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 )
 
 var _ = Describe("ServiceWebhook", func() {
@@ -49,14 +50,14 @@ var _ = Describe("ServiceWebhook", func() {
 		scheme := runtime.NewScheme()
 		_ = quotav1alpha1.AddToScheme(scheme)
 		_ = corev1.AddToScheme(scheme)
+		logger = pkglogger.L()
 		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
-		crqClient = quota.NewCRQClient(fakeRuntimeClient)
-		logger = zap.NewNop()
+		crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 		webhook = &ServiceWebhook{
 			client:            fakeClient,
-			serviceCalculator: *services.NewServiceResourceCalculator(fakeClient),
+			serviceCalculator: *services.NewServiceResourceCalculator(fakeClient, logger),
 			crqClient:         crqClient,
-			log:               logger,
+			logger:            logger,
 		}
 		gin.SetMode(gin.TestMode)
 		ginEngine = gin.New()
@@ -484,7 +485,7 @@ var _ = Describe("ServiceWebhook", func() {
 					WithScheme(scheme).
 					WithObjects(crq, namespace1, namespace2, namespace3, existingSvc1, existingSvc2, existingSvc3).
 					Build()
-				crqClient = quota.NewCRQClient(fakeRuntimeClient)
+				crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 
 				// Recreate webhook with updated clients
 				webhook = NewServiceWebhook(fakeClient, crqClient, logger)
@@ -550,7 +551,7 @@ var _ = Describe("ServiceWebhook", func() {
 					WithScheme(scheme).
 					WithObjects(crq, namespace1, namespace2, namespace3, existingSvc1, existingSvc2, existingSvc3).
 					Build()
-				crqClient = quota.NewCRQClient(fakeRuntimeClient)
+				crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 				webhook = NewServiceWebhook(fakeClient, crqClient, logger)
 				ginEngine = gin.New()
 				ginEngine.POST("/webhook", webhook.Handle)
@@ -632,14 +633,13 @@ var _ = Describe("ServiceWebhook", func() {
 				_ = quotav1alpha1.AddToScheme(scheme)
 				_ = corev1.AddToScheme(scheme)
 				fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).WithObjects(crq, ns1, ns2, ns3).Build()
-				crqClient = quota.NewCRQClient(fakeRuntimeClient)
-				logger = zap.NewNop()
+				crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 				ginEngine = gin.New()
 				webhook = &ServiceWebhook{
 					client:            fakeClient,
-					serviceCalculator: *services.NewServiceResourceCalculator(fakeClient),
+					serviceCalculator: *services.NewServiceResourceCalculator(fakeClient, logger),
 					crqClient:         crqClient,
-					log:               logger,
+					logger:            logger,
 				}
 				ginEngine.POST("/webhook", webhook.Handle)
 			})
@@ -807,12 +807,12 @@ var _ = Describe("ServiceWebhook", func() {
 					},
 				}
 				fakeRuntimeClient := ctrlclientfake.NewClientBuilder().WithScheme(scheme).WithObjects(crq, ns1).Build()
-				crqClient := quota.NewCRQClient(fakeRuntimeClient)
+				crqClient := quota.NewCRQClient(fakeRuntimeClient, logger)
 				webhook := &ServiceWebhook{
 					client:            fakeClient,
-					serviceCalculator: *services.NewServiceResourceCalculator(fakeClient),
+					serviceCalculator: *services.NewServiceResourceCalculator(fakeClient, logger),
 					crqClient:         crqClient,
-					log:               logger,
+					logger:            logger,
 				}
 				freshGin := gin.New()
 				freshGin.POST("/webhook", webhook.Handle)

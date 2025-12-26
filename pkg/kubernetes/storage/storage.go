@@ -9,19 +9,26 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
+	"go.uber.org/zap"
 )
 
 // StorageResourceCalculator provides methods for calculating storage resource usage
 // from PersistentVolumeClaims only. Ephemeral storage calculation is handled by the pod package.
 type StorageResourceCalculator struct {
 	usage.BaseResourceCalculator
+	logger *zap.Logger
 }
 
 // NewStorageResourceCalculator creates a new instance of StorageResourceCalculator.
-func NewStorageResourceCalculator(c kubernetes.Interface) *StorageResourceCalculator {
+func NewStorageResourceCalculator(c kubernetes.Interface, logger *zap.Logger) *StorageResourceCalculator {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &StorageResourceCalculator{
 		BaseResourceCalculator: *usage.NewBaseResourceCalculator(c),
+		logger:                 logger.Named("storage-calculator"),
 	}
 }
 
@@ -44,6 +51,14 @@ func (c *StorageResourceCalculator) CalculateStorageUsage(
 		storageRequest := getPVCStorageRequest(&pvc)
 		totalUsage.Add(storageRequest)
 	}
+
+	correlationID := quota.GetCorrelationID(ctx)
+
+	c.logger.Debug("Calculated storage usage",
+		zap.String("correlation_id", correlationID),
+		zap.String("namespace", namespace),
+		zap.String("total_usage", totalUsage.String()),
+		zap.Int("pvc_count", len(pvcList.Items)))
 
 	return *totalUsage, nil
 }
@@ -77,7 +92,13 @@ func (c *StorageResourceCalculator) CalculatePVCCount(ctx context.Context, names
 		return 0, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
 	}
 
+	correlationID := quota.GetCorrelationID(ctx)
 	count := int64(len(pvcList.Items))
+
+	c.logger.Debug("Calculated PVC count",
+		zap.String("correlation_id", correlationID),
+		zap.String("namespace", namespace),
+		zap.Int64("pvc_count", count))
 
 	return count, nil
 }
