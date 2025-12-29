@@ -3,10 +3,11 @@ package services
 import (
 	"context"
 
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -26,11 +27,18 @@ func (c *ServiceResourceCalculator) CountServices(
 // ServiceResourceCalculator provides methods for counting services and subtypes in a namespace.
 type ServiceResourceCalculator struct {
 	Client kubernetes.Interface
+	logger *zap.Logger
 }
 
 // NewServiceResourceCalculator creates a new ServiceResourceCalculator.
-func NewServiceResourceCalculator(c kubernetes.Interface) *ServiceResourceCalculator {
-	return &ServiceResourceCalculator{Client: c}
+func NewServiceResourceCalculator(c kubernetes.Interface, logger *zap.Logger) *ServiceResourceCalculator {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &ServiceResourceCalculator{
+		Client: c,
+		logger: logger.Named("service-calculator"),
+	}
 }
 
 // resourceNameToServiceType maps usage resource names to corev1.ServiceType values.
@@ -76,8 +84,13 @@ func (c *ServiceResourceCalculator) countServicesByType(
 	byType map[corev1.ServiceType]int64,
 	err error,
 ) {
+	correlationID := quota.GetCorrelationID(ctx)
 	serviceList, err := c.Client.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
+		c.logger.Error("Failed to list services",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", namespace),
+			zap.Error(err))
 		return 0, nil, err
 	}
 	byType = map[corev1.ServiceType]int64{
@@ -88,5 +101,11 @@ func (c *ServiceResourceCalculator) countServicesByType(
 		byType[svc.Spec.Type]++
 	}
 	total = int64(len(serviceList.Items))
+	c.logger.Debug("Calculated service usage",
+		zap.String("correlation_id", correlationID),
+		zap.String("namespace", namespace),
+		zap.Int64("total_services", total),
+		zap.Int64("load_balancer_count", byType[corev1.ServiceTypeLoadBalancer]),
+		zap.Int64("node_port_count", byType[corev1.ServiceTypeNodePort]))
 	return total, byType, nil
 }

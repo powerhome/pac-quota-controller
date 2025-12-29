@@ -12,7 +12,7 @@ import (
 )
 
 func TestReadinessManager(t *testing.T) {
-	logger := zap.NewNop()
+	logger, _ := zap.NewDevelopment()
 	manager := NewReadinessManager(logger)
 
 	t.Run("should be ready when no checkers", func(t *testing.T) {
@@ -58,7 +58,7 @@ func TestReadinessManager(t *testing.T) {
 }
 
 func TestReadyHandler(t *testing.T) {
-	logger := zap.NewNop()
+	logger, _ := zap.NewDevelopment()
 	manager := NewReadinessManager(logger)
 
 	// Set up Gin

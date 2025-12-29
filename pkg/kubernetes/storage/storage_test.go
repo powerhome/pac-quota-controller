@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,10 +17,14 @@ const testStorageClass = "fast-ssd"
 
 var _ = Describe("StorageResourceCalculator", func() {
 	var (
-		ctx context.Context
+		ctx    context.Context
+		logger *zap.Logger
 	)
 	BeforeEach(func() {
 		ctx = context.Background() // Entry point context for all tests
+		var err error
+		logger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
 	})
 
 	Describe("getPVCStorageRequest", func() {
@@ -348,7 +353,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 
 		BeforeEach(func() {
 			fakeClient = fake.NewSimpleClientset()
-			calculator = NewStorageResourceCalculator(fakeClient)
+			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
 		It("should calculate storage usage for namespace with PVCs", func() {
@@ -435,7 +440,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 
 		BeforeEach(func() {
 			fakeClient = fake.NewSimpleClientset()
-			calculator = NewStorageResourceCalculator(fakeClient)
+			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
 		It("should calculate storage usage for storage resources", func() {
@@ -480,7 +485,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 
 		BeforeEach(func() {
 			fakeClient = fake.NewSimpleClientset()
-			calculator = NewStorageResourceCalculator(fakeClient)
+			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
 		It("should calculate storage class usage", func() {
@@ -566,7 +571,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 
 		BeforeEach(func() {
 			fakeClient = fake.NewSimpleClientset()
-			calculator = NewStorageResourceCalculator(fakeClient)
+			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
 		It("should count PVCs for specific storage class", func() {
@@ -637,7 +642,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 
 		BeforeEach(func() {
 			fakeClient = fake.NewSimpleClientset()
-			calculator = NewStorageResourceCalculator(fakeClient)
+			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
 		It("should return zero for empty namespace", func() {
@@ -690,7 +695,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 		It("should handle client error", func() {
 			// Create a client that will fail
 			fakeClient := fake.NewSimpleClientset()
-			calculator := NewStorageResourceCalculator(fakeClient)
+			calculator := NewStorageResourceCalculator(fakeClient, logger)
 
 			_, err := calculator.CalculatePVCCount(ctx, "non-existent-namespace")
 			Expect(err).NotTo(HaveOccurred()) // Fake client doesn't actually fail

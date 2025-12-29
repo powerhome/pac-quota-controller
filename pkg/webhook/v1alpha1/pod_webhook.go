@@ -27,20 +27,23 @@ type PodWebhook struct {
 	client        kubernetes.Interface
 	podCalculator pod.PodResourceCalculator
 	crqClient     *quota.CRQClient
-	log           *zap.Logger
+	logger        *zap.Logger
 }
 
 // NewPodWebhook creates a new PodWebhook
 func NewPodWebhook(
 	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
-	log *zap.Logger,
+	logger *zap.Logger,
 ) *PodWebhook {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &PodWebhook{
 		client:        k8sClient,
-		podCalculator: *pod.NewPodResourceCalculator(k8sClient),
+		podCalculator: *pod.NewPodResourceCalculator(k8sClient, logger),
 		crqClient:     crqClient,
-		log:           log,
+		logger:        logger,
 	}
 }
 
@@ -48,20 +51,20 @@ func NewPodWebhook(
 func (h *PodWebhook) Handle(c *gin.Context) {
 	var admissionReview admissionv1.AdmissionReview
 	if err := c.ShouldBindJSON(&admissionReview); err != nil {
-		h.log.Error("Failed to bind admission review", zap.Error(err))
+		h.logger.Error("Failed to bind admission review", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Check for malformed requests
 	if admissionReview.Request == nil {
-		h.log.Error("Malformed admission review request")
+		h.logger.Error("Malformed admission review request")
 		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
 		return
 	}
 
 	if namespace := admissionReview.Request.Namespace; namespace == "" {
-		h.log.Info("Admission review request namespace is empty")
+		h.logger.Info("Admission review request namespace is empty")
 		admissionReview.Response = &admissionv1.AdmissionResponse{
 			UID:     admissionReview.Request.UID,
 			Allowed: false,
@@ -93,7 +96,7 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 		Kind:    "Pod",
 	}
 	if admissionReview.Request.Kind != expectedGVK {
-		h.log.Error("Unexpected resource type",
+		h.logger.Error("Unexpected resource type",
 			zap.String("expected", expectedGVK.Kind),
 			zap.String("got", admissionReview.Request.Kind.Kind))
 		admissionReview.Response.Allowed = false
@@ -112,7 +115,7 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 		admissionReview.Request.Object.Raw,
 		&podObj,
 	); err != nil {
-		h.log.Error("Failed to decode Pod", zap.Error(err))
+		h.logger.Error("Failed to decode Pod", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusBadRequest,
@@ -128,7 +131,7 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	warnings, err = handleWebhookOperation(
-		h.log,
+		h.logger,
 		admissionReview.Request.Operation,
 		func() ([]string, error) { return h.validateCreate(ctx, &podObj) },
 		func() ([]string, error) { return h.validateUpdate(ctx, &podObj) },
@@ -138,7 +141,7 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 	)
 
 	if err != nil {
-		h.log.Error("Validation failed", zap.Error(err))
+		h.logger.Error("Validation failed", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusForbidden,
@@ -172,7 +175,7 @@ func (h *PodWebhook) validatePodOperation(
 ) ([]string, error) {
 	// Handle nil pod case
 	if podObj == nil {
-		h.log.Info("Skipping CRQ validation for nil pod on " + string(operation))
+		h.logger.Info("Skipping CRQ validation for nil pod on " + string(operation))
 		return nil, nil
 	}
 
@@ -215,7 +218,7 @@ func (h *PodWebhook) validatePodOperation(
 		return nil, fmt.Errorf("ClusterResourceQuota pod count validation failed: %w", err)
 	}
 
-	h.log.Debug("Pod CRQ validation passed",
+	h.logger.Debug("Pod CRQ validation passed",
 		zap.String("pod", podObj.Name),
 		zap.String("namespace", podObj.Namespace),
 		zap.String("operation", string(operation)),
@@ -239,7 +242,7 @@ func (h *PodWebhook) validateResourceQuota(
 	return validateCRQResourceQuotaWithNamespace(ctx, h.crqClient, h.client, ns, resourceName, requestedQuantity,
 		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
 			return h.calculateCurrentUsage(ctx, ns, rn)
-		}, h.log)
+		}, h.logger)
 }
 
 // calculateCurrentUsage calculates the current usage of a resource in a namespace

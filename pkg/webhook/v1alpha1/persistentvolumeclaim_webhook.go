@@ -28,20 +28,23 @@ type PersistentVolumeClaimWebhook struct {
 	client            kubernetes.Interface
 	storageCalculator storage.StorageResourceCalculator
 	crqClient         *quota.CRQClient
-	log               *zap.Logger
+	logger            *zap.Logger
 }
 
 // NewPersistentVolumeClaimWebhook creates a new PersistentVolumeClaimWebhook
 func NewPersistentVolumeClaimWebhook(
 	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
-	log *zap.Logger,
+	logger *zap.Logger,
 ) *PersistentVolumeClaimWebhook {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &PersistentVolumeClaimWebhook{
 		client:            k8sClient,
-		storageCalculator: *storage.NewStorageResourceCalculator(k8sClient),
+		storageCalculator: *storage.NewStorageResourceCalculator(k8sClient, logger),
 		crqClient:         crqClient,
-		log:               log,
+		logger:            logger,
 	}
 }
 
@@ -49,20 +52,20 @@ func NewPersistentVolumeClaimWebhook(
 func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 	var admissionReview admissionv1.AdmissionReview
 	if err := c.ShouldBindJSON(&admissionReview); err != nil {
-		h.log.Error("Failed to bind admission review", zap.Error(err))
+		h.logger.Error("Failed to bind admission review", zap.Error(err))
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Check for malformed requests
 	if admissionReview.Request == nil {
-		h.log.Error("Malformed admission review request")
+		h.logger.Error("Malformed admission review request")
 		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
 		return
 	}
 
 	if namespace := admissionReview.Request.Namespace; namespace == "" {
-		h.log.Info("Admission review request namespace is empty")
+		h.logger.Info("Admission review request namespace is empty")
 		admissionReview.Response = &admissionv1.AdmissionResponse{
 			UID:     admissionReview.Request.UID,
 			Allowed: false,
@@ -94,7 +97,7 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 		Kind:    "PersistentVolumeClaim",
 	}
 	if admissionReview.Request.Kind != expectedGVK {
-		h.log.Error("Unexpected resource type",
+		h.logger.Error("Unexpected resource type",
 			zap.String("expected", expectedGVK.Kind),
 			zap.String("got", admissionReview.Request.Kind.Kind))
 		admissionReview.Response.Allowed = false
@@ -113,7 +116,7 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 		admissionReview.Request.Object.Raw,
 		&pvc,
 	); err != nil {
-		h.log.Error("Failed to decode PersistentVolumeClaim", zap.Error(err))
+		h.logger.Error("Failed to decode PersistentVolumeClaim", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusBadRequest,
@@ -134,7 +137,7 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 	case admissionv1.Update:
 		err = h.validateUpdate(ctx, &pvc)
 	default:
-		h.log.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
+		h.logger.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusBadRequest,
@@ -145,7 +148,7 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 	}
 
 	if err != nil {
-		h.log.Error("Validation failed", zap.Error(err))
+		h.logger.Error("Validation failed", zap.Error(err))
 		admissionReview.Response.Allowed = false
 		admissionReview.Response.Result = &metav1.Status{
 			Code:    http.StatusForbidden,
@@ -169,7 +172,7 @@ func (h *PersistentVolumeClaimWebhook) validateCreate(
 ) error {
 	// Check if any ClusterResourceQuota applies to this namespace and would be exceeded
 	if err := h.validateStorageQuota(ctx, pvc); err != nil {
-		h.log.Error("PVC creation blocked due to quota violation",
+		h.logger.Error("PVC creation blocked due to quota violation",
 			zap.String("pvc", pvc.GetName()),
 			zap.String("namespace", pvc.GetNamespace()),
 			zap.Error(err))
@@ -185,7 +188,7 @@ func (h *PersistentVolumeClaimWebhook) validateUpdate(
 ) error {
 	// Check if any ClusterResourceQuota applies to this namespace and would be exceeded
 	if err := h.validateStorageQuota(ctx, pvc); err != nil {
-		h.log.Error("PVC update blocked due to quota violation",
+		h.logger.Error("PVC update blocked due to quota violation",
 			zap.String("pvc", pvc.GetName()),
 			zap.String("namespace", pvc.GetNamespace()),
 			zap.Error(err))
@@ -231,14 +234,14 @@ func (h *PersistentVolumeClaimWebhook) validateStorageQuota(
 			return fmt.Errorf("ClusterResourceQuota storage class '%s' PVC count validation failed: %w", storageClass, err)
 		}
 
-		h.log.Debug("PVC storage class specific CRQ validation passed",
+		h.logger.Debug("PVC storage class specific CRQ validation passed",
 			zap.String("pvc", pvc.Name),
 			zap.String("namespace", pvc.Namespace),
 			zap.String("storageClass", storageClass),
 			zap.String("storageRequest", storageRequest.String()))
 	}
 
-	h.log.Debug("PVC CRQ validation passed",
+	h.logger.Debug("PVC CRQ validation passed",
 		zap.String("pvc", pvc.Name),
 		zap.String("namespace", pvc.Namespace),
 		zap.String("storageRequest", storageRequest.String()))
@@ -261,7 +264,7 @@ func (h *PersistentVolumeClaimWebhook) validateResourceQuota(
 	return validateCRQResourceQuotaWithNamespace(ctx, h.crqClient, h.client, ns, resourceName, requestedQuantity,
 		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
 			return h.calculateCurrentUsage(ctx, ns, rn)
-		}, h.log)
+		}, h.logger)
 }
 
 // calculateCurrentUsage calculates the current usage of a resource in a namespace

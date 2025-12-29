@@ -24,7 +24,9 @@ var _ = Describe("ClusterResourceQuota Helpers", func() {
 	)
 
 	BeforeEach(func() {
-		logger = zap.NewNop()
+		var err error
+		logger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
 		fakeRecorder = record.NewFakeRecorder(100)
 
 		// Create reconciler with mock event recorder

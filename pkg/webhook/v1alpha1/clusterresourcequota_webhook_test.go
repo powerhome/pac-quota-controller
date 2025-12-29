@@ -21,6 +21,7 @@ import (
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -41,8 +42,8 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 		scheme := runtime.NewScheme()
 		_ = quotav1alpha1.AddToScheme(scheme)
 		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
-		crqClient = quota.NewCRQClient(fakeRuntimeClient)
-		logger, _ = zap.NewDevelopment()
+		logger = pkglogger.L()
+		crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 		webhook = NewClusterResourceQuotaWebhook(fakeClient, crqClient, logger)
 	})
 
@@ -65,7 +66,7 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 		It("should create webhook with nil logger", func() {
 			webhook := NewClusterResourceQuotaWebhook(fakeClient, crqClient, nil)
 			Expect(webhook).NotTo(BeNil())
-			Expect(webhook.log).To(BeNil())
+			Expect(webhook.logger).NotTo(BeNil())
 		})
 
 		It("should create webhook with nil CRQ client", func() {

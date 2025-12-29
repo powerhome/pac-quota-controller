@@ -33,7 +33,9 @@ var _ = Describe("EventRecorder", func() {
 	)
 
 	BeforeEach(func() {
-		logger = zap.NewNop()
+		var err error
+		logger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
 		fakeRecorder = record.NewFakeRecorder(100)
 
 		scheme := runtime.NewScheme()

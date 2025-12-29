@@ -5,9 +5,14 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 )
 
 func TestQuota(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Quota Package Suite")
 }
+
+var _ = BeforeSuite(func() {
+	pkglogger.InitTest()
+})

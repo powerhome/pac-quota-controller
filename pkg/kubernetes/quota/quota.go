@@ -10,16 +10,22 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"go.uber.org/zap"
 )
 
 // CRQClient encapsulates logic for working with ClusterResourceQuotas
 type CRQClient struct {
 	Client client.Client
+	logger *zap.Logger
 }
 
-func NewCRQClient(c client.Client) *CRQClient {
+func NewCRQClient(c client.Client, logger *zap.Logger) *CRQClient {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &CRQClient{
 		Client: c,
+		logger: logger.Named("crq-client"),
 	}
 }
 
@@ -41,8 +47,14 @@ func (c *CRQClient) GetCRQByNamespace(
 	ctx context.Context,
 	ns *corev1.Namespace,
 ) (*quotav1alpha1.ClusterResourceQuota, error) {
+	correlationID := GetCorrelationID(ctx)
+
 	crqs, err := c.ListAllCRQs(ctx)
 	if err != nil {
+		c.logger.Error("Failed to list ClusterResourceQuotas",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", ns.Name),
+			zap.Error(err))
 		return nil, err
 	}
 
@@ -50,6 +62,11 @@ func (c *CRQClient) GetCRQByNamespace(
 	for _, crq := range crqs {
 		ok, err := c.NamespaceMatchesCRQ(ns, &crq)
 		if err != nil {
+			c.logger.Error("Error checking if namespace matches CRQ",
+				zap.String("correlation_id", correlationID),
+				zap.String("namespace", ns.Name),
+				zap.String("crq_name", crq.Name),
+				zap.Error(err))
 			return nil, err
 		}
 		if ok {
@@ -58,6 +75,9 @@ func (c *CRQClient) GetCRQByNamespace(
 	}
 
 	if len(matches) == 0 {
+		c.logger.Debug("No matching ClusterResourceQuota found for namespace",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", ns.Name))
 		return nil, nil // No matching CRQ found
 	}
 	if len(matches) > 1 {
@@ -65,8 +85,18 @@ func (c *CRQClient) GetCRQByNamespace(
 		for i, crq := range matches {
 			names[i] = crq.Name
 		}
-		return nil, fmt.Errorf("multiple ClusterResourceQuotas select namespace %q: %v", ns.Name, names)
+		err := fmt.Errorf("multiple ClusterResourceQuotas select namespace %q: %v", ns.Name, names)
+		c.logger.Error("Conflicting ClusterResourceQuotas found",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", ns.Name),
+			zap.Strings("matching_crqs", names),
+			zap.Error(err))
+		return nil, err
 	}
+	c.logger.Debug("Found matching ClusterResourceQuota",
+		zap.String("correlation_id", correlationID),
+		zap.String("namespace", ns.Name),
+		zap.String("crq_name", matches[0].Name))
 	return &matches[0], nil
 }
 

@@ -24,6 +24,7 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -60,11 +61,11 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 		// Create webhook with fake client
 		k8sClient = fake.NewSimpleClientset(testNamespace)
 		scheme := runtime.NewScheme()
-		logger = zap.NewNop()
+		logger = pkglogger.L()
 		_ = quotav1alpha1.AddToScheme(scheme)
 		_ = corev1.AddToScheme(scheme)
 		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
-		crqClient = quota.NewCRQClient(fakeRuntimeClient)
+		crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 		webhook = NewPersistentVolumeClaimWebhook(k8sClient, crqClient, logger)
 
 		// Setup route
@@ -77,7 +78,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(Equal(k8sClient))
-			Expect(webhook.log).To(Equal(logger))
+			Expect(webhook.logger).To(Equal(logger))
 			Expect(webhook.storageCalculator).NotTo(BeNil())
 		})
 
@@ -86,7 +87,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(BeNil())
-			Expect(webhook.log).To(Equal(logger))
+			Expect(webhook.logger).To(Equal(logger))
 		})
 
 		It("should create webhook with nil logger", func() {
@@ -94,7 +95,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(Equal(k8sClient))
-			Expect(webhook.log).To(BeNil())
+			Expect(webhook.logger).NotTo(BeNil())
 		})
 
 		It("should create webhook with nil CRQ client", func() {
@@ -399,7 +400,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				WithScheme(scheme).
 				WithObjects(crq, namespace1, namespace2).
 				Build()
-			crqClient = quota.NewCRQClient(fakeRuntimeClient)
+			crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 			webhook = NewPersistentVolumeClaimWebhook(k8sClient, crqClient, logger)
 
 			// Re-setup gin engine

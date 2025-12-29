@@ -619,20 +619,20 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, c
 		return fmt.Errorf("unable to create kubernetes clientset: %w", err)
 	}
 	if r.crqClient == nil {
-		r.crqClient = quota.NewCRQClient(r.Client)
+		r.crqClient = quota.NewCRQClient(r.Client, r.logger)
 	}
 
 	if r.StorageCalculator == nil {
-		r.StorageCalculator = storage.NewStorageResourceCalculator(clientset)
+		r.StorageCalculator = storage.NewStorageResourceCalculator(clientset, r.logger)
 	}
 	if r.ComputeCalculator == nil {
-		r.ComputeCalculator = pod.NewPodResourceCalculator(clientset)
+		r.ComputeCalculator = pod.NewPodResourceCalculator(clientset, r.logger)
 	}
 	if r.ServiceCalculator == nil {
-		r.ServiceCalculator = services.NewServiceResourceCalculator(clientset)
+		r.ServiceCalculator = services.NewServiceResourceCalculator(clientset, r.logger)
 	}
 	if r.ObjectCountCalculator == nil {
-		r.ObjectCountCalculator = objectcount.NewObjectCountCalculator(clientset)
+		r.ObjectCountCalculator = objectcount.NewObjectCountCalculator(clientset, r.logger)
 	}
 
 	// Initialize EventRecorder

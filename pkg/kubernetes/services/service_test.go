@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -16,9 +17,13 @@ var _ = Describe("ServiceResourceCalculator", func() {
 		ctx    context.Context
 		client *fake.Clientset
 		calc   *ServiceResourceCalculator
+		logger *zap.Logger
 	)
 
 	BeforeEach(func() {
+		var err error
+		logger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
 		ctx = context.Background()
 		client = fake.NewSimpleClientset(
 			&corev1.Service{
@@ -42,7 +47,7 @@ var _ = Describe("ServiceResourceCalculator", func() {
 				Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP},
 			},
 		)
-		calc = NewServiceResourceCalculator(client)
+		calc = NewServiceResourceCalculator(client, logger)
 	})
 
 	Describe("CalculateUsage", func() {

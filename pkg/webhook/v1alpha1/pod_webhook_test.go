@@ -24,6 +24,7 @@ import (
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 )
 
 var _ = Describe("PodWebhook", func() {
@@ -49,8 +50,8 @@ var _ = Describe("PodWebhook", func() {
 		_ = quotav1alpha1.AddToScheme(scheme)
 		_ = corev1.AddToScheme(scheme)
 		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
-		crqClient = quota.NewCRQClient(fakeRuntimeClient)
-		logger = zap.NewNop()
+		logger = pkglogger.L()
+		crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 		webhook = NewPodWebhook(fakeClient, crqClient, logger)
 		gin.SetMode(gin.TestMode)
 		ginEngine = gin.New()
@@ -597,7 +598,7 @@ var _ = Describe("PodWebhook", func() {
 				WithScheme(scheme).
 				WithObjects(crq, namespace1, namespace2, namespace3).
 				Build()
-			crqClient = quota.NewCRQClient(fakeRuntimeClient)
+			crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
 
 			// Recreate webhook with updated clients
 			webhook = NewPodWebhook(fakeClient, crqClient, logger)

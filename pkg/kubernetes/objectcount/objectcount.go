@@ -6,6 +6,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/client-go/kubernetes"
@@ -14,11 +16,16 @@ import (
 // ObjectCountCalculator implements usage.ResourceCalculatorInterface for generic object count resources.
 type ObjectCountCalculator struct {
 	Client kubernetes.Interface
+	logger *zap.Logger
 }
 
-func NewObjectCountCalculator(client kubernetes.Interface) *ObjectCountCalculator {
+func NewObjectCountCalculator(client kubernetes.Interface, logger *zap.Logger) *ObjectCountCalculator {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &ObjectCountCalculator{
 		Client: client,
+		logger: logger.Named("object-count-calculator"),
 	}
 }
 
@@ -27,6 +34,7 @@ func (c *ObjectCountCalculator) CalculateUsage(
 	ctx context.Context,
 	namespace string,
 	resourceName corev1.ResourceName) (resource.Quantity, error) {
+	correlationID := quota.GetCorrelationID(ctx)
 	var count int64
 	var err error
 
@@ -67,7 +75,19 @@ func (c *ObjectCountCalculator) CalculateUsage(
 	}
 
 	if err != nil {
+		c.logger.Error("Failed to calculate object count usage",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", namespace),
+			zap.String("resource", string(resourceName)),
+			zap.Error(err))
 		return resource.Quantity{}, err
 	}
+
+	c.logger.Debug("Calculated object count usage",
+		zap.String("correlation_id", correlationID),
+		zap.String("namespace", namespace),
+		zap.String("resource", string(resourceName)),
+		zap.Int64("count", count))
+
 	return *resource.NewQuantity(count, resource.DecimalSI), nil
 }

@@ -5,6 +5,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
@@ -22,9 +23,13 @@ var _ = Describe("ObjectCountCalculator", func() {
 	var (
 		ctx    context.Context
 		scheme *runtime.Scheme
+		logger *zap.Logger
 	)
 
 	BeforeEach(func() {
+		var err error
+		logger, err = zap.NewDevelopment()
+		Expect(err).ToNot(HaveOccurred())
 		ctx = context.Background()
 		scheme = runtime.NewScheme()
 		_ = corev1.AddToScheme(scheme)
@@ -38,7 +43,7 @@ var _ = Describe("ObjectCountCalculator", func() {
 		func(resourceName string, object runtime.Object, expected int64) {
 			rn := corev1.ResourceName(resourceName)
 			client := fake.NewSimpleClientset(object)
-			calc := NewObjectCountCalculator(client)
+			calc := NewObjectCountCalculator(client, logger)
 			usage, err := calc.CalculateUsage(ctx, nsName, rn)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(usage.Value()).To(Equal(expected))
@@ -110,7 +115,7 @@ var _ = Describe("ObjectCountCalculator", func() {
 		cm1 := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: ns}}
 		cm2 := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm2", Namespace: ns}}
 		client := fake.NewSimpleClientset(cm1, cm2)
-		calc := NewObjectCountCalculator(client)
+		calc := NewObjectCountCalculator(client, logger)
 		usage, err := calc.CalculateUsage(ctx, ns, rn)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(usage.Value()).To(Equal(int64(2)))
@@ -123,8 +128,8 @@ var _ = Describe("ObjectCountCalculator", func() {
 		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: ns}}
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: ns}}
 		client := fake.NewSimpleClientset(cm, secret)
-		calcCM := NewObjectCountCalculator(client)
-		calcSecret := NewObjectCountCalculator(client)
+		calcCM := NewObjectCountCalculator(client, logger)
+		calcSecret := NewObjectCountCalculator(client, logger)
 		usageCM, err := calcCM.CalculateUsage(ctx, ns, rnCM)
 		Expect(err).ToNot(HaveOccurred())
 		usageSecret, err := calcSecret.CalculateUsage(ctx, ns, rnSecret)
@@ -137,7 +142,7 @@ var _ = Describe("ObjectCountCalculator", func() {
 		ns := nsName
 		rn := corev1.ResourceName("pods")
 		client := fake.NewSimpleClientset()
-		calc := NewObjectCountCalculator(client)
+		calc := NewObjectCountCalculator(client, logger)
 		usage, err := calc.CalculateUsage(ctx, ns, rn)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(usage.Value()).To(Equal(int64(0)))
@@ -147,7 +152,7 @@ var _ = Describe("ObjectCountCalculator", func() {
 		ns := nsName
 		rn := corev1.ResourceName("nonexistent")
 		client := fake.NewSimpleClientset()
-		calc := NewObjectCountCalculator(client)
+		calc := NewObjectCountCalculator(client, logger)
 		usage, err := calc.CalculateUsage(ctx, ns, rn)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(usage.Value()).To(Equal(int64(0)))

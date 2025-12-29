@@ -24,14 +24,14 @@ type HealthStatus struct {
 // HealthManager manages health checks for the application
 type HealthManager struct {
 	checkers []HealthChecker
-	log      *zap.Logger
+	logger   *zap.Logger
 }
 
 // NewHealthManager creates a new health manager
-func NewHealthManager(log *zap.Logger) *HealthManager {
+func NewHealthManager(logger *zap.Logger) *HealthManager {
 	return &HealthManager{
 		checkers: make([]HealthChecker, 0),
-		log:      log,
+		logger:   logger,
 	}
 }
 

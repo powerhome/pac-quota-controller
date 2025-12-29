@@ -15,7 +15,7 @@ func TestMetrics(t *testing.T) {
 
 var _ = Describe("MetricsServer", func() {
 	It("should setup metrics server struct and underlying http.Server", func() {
-		logger := zap.NewNop()
+		logger, _ := zap.NewDevelopment()
 		ms, err := NewMetricsServer(logger)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ms).NotTo(BeNil())
