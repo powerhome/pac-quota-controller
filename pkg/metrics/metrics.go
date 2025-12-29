@@ -143,5 +143,4 @@ func (ms *MetricsServer) setupServer() {
 	}
 
 	ms.logger.Info("Standalone metrics server configured", zap.String("address", addr))
-	return nil
 }

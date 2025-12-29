@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -19,8 +20,10 @@ import (
 
 var _ = Describe("Pod", func() {
 	var ctx context.Context
+	var logger *zap.Logger
 	BeforeEach(func() {
 		ctx = context.Background()
+		logger, _ = zap.NewDevelopment()
 	})
 	Describe("IsTerminal", func() {
 		It("should return true for succeeded pods", func() {
@@ -76,7 +79,7 @@ var _ = Describe("Pod", func() {
 	Describe("NewPodResourceCalculator", func() {
 		It("should create a new calculator", func() {
 			fakeClient := fake.NewSimpleClientset()
-			calc := NewPodResourceCalculator(fakeClient)
+			calc := NewPodResourceCalculator(fakeClient, logger)
 			Expect(calc).NotTo(BeNil())
 			Expect(calc.Client).To(Equal(fakeClient))
 		})
@@ -454,6 +457,7 @@ var _ = Describe("Pod", func() {
 				BaseResourceCalculator: usage.BaseResourceCalculator{
 					Client: fakeClient,
 				},
+				logger: logger,
 			}
 		})
 
