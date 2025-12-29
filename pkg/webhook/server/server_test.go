@@ -2,8 +2,6 @@ package server
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -20,7 +18,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 )
 
 func TestGinWebhookServer(t *testing.T) {
@@ -141,17 +138,6 @@ var _ = Describe("GinWebhookServer", func() {
 		})
 	})
 
-	Describe("Metrics endpoint", func() {
-		It("should have metrics endpoint configured and return 200", func() {
-			Expect(server.engine).NotTo(BeNil())
-			// Set a dummy metric value so the registry is not empty
-			metrics.CRQTotalUsage.WithLabelValues("test-crq", "test-resource").Set(1)
-			w := performRequest(server.engine, "GET", "/metrics")
-			Expect(w.Code).To(Equal(200))
-			Expect(w.Body.String()).NotTo(BeEmpty())
-		})
-	})
-
 	Describe("Webhook endpoints", func() {
 		It("should have webhook routes configured", func() {
 			// Test that webhook routes are registered
@@ -160,11 +146,3 @@ var _ = Describe("GinWebhookServer", func() {
 	})
 
 })
-
-// Helper to perform HTTP requests against Gin engine
-func performRequest(r http.Handler, method, path string) *httptest.ResponseRecorder {
-	req, _ := http.NewRequest(method, path, nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-	return w
-}

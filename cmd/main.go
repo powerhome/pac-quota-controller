@@ -21,7 +21,6 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/config"
 	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 	"github.com/powerhome/pac-quota-controller/pkg/manager"
-	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 	"github.com/powerhome/pac-quota-controller/pkg/webhook"
 )
 
@@ -91,15 +90,6 @@ func main() {
 					}
 				}()
 			}
-
-			// Start metrics server if enabled
-			if cfg.MetricsEnable {
-				metricsServer := metrics.NewMetricsServer(logger)
-				stopCh := make(chan struct{})
-				metricsServer.Start(stopCh)
-				defer close(stopCh)
-			}
-
 			// Set up graceful shutdown
 			ctx, cancel := context.WithCancel(ctx)
 			defer cancel()
