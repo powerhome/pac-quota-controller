@@ -47,7 +47,7 @@ var _ = Describe("GinWebhookServer", func() {
 		fakeRuntimeClient = clientfake.NewClientBuilder().WithScheme(scheme).Build()
 		logger = zap.NewNop()
 		cfg = &config.Config{
-			WebhookPort: 8443,
+			WebhookPort: 9443,
 			LogLevel:    "info",
 		}
 		server = NewGinWebhookServer(cfg, fakeClient, fakeRuntimeClient, logger)

@@ -17,8 +17,8 @@ spec:
       name: webhook-server
     {{- end }}
     {{- if .Values.metrics.enable }}
-    - port: 8443
-      targetPort: 8443
+    - port: 8080
+      targetPort: 8080
       protocol: TCP
       name: metrics
     {{- end }}

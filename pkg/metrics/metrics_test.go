@@ -20,6 +20,6 @@ var _ = Describe("MetricsServer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ms).NotTo(BeNil())
 		Expect(ms.server).NotTo(BeNil())
-		Expect(ms.server.Addr).To(Equal(":8443"))
+		Expect(ms.server.Addr).To(Equal(":8080"))
 	})
 })

@@ -55,7 +55,7 @@ spec:
             name: webhook-server
             protocol: TCP
           {{- if .Values.metrics.enable }}
-          - containerPort: 8443
+          - containerPort: 8080
             name: metrics-server
             protocol: TCP
           {{- end }}

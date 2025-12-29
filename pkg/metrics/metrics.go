@@ -133,7 +133,7 @@ func (ms *MetricsServer) Start(stopCh <-chan struct{}) {
 // The certificate and key files must exist at startup. These are typically mounted from a cert-manager-managed Secret.
 // If the files are missing, this method returns a clear error and the server will not start.
 func (ms *MetricsServer) setupServer() {
-	addr := fmt.Sprintf(":%d", 8443)
+	addr := fmt.Sprintf(":%d", 8080)
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(ms.registry, promhttp.HandlerOpts{}))
 
