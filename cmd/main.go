@@ -94,11 +94,7 @@ func main() {
 
 			// Start metrics server if enabled
 			if cfg.MetricsEnable {
-				metricsServer, err := metrics.NewMetricsServer(logger)
-				if err != nil {
-					logger.Error("metrics server setup failed", zap.Error(err))
-					os.Exit(1)
-				}
+				metricsServer := metrics.NewMetricsServer(logger)
 				stopCh := make(chan struct{})
 				metricsServer.Start(stopCh)
 				defer close(stopCh)
