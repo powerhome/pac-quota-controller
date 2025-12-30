@@ -104,13 +104,11 @@ events:
 
 metrics:
   enable: true
-  port: 8443
-  certPath: /tmp/k8s-metrics-server/metrics-certs
 
 prometheus:
   enable: false
   serviceMonitor:
-    enable: true
+    enable: false
   alerting:
     enable: false
     rules:

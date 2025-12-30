@@ -24,11 +24,8 @@ type Config struct {
 	LeaderElectionRetryPeriod   int
 	LogFormat                   string
 	LogLevel                    string
-	MetricsCertPath             string
-	MetricsPort                 int
 	OwnNamespace                string
 	ProbeAddr                   string
-	SecureMetrics               bool
 	WebhookCertKey              string
 	WebhookCertName             string
 	WebhookCertPath             string
@@ -98,11 +95,8 @@ func InitConfig() *Config {
 		LeaderElectionRetryPeriod:   viper.GetInt("leader-election-retry-period"),
 		LogFormat:                   viper.GetString("log-format"),
 		LogLevel:                    viper.GetString("log-level"),
-		MetricsCertPath:             viper.GetString("metrics-cert-path"),
-		MetricsPort:                 viper.GetInt("metrics-port"),
 		OwnNamespace:                os.Getenv("POD_NAMESPACE"),
 		ProbeAddr:                   viper.GetString("health-probe-bind-address"),
-		SecureMetrics:               viper.GetBool("metrics-secure"),
 		WebhookCertKey:              viper.GetString("webhook-cert-key"),
 		WebhookCertName:             viper.GetString("webhook-cert-name"),
 		WebhookCertPath:             viper.GetString("webhook-cert-path"),

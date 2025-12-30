@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -141,10 +140,8 @@ func (s *GinWebhookServer) setupRoutes() {
 	s.engine.GET("/healthz", s.healthManager.HealthHandler())
 	s.engine.GET("/readyz", s.readyManager.ReadyHandler())
 
-	// Register webhook metrics with custom registry
+	// Register custom metrics into controller-runtime registry (served by manager metrics server)
 	metrics.RegisterWebhookMetrics()
-	// Expose only webhook metrics at /metrics
-	s.engine.GET("/metrics", gin.WrapH(promhttp.HandlerFor(metrics.WebhookRegistry, promhttp.HandlerOpts{})))
 
 	// Create CRQ client for custom resource operations
 	var crqClient *quota.CRQClient

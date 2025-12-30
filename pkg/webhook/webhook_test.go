@@ -37,7 +37,7 @@ var _ = Describe("Webhook", func() {
 		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
 		logger, _ = zap.NewDevelopment()
 		cfg = &config.Config{
-			WebhookPort:     8443,
+			WebhookPort:     9443,
 			WebhookCertPath: "",
 			WebhookCertName: "tls.crt",
 			WebhookCertKey:  "tls.key",
