@@ -1,6 +1,6 @@
 # To integrate with Prometheus.
 {{- if .Values.prometheus.enable }}
-{{- if .Values.serviceMonitor.enable }}
+{{- if .Values.prometheus.serviceMonitor.enable }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
