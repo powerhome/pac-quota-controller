@@ -1,5 +1,6 @@
 # To integrate with Prometheus.
 {{- if .Values.prometheus.enable }}
+{{- if .Values.prometheus.serviceMonitor.enable }}
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -16,4 +17,5 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: pac-quota-controller
+{{- end }}
 {{- end }}
