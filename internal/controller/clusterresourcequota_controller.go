@@ -215,8 +215,10 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 
 		if err := r.List(ctx, namespaceList, listOpts); err != nil {
-			r.logger.Error("Failed to list namespaces", zap.Error(err))
+			r.logger.Error("Failed to list namespaces", zap.Error(err), zap.String("crq", crq.Name))
 			r.EventRecorder.CalculationFailed(crq, err)
+			metrics.QuotaReconcileErrors.WithLabelValues(crq.Name).Inc()
+			metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "failed").Inc()
 			return ctrl.Result{}, err
 		}
 
@@ -240,7 +242,13 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	)
 
 	// Calculate aggregated resource usage across all selected namespaces
-	totalUsage, usageByNamespace := r.calculateAndAggregateUsage(ctx, crq, selectedNamespaces)
+	totalUsage, usageByNamespace, err := r.calculateAndAggregateUsage(ctx, crq, selectedNamespaces)
+	if err != nil {
+		r.logger.Error("Failed to calculate resource usage", zap.Error(err), zap.String("crq", crq.Name))
+		metrics.QuotaReconcileErrors.WithLabelValues(crq.Name).Inc()
+		metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "failed").Inc()
+		return ctrl.Result{}, err
+	}
 
 	// Check for quota warnings and violations
 	r.checkQuotaThresholds(crq, totalUsage)
@@ -291,7 +299,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	ctx context.Context,
 	crq *quotav1alpha1.ClusterResourceQuota,
 	namespaces []string,
-) (quotav1alpha1.ResourceList, []quotav1alpha1.ResourceQuotaStatusByNamespace) {
+) (quotav1alpha1.ResourceList, []quotav1alpha1.ResourceQuotaStatusByNamespace, error) {
 	r.logger.Debug("Calculating resource usage", zap.String("crq", crq.Name))
 	timer := prometheus.NewTimer(metrics.QuotaAggregationDuration.WithLabelValues(crq.Name))
 	defer timer.ObserveDuration()
@@ -326,18 +334,13 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 				if r.StorageCalculator != nil {
 					storageUsage, err := r.StorageCalculator.CalculateStorageClassUsage(ctx, nsName, storageClass)
 					if err != nil {
-						r.logger.Error("Failed to calculate storage class usage",
-							zap.Error(err),
-							zap.String("resource", string(resourceName)),
-							zap.String("namespace", nsName),
-							zap.String("storageClass", storageClass),
-						)
-						currentUsage = resource.MustParse("0")
-					} else {
-						currentUsage = storageUsage
+						return nil, nil, fmt.Errorf("failed to calculate storage class usage for %s in %s: %w",
+							storageClass, nsName, err)
 					}
+					currentUsage = storageUsage
 				} else {
-					r.logger.Error("StorageCalculator is nil", zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
+					r.logger.Error("StorageCalculator is nil",
+						zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
 					currentUsage = resource.MustParse("0")
 				}
 				nsIndex := nsIndexMap[nsName]
@@ -359,18 +362,13 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 				if r.StorageCalculator != nil {
 					count, err := r.StorageCalculator.CalculateStorageClassCount(ctx, nsName, storageClass)
 					if err != nil {
-						r.logger.Error("Failed to calculate storage class PVC count",
-							zap.Error(err),
-							zap.Stringer("resource", resourceName),
-							zap.String("namespace", nsName),
-							zap.String("storageClass", storageClass),
-						)
-						currentCount = 0
-					} else {
-						currentCount = count
+						return nil, nil, fmt.Errorf("failed to calculate storage class PVC count for %s in %s: %w",
+							storageClass, nsName, err)
 					}
+					currentCount = count
 				} else {
-					r.logger.Error("StorageCalculator is nil", zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
+					r.logger.Error("StorageCalculator is nil",
+						zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
 					currentCount = 0
 				}
 				nsIndex := nsIndexMap[nsName]
@@ -392,6 +390,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 				continue
 			}
 			var currentUsage resource.Quantity
+			var calcErr error
 
 			// Dispatch to the correct calculation function based on the resource type
 			switch resourceName {
@@ -400,22 +399,27 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 				corev1.ResourceLimitsCPU,
 				corev1.ResourceLimitsMemory,
 				corev1.ResourcePods:
-				currentUsage = r.calculateComputeResources(ctx, nsName, resourceName)
+				currentUsage, calcErr = r.calculateComputeResources(ctx, nsName, resourceName)
 			case corev1.ResourceRequestsStorage:
-				currentUsage = r.calculateStorageResources(ctx, nsName, resourceName)
+				currentUsage, calcErr = r.calculateStorageResources(ctx, nsName, resourceName)
 			case usage.ResourceServices, usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
-				currentUsage = r.calculateServiceResources(ctx, nsName, resourceName)
+				currentUsage, calcErr = r.calculateServiceResources(ctx, nsName, resourceName)
 			default:
 				// Handle extended resources (hugepages, GPUs, etc.) via compute calculator
 				// Extended resources are typically consumed by pods, so they should be calculated
 				// using the compute resource calculator
 				// TODO: fix this, temporary workaround
 				if r.isComputeResource(resourceName) {
-					currentUsage = r.calculateComputeResources(ctx, nsName, resourceName)
+					currentUsage, calcErr = r.calculateComputeResources(ctx, nsName, resourceName)
 				} else {
-					currentUsage = r.calculateObjectCount(ctx, nsName, resourceName)
+					currentUsage, calcErr = r.calculateObjectCount(ctx, nsName, resourceName)
 				}
 			}
+
+			if calcErr != nil {
+				return nil, nil, calcErr
+			}
+
 			// Update usage for the specific namespace
 			nsIndex := nsIndexMap[nsName]
 			usageByNamespace[nsIndex].Status.Used[resourceName] = currentUsage
@@ -433,11 +437,13 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	}
 
 	r.logger.Debug("Usage calculation finished.")
-	return totalUsage, usageByNamespace
+	return totalUsage, usageByNamespace, nil
 }
 
 // calculateObjectCount calculates the usage for object count quotas.
-func (r *ClusterResourceQuotaReconciler) calculateObjectCount(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+func (r *ClusterResourceQuotaReconciler) calculateObjectCount(
+	ctx context.Context, ns string, resourceName corev1.ResourceName,
+) (resource.Quantity, error) {
 	// Use the correct calculator for each resource type
 	switch resourceName {
 	case usage.ResourceConfigMaps, usage.ResourceSecrets, usage.ResourceReplicationControllers,
@@ -445,57 +451,69 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(ctx context.Contex
 		usage.ResourceJobs, usage.ResourceCronJobs, usage.ResourceHorizontalPodAutoscalers, usage.ResourceIngresses:
 		objectCount, err := r.ObjectCountCalculator.CalculateUsage(ctx, ns, resourceName)
 		if err != nil {
-			r.logger.Error("Failed to calculate object count usage", zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
-			return resource.MustParse("0")
+			r.logger.Error("Failed to calculate object count usage",
+				zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
+			return resource.Quantity{}, err
 		}
-		return objectCount
+		return objectCount, nil
 	default:
 		r.logger.Info("Unsupported object count resource for calculateObjectCount",
 			zap.Stringer("resource", resourceName),
 			zap.String("namespace", ns),
 		)
-		return resource.MustParse("0")
+		return resource.MustParse("0"), nil
 	}
 }
 
 // calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
-func (r *ClusterResourceQuotaReconciler) calculateComputeResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+func (r *ClusterResourceQuotaReconciler) calculateComputeResources(
+	ctx context.Context, ns string, resourceName corev1.ResourceName,
+) (resource.Quantity, error) {
 	computeUsage, err := r.ComputeCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
-		r.logger.Error("Failed to calculate compute resources", zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
-		return resource.MustParse("0")
+		r.logger.Error("Failed to calculate compute resources",
+			zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
+		return resource.Quantity{}, err
 	}
-	return computeUsage
+	return computeUsage, nil
 }
 
 // calculateStorageResources calculates the usage for storage resource quotas.
-func (r *ClusterResourceQuotaReconciler) calculateStorageResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+func (r *ClusterResourceQuotaReconciler) calculateStorageResources(
+	ctx context.Context, ns string, resourceName corev1.ResourceName,
+) (resource.Quantity, error) {
 	if r.StorageCalculator == nil {
-		r.logger.Error("StorageCalculator is nil", zap.String("namespace", ns), zap.Stringer("resource", resourceName))
-		return resource.MustParse("0")
+		r.logger.Error("StorageCalculator is nil",
+			zap.String("namespace", ns), zap.Stringer("resource", resourceName))
+		return resource.MustParse("0"), nil
 	}
 
 	storageUsage, err := r.StorageCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
-		r.logger.Error("Failed to calculate storage resources", zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
-		return resource.MustParse("0")
+		r.logger.Error("Failed to calculate storage resources",
+			zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
+		return resource.Quantity{}, err
 	}
-	return storageUsage
+	return storageUsage, nil
 }
 
 // calculateServiceResources calculates the usage for service resource quotas.
-func (r *ClusterResourceQuotaReconciler) calculateServiceResources(ctx context.Context, ns string, resourceName corev1.ResourceName) resource.Quantity {
+func (r *ClusterResourceQuotaReconciler) calculateServiceResources(
+	ctx context.Context, ns string, resourceName corev1.ResourceName,
+) (resource.Quantity, error) {
 	if r.ServiceCalculator == nil {
-		r.logger.Error("ServiceCalculator is nil", zap.String("namespace", ns), zap.Stringer("resource", resourceName))
-		return resource.MustParse("0")
+		r.logger.Error("ServiceCalculator is nil",
+			zap.String("namespace", ns), zap.Stringer("resource", resourceName))
+		return resource.MustParse("0"), nil
 	}
 
 	serviceUsage, err := r.ServiceCalculator.CalculateUsage(ctx, ns, resourceName)
 	if err != nil {
-		r.logger.Error("Failed to calculate service resources", zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
-		return resource.MustParse("0")
+		r.logger.Error("Failed to calculate service resources",
+			zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
+		return resource.Quantity{}, err
 	}
-	return serviceUsage
+	return serviceUsage, nil
 }
 
 // updateStatus updates the status of the ClusterResourceQuota object.

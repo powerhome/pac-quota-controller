@@ -1,11 +1,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -35,9 +32,6 @@ func main() {
 			// Initialize configuration
 			cfg := config.InitConfig()
 
-			// Initialize context
-			ctx := context.Background()
-
 			// Set up logging
 			pkglogger.Initialize(cfg)
 			logger := pkglogger.L()
@@ -49,6 +43,9 @@ func main() {
 
 			// Configure controller-runtime logger to use zap for consistent JSON formatting
 			ctrl.SetLogger(zapctrl.New(zapctrl.UseDevMode(false), zapctrl.JSONEncoder()))
+
+			// Use controller-runtime's signal handler — cancels context on SIGTERM/SIGINT
+			ctx := ctrl.SetupSignalHandler()
 
 			// Initialize scheme
 			scheme := manager.InitScheme()
@@ -76,7 +73,8 @@ func main() {
 			// Set up Gin webhook server with manager's client for CRQ operations
 			webhookServer, webhookCertWatcher := webhook.SetupGinWebhookServer(cfg, clientset, mgr.GetClient(), logger)
 
-			// Start webhook server
+			// Start webhook server and cert watcher in background goroutines.
+			// They respect context cancellation via <-ctx.Done() for graceful shutdown.
 			go func() {
 				if err := webhookServer.Start(ctx); err != nil {
 					logger.Error("webhook server failed", zap.Error(err))
@@ -90,21 +88,6 @@ func main() {
 					}
 				}()
 			}
-			// Set up graceful shutdown
-			ctx, cancel := context.WithCancel(ctx)
-			defer cancel()
-
-			// Handle shutdown signals
-			sigChan := make(chan os.Signal, 1)
-			signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-			// Start the manager
-			logger.Info("Starting controller manager")
-			go func() {
-				if err := mgr.Start(ctx); err != nil {
-					logger.Error("controller manager failed", zap.Error(err))
-				}
-			}()
 
 			// Log when manager is elected as leader
 			go func() {
@@ -112,20 +95,14 @@ func main() {
 				logger.Info("Controller manager elected as leader and ready to process resources")
 			}()
 
-			// Wait for shutdown signal
-			logger.Info("Controller manager startup completed, waiting for shutdown signal")
-			<-sigChan
-			logger.Info("Received shutdown signal, starting graceful shutdown")
-
-			// Stop certificate watchers
-			if webhookCertWatcher != nil {
-				webhookCertWatcher.Stop()
+			// Start the manager synchronously. This blocks until the context is cancelled
+			// (SIGTERM/SIGINT) or the manager fails (e.g. leader election lost).
+			// When it returns, the process exits — no zombie state possible.
+			logger.Info("Starting controller manager")
+			if err := mgr.Start(ctx); err != nil {
+				logger.Error("controller manager failed", zap.Error(err))
+				os.Exit(1)
 			}
-
-			// Stop webhook server by canceling context
-			cancel()
-
-			logger.Info("Graceful shutdown completed")
 		},
 	}
 
