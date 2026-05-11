@@ -267,6 +267,12 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 			metrics.CRQUsage.WithLabelValues(crq.Name, ns, string(resourceName)).Set(percent)
 		}
 	}
+	// Pick the first namespace (alphabetically) for routing and join all for context
+	var routingNamespace string
+	if len(selectedNamespaces) > 0 {
+		routingNamespace = selectedNamespaces[0]
+	}
+	allNamespaces := strings.Join(selectedNamespaces, ",")
 	for resourceName, total := range totalUsage {
 		hard, hasHard := crq.Spec.Hard[resourceName]
 		var percent float64
@@ -275,7 +281,9 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		} else {
 			percent = 0.0
 		}
-		metrics.CRQTotalUsage.WithLabelValues(crq.Name, string(resourceName)).Set(percent)
+		metrics.CRQTotalUsage.WithLabelValues(
+			crq.Name, string(resourceName), routingNamespace, allNamespaces,
+		).Set(percent)
 	}
 
 	// Update the status of the ClusterResourceQuota

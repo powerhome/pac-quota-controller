@@ -20,7 +20,7 @@ var (
 			Name: "pac_quota_controller_crq_total_usage",
 			Help: "Aggregated usage of a resource across all namespaces for a ClusterResourceQuota.",
 		},
-		[]string{"crq_name", "resource"},
+		[]string{"crq_name", "resource", "namespace", "namespaces"},
 	)
 	WebhookValidationCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{

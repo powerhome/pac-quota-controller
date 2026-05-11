@@ -1,6 +1,6 @@
 # pac-quota-controller
 
-![Version: 0.4.2](https://img.shields.io/badge/Version-0.4.2-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.2](https://img.shields.io/badge/AppVersion-0.4.2-informational?style=flat-square)
+![Version: 0.4.3](https://img.shields.io/badge/Version-0.4.3-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.3](https://img.shields.io/badge/AppVersion-0.4.3-informational?style=flat-square)
 
 A Helm chart for PAC Quota Controller - Managing cluster resource quotas across namespaces
 
@@ -71,7 +71,7 @@ spec:
 This chart can use container images from GitHub Container Registry:
 
 ```console
-ghcr.io/powerhome/pac-quota-controller:0.4.2
+ghcr.io/powerhome/pac-quota-controller:0.4.3
 ```
 
 You can configure which registry to use by modifying the `controllerManager.container.image.repository` value.
@@ -145,7 +145,7 @@ The controller exposes the following key metrics:
 - `pac_quota_controller_reconcile_errors_total`: Total number of reconciliation errors.
 - `pac_quota_controller_aggregation_duration_seconds`: A histogram of the time taken to aggregate resource usage for a ClusterResourceQuota.
 - `pac_quota_controller_crq_usage`: Current usage percentage per resource/namespace.
-- `pac_quota_controller_crq_total_usage`: Current aggregated usage percentage per resource.
+- `pac_quota_controller_crq_total_usage`: Current aggregated usage percentage per resource. Includes `namespace` (first selected namespace, for alert routing) and `namespaces` (comma-separated list of all selected namespaces) labels.
 
 ### Alerting Rules
 
