@@ -15,8 +15,10 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 ### `pac_quota_controller_crq_total_usage`
 
 - **Type:** Gauge
-- **Labels:** `crq_name`, `resource`
+- **Labels:** `crq_name`, `resource`, `namespace`, `namespaces`
 - **Description:** Aggregated usage of a resource across all namespaces for a ClusterResourceQuota.
+  - `namespace`: One of the selected namespaces (first alphabetically). Useful for AlertManager routing when routing is based on namespace.
+  - `namespaces`: Comma-separated list of all selected namespaces for the CRQ.
 
 ---
 
