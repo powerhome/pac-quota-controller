@@ -66,6 +66,13 @@ var (
 		},
 		[]string{"crq_name"},
 	)
+	QuotaAggregationStepDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "pac_quota_controller_aggregation_step_duration_seconds",
+			Help: "Time taken by each resource aggregation step.",
+		},
+		[]string{"crq_name", "step"},
+	)
 
 	// Use controller-runtime's global registry
 	registerOnce sync.Once
@@ -82,6 +89,7 @@ func RegisterWebhookMetrics() {
 			QuotaReconcileTotal,
 			QuotaReconcileErrors,
 			QuotaAggregationDuration,
+			QuotaAggregationStepDuration,
 		)
 	})
 }

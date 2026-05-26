@@ -25,6 +25,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,10 +70,6 @@ func (resourceUpdatePredicate) Update(e event.UpdateEvent) bool {
 		if podNew, ok := e.ObjectNew.(*corev1.Pod); ok {
 			// Trigger on terminal state transition
 			if pod.IsPodTerminal(podOld) != pod.IsPodTerminal(podNew) {
-				return true
-			}
-			// Trigger on phase change (e.g., Pending -> Running)
-			if podOld.Status.Phase != podNew.Status.Phase {
 				return true
 			}
 			// Trigger if any container (init or app) has terminated since last update
@@ -316,6 +313,20 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	usageByNamespace := make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))
 	nsIndexMap := make(map[string]int)
 
+	resourceSnapshots := map[string]namespaceResourceSnapshot{}
+	if shouldPrefetchNamespaceResources(crq.Spec.Hard) {
+		var err error
+		resourceSnapshots, err = r.prefetchNamespaceResources(ctx, namespaces)
+		if err != nil {
+			r.logger.Warn(
+				"Failed to prefetch namespace resources, falling back to calculators",
+				zap.Error(err),
+				zap.String("crq", crq.Name),
+			)
+			resourceSnapshots = nil
+		}
+	}
+
 	// Initialize maps for efficient lookup
 	for i, nsName := range namespaces {
 		usageByNamespace[i] = quotav1alpha1.ResourceQuotaStatusByNamespace{
@@ -339,9 +350,13 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage")
 			for _, nsName := range namespaces {
 				var currentUsage resource.Quantity
-				if r.StorageCalculator != nil {
+				stepStart := time.Now()
+				if snapshot, ok := resourceSnapshots[nsName]; ok {
+					currentUsage = calculateStorageClassUsageFromPVCs(snapshot.PVCs, storageClass)
+				} else if r.StorageCalculator != nil {
 					storageUsage, err := r.StorageCalculator.CalculateStorageClassUsage(ctx, nsName, storageClass)
 					if err != nil {
+						metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, "storage_class_usage").Observe(time.Since(stepStart).Seconds())
 						return nil, nil, fmt.Errorf("failed to calculate storage class usage for %s in %s: %w",
 							storageClass, nsName, err)
 					}
@@ -351,6 +366,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 						zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
 					currentUsage = resource.MustParse("0")
 				}
+				metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, "storage_class_usage").Observe(time.Since(stepStart).Seconds())
 				nsIndex := nsIndexMap[nsName]
 				usageByNamespace[nsIndex].Status.Used[resourceName] = currentUsage
 				if existing, exists := totalUsage[resourceName]; exists {
@@ -367,9 +383,13 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims")
 			for _, nsName := range namespaces {
 				var currentCount int64
-				if r.StorageCalculator != nil {
+				stepStart := time.Now()
+				if snapshot, ok := resourceSnapshots[nsName]; ok {
+					currentCount = calculateStorageClassCountFromPVCs(snapshot.PVCs, storageClass)
+				} else if r.StorageCalculator != nil {
 					count, err := r.StorageCalculator.CalculateStorageClassCount(ctx, nsName, storageClass)
 					if err != nil {
+						metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, "storage_class_count").Observe(time.Since(stepStart).Seconds())
 						return nil, nil, fmt.Errorf("failed to calculate storage class PVC count for %s in %s: %w",
 							storageClass, nsName, err)
 					}
@@ -379,6 +399,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 						zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
 					currentCount = 0
 				}
+				metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, "storage_class_count").Observe(time.Since(stepStart).Seconds())
 				nsIndex := nsIndexMap[nsName]
 				usageByNamespace[nsIndex].Status.Used[resourceName] = *resource.NewQuantity(currentCount, resource.DecimalSI)
 				if existing, exists := totalUsage[resourceName]; exists {
@@ -397,36 +418,17 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 				r.logger.Info("Skipping usage calculation for empty namespace name")
 				continue
 			}
-			var currentUsage resource.Quantity
-			var calcErr error
+			stepName := r.aggregationStepForResource(resourceName)
+			stepStart := time.Now()
 
-			// Dispatch to the correct calculation function based on the resource type
-			switch resourceName {
-			case corev1.ResourceRequestsCPU,
-				corev1.ResourceRequestsMemory,
-				corev1.ResourceLimitsCPU,
-				corev1.ResourceLimitsMemory,
-				corev1.ResourcePods:
-				currentUsage, calcErr = r.calculateComputeResources(ctx, nsName, resourceName)
-			case corev1.ResourceRequestsStorage:
-				currentUsage, calcErr = r.calculateStorageResources(ctx, nsName, resourceName)
-			case usage.ResourceServices, usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
-				currentUsage, calcErr = r.calculateServiceResources(ctx, nsName, resourceName)
-			default:
-				// Handle extended resources (hugepages, GPUs, etc.) via compute calculator
-				// Extended resources are typically consumed by pods, so they should be calculated
-				// using the compute resource calculator
-				// TODO: fix this, temporary workaround
-				if r.isComputeResource(resourceName) {
-					currentUsage, calcErr = r.calculateComputeResources(ctx, nsName, resourceName)
-				} else {
-					currentUsage, calcErr = r.calculateObjectCount(ctx, nsName, resourceName)
-				}
-			}
+			currentUsage, calcErr := r.resolveNamespaceResourceUsage(ctx, nsName, resourceName, resourceSnapshots)
 
 			if calcErr != nil {
+				metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, stepName).Observe(time.Since(stepStart).Seconds())
 				return nil, nil, calcErr
 			}
+
+			metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, stepName).Observe(time.Since(stepStart).Seconds())
 
 			// Update usage for the specific namespace
 			nsIndex := nsIndexMap[nsName]
@@ -446,6 +448,250 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 
 	r.logger.Debug("Usage calculation finished.")
 	return totalUsage, usageByNamespace, nil
+}
+
+func (r *ClusterResourceQuotaReconciler) resolveNamespaceResourceUsage(
+	ctx context.Context,
+	nsName string,
+	resourceName corev1.ResourceName,
+	resourceSnapshots map[string]namespaceResourceSnapshot,
+) (resource.Quantity, error) {
+	snapshot, hasSnapshot := resourceSnapshots[nsName]
+
+	switch resourceName {
+	case corev1.ResourceRequestsCPU,
+		corev1.ResourceRequestsMemory,
+		corev1.ResourceLimitsCPU,
+		corev1.ResourceLimitsMemory,
+		corev1.ResourcePods:
+		if hasSnapshot {
+			return calculateComputeUsageFromPods(snapshot.Pods, resourceName), nil
+		}
+		return r.calculateComputeResources(ctx, nsName, resourceName)
+	case corev1.ResourceRequestsStorage:
+		if hasSnapshot {
+			return calculateStorageUsageFromPVCs(snapshot.PVCs, resourceName), nil
+		}
+		return r.calculateStorageResources(ctx, nsName, resourceName)
+	case usage.ResourcePersistentVolumeClaims:
+		if hasSnapshot {
+			return calculatePVCCountUsageFromPVCs(snapshot.PVCs), nil
+		}
+		return r.calculateStorageResources(ctx, nsName, resourceName)
+	case usage.ResourceServices, usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
+		if hasSnapshot {
+			return calculateServiceUsageFromServices(snapshot.Services, resourceName), nil
+		}
+		return r.calculateServiceResources(ctx, nsName, resourceName)
+	default:
+		// Handle extended resources (hugepages, GPUs, etc.) via compute calculator.
+		if r.isComputeResource(resourceName) {
+			if hasSnapshot {
+				return calculateComputeUsageFromPods(snapshot.Pods, resourceName), nil
+			}
+			return r.calculateComputeResources(ctx, nsName, resourceName)
+		}
+		return r.calculateObjectCount(ctx, nsName, resourceName)
+	}
+}
+
+func shouldPrefetchNamespaceResources(hard quotav1alpha1.ResourceList) bool {
+	for resourceName := range hard {
+		resourceStr := string(resourceName)
+		switch resourceName {
+		case corev1.ResourceRequestsCPU,
+			corev1.ResourceRequestsMemory,
+			corev1.ResourceLimitsCPU,
+			corev1.ResourceLimitsMemory,
+			corev1.ResourcePods,
+			corev1.ResourceRequestsStorage,
+			usage.ResourcePersistentVolumeClaims,
+			usage.ResourceServices,
+			usage.ResourceServicesLoadBalancers,
+			usage.ResourceServicesNodePorts:
+			return true
+		}
+
+		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage") ||
+			strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims") {
+			return true
+		}
+	}
+
+	return false
+}
+
+func calculateComputeUsageFromPods(pods []corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
+	if resourceName == corev1.ResourcePods {
+		var podCount int64
+		for i := range pods {
+			if !pod.IsPodTerminal(&pods[i]) {
+				podCount++
+			}
+		}
+		return *resource.NewQuantity(podCount, resource.DecimalSI)
+	}
+
+	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
+	for i := range pods {
+		if pod.IsPodTerminal(&pods[i]) {
+			continue
+		}
+		totalUsage.Add(pod.CalculatePodUsage(&pods[i], resourceName))
+	}
+
+	return *totalUsage
+}
+
+func calculateServiceUsageFromServices(svcs []corev1.Service, resourceName corev1.ResourceName) resource.Quantity {
+	var count int64
+
+	switch resourceName {
+	case usage.ResourceServices:
+		count = int64(len(svcs))
+	case usage.ResourceServicesLoadBalancers:
+		for i := range svcs {
+			if svcs[i].Spec.Type == corev1.ServiceTypeLoadBalancer {
+				count++
+			}
+		}
+	case usage.ResourceServicesNodePorts:
+		for i := range svcs {
+			if svcs[i].Spec.Type == corev1.ServiceTypeNodePort {
+				count++
+			}
+		}
+	}
+
+	return *resource.NewQuantity(count, resource.DecimalSI)
+}
+
+func calculateStorageUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim, resourceName corev1.ResourceName) resource.Quantity {
+	if resourceName != corev1.ResourceRequestsStorage {
+		return resource.Quantity{}
+	}
+
+	totalUsage := resource.NewQuantity(0, resource.BinarySI)
+	for i := range pvcs {
+		if pvcs[i].Spec.Resources.Requests == nil {
+			continue
+		}
+		if req, ok := pvcs[i].Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+			totalUsage.Add(req)
+		}
+	}
+
+	return *totalUsage
+}
+
+func calculatePVCCountUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim) resource.Quantity {
+	return *resource.NewQuantity(int64(len(pvcs)), resource.DecimalSI)
+}
+
+func calculateStorageClassUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) resource.Quantity {
+	totalUsage := resource.NewQuantity(0, resource.BinarySI)
+
+	for i := range pvcs {
+		if !pvcMatchesStorageClass(&pvcs[i], storageClass) {
+			continue
+		}
+		if pvcs[i].Spec.Resources.Requests == nil {
+			continue
+		}
+		if req, ok := pvcs[i].Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+			totalUsage.Add(req)
+		}
+	}
+
+	return *totalUsage
+}
+
+func calculateStorageClassCountFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) int64 {
+	var count int64
+	for i := range pvcs {
+		if pvcMatchesStorageClass(&pvcs[i], storageClass) {
+			count++
+		}
+	}
+	return count
+}
+
+func pvcMatchesStorageClass(pvc *corev1.PersistentVolumeClaim, storageClass string) bool {
+	if pvc == nil {
+		return false
+	}
+	if pvc.Spec.StorageClassName != nil {
+		return *pvc.Spec.StorageClassName == storageClass
+	}
+	if pvc.Annotations == nil {
+		return false
+	}
+	return pvc.Annotations["volume.beta.kubernetes.io/storage-class"] == storageClass
+}
+
+type namespaceResourceSnapshot struct {
+	Pods     []corev1.Pod
+	Services []corev1.Service
+	PVCs     []corev1.PersistentVolumeClaim
+}
+
+func (r *ClusterResourceQuotaReconciler) prefetchNamespaceResources(
+	ctx context.Context,
+	namespaces []string,
+) (map[string]namespaceResourceSnapshot, error) {
+	if r.KubeClient == nil {
+		return nil, fmt.Errorf("kube client is nil")
+	}
+
+	snapshots := make(map[string]namespaceResourceSnapshot, len(namespaces))
+	for _, nsName := range namespaces {
+		if nsName == "" {
+			continue
+		}
+
+		pods, err := r.KubeClient.CoreV1().Pods(nsName).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to prefetch pods in namespace %s: %w", nsName, err)
+		}
+
+		svcs, err := r.KubeClient.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to prefetch services in namespace %s: %w", nsName, err)
+		}
+
+		pvcs, err := r.KubeClient.CoreV1().PersistentVolumeClaims(nsName).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to prefetch pvcs in namespace %s: %w", nsName, err)
+		}
+
+		snapshots[nsName] = namespaceResourceSnapshot{
+			Pods:     pods.Items,
+			Services: svcs.Items,
+			PVCs:     pvcs.Items,
+		}
+	}
+
+	return snapshots, nil
+}
+
+func (r *ClusterResourceQuotaReconciler) aggregationStepForResource(resourceName corev1.ResourceName) string {
+	switch resourceName {
+	case corev1.ResourceRequestsCPU,
+		corev1.ResourceRequestsMemory,
+		corev1.ResourceLimitsCPU,
+		corev1.ResourceLimitsMemory,
+		corev1.ResourcePods:
+		return "compute"
+	case corev1.ResourceRequestsStorage:
+		return "storage"
+	case usage.ResourceServices, usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
+		return "services"
+	default:
+		if r.isComputeResource(resourceName) {
+			return "compute_extended"
+		}
+		return "object_count"
+	}
 }
 
 // calculateObjectCount calculates the usage for object count quotas.
@@ -535,6 +781,10 @@ func (r *ClusterResourceQuotaReconciler) updateStatus(
 	crqCopy.Status.Total.Hard = crq.Spec.Hard
 	crqCopy.Status.Total.Used = totalUsage
 	crqCopy.Status.Namespaces = usageByNamespace
+
+	if apiequality.Semantic.DeepEqual(crq.Status, crqCopy.Status) {
+		return nil
+	}
 
 	// Use Patch instead of Update to avoid conflicts
 	return r.Status().Patch(ctx, crqCopy, client.MergeFrom(crq))

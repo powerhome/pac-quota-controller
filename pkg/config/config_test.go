@@ -29,6 +29,7 @@ var _ = Describe("InitConfig", func() {
 			"WEBHOOK_CERT_NAME",
 			"WEBHOOK_CERT_KEY",
 			"ENABLE_HTTP2",
+			"PPROF_BIND_ADDRESS",
 			"LOG_LEVEL",
 			"LOG_FORMAT",
 		}
@@ -45,6 +46,7 @@ var _ = Describe("InitConfig", func() {
 		Expect(cfg.WebhookCertName).To(Equal("tls.crt"))
 		Expect(cfg.WebhookCertKey).To(Equal("tls.key"))
 		Expect(cfg.EnableHTTP2).To(BeFalse())
+		Expect(cfg.PprofBindAddress).To(Equal("0"))
 		Expect(cfg.LogLevel).To(Equal("info"))
 		Expect(cfg.LogFormat).To(Equal("json"))
 	})
@@ -58,6 +60,7 @@ var _ = Describe("InitConfig", func() {
 			"WEBHOOK_CERT_NAME":         "cert.pem",
 			"WEBHOOK_CERT_KEY":          "key.pem",
 			"ENABLE_HTTP2":              "true",
+			"PPROF_BIND_ADDRESS":        ":6060",
 			"LOG_LEVEL":                 "debug",
 			"LOG_FORMAT":                "console",
 		}
@@ -75,6 +78,7 @@ var _ = Describe("InitConfig", func() {
 		Expect(cfg.WebhookCertName).To(Equal("cert.pem"))
 		Expect(cfg.WebhookCertKey).To(Equal("key.pem"))
 		Expect(cfg.EnableHTTP2).To(BeTrue())
+		Expect(cfg.PprofBindAddress).To(Equal(":6060"))
 		Expect(cfg.LogLevel).To(Equal("debug"))
 		Expect(cfg.LogFormat).To(Equal("console"))
 	})
@@ -112,5 +116,9 @@ var _ = Describe("SetupFlags", func() {
 		logFormat, err := flags.GetString("log-format")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(logFormat).To(Equal("json"))
+
+		pprofBindAddress, err := flags.GetString("pprof-bind-address")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pprofBindAddress).To(Equal("0"))
 	})
 })
