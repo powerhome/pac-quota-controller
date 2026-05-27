@@ -86,40 +86,19 @@ func ServiceAccountToken(
 	return result.Status.Token, nil
 }
 
-// GetMetricsOutput retrieves and returns the logs from the curl pod used to access the metrics endpoint.
-// It now returns an error if any step fails or if the metrics endpoint doesn't return 200 OK.
-func GetMetricsOutput(
+// UpdatePodStatus performs a status-only update using the provided mutator.
+func UpdatePodStatus(
 	ctx context.Context,
-	clientSet *kubernetes.Clientset,
-	namespace, curlPodName string,
-) (string, error) {
-	podLogOpts := &corev1.PodLogOptions{}
-	req := clientSet.CoreV1().Pods(namespace).GetLogs(curlPodName, podLogOpts)
-
-	logStream, err := req.Stream(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to stream logs from curl pod '%s': %w", curlPodName, err)
+	k8sClient client.Client,
+	namespace, podName string,
+	mutate func(status *corev1.PodStatus),
+) error {
+	pod := &corev1.Pod{}
+	if err := k8sClient.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
+		return err
 	}
-	defer func() {
-		if closeErr := logStream.Close(); closeErr != nil {
-			// Log or handle the close error if necessary, though we can't return it from the main function here.
-			// For now, we rely on the primary error handling of the function.
-			fmt.Printf("Warning: Failed to close log stream for pod '%s': %v\n", curlPodName, closeErr)
-		}
-	}()
-
-	buf := new(bytes.Buffer)
-	_, err = io.Copy(buf, logStream)
-	if err != nil {
-		return "", fmt.Errorf("failed to copy log stream to buffer for pod '%s': %w", curlPodName, err)
-	}
-
-	output := buf.String()
-	// Basic check for HTTP 200 OK. A more robust check might involve parsing the HTTP status line.
-	if !bytes.Contains(buf.Bytes(), []byte("HTTP/1.1 200 OK")) { // Using bytes.Contains for efficiency
-		return output, fmt.Errorf("metrics endpoint did not return 200 OK. Logs: %s", output)
-	}
-	return output, nil
+	mutate(&pod.Status)
+	return k8sClient.Status().Update(ctx, pod)
 }
 
 // GetPodLogs retrieves logs from a specified pod.
