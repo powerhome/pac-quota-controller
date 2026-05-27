@@ -10,6 +10,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 	"github.com/powerhome/pac-quota-controller/pkg/mocks"
 	"github.com/stretchr/testify/mock"
@@ -26,6 +29,11 @@ import (
 )
 
 var testOwnNamespace string = "pac-quota-controller-system"
+
+const (
+	fastStorageClass = "fast-ssd"
+	slowStorageClass = "slow-hdd"
+)
 
 // --- Fakes for error path testing ---
 // Only for forcing errors in the kubeclient
@@ -1252,8 +1260,8 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		})
 
 		It("should aggregate storage usage by storage class", func() {
-			fast := "fast-ssd"
-			slow := "slow-hdd"
+			fast := fastStorageClass
+			slow := slowStorageClass
 			pvcs := []corev1.PersistentVolumeClaim{
 				{
 					Spec: corev1.PersistentVolumeClaimSpec{
@@ -1281,38 +1289,214 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				},
 			}
 
-			usage := calculateStorageClassUsageFromPVCs(pvcs, "fast-ssd")
+			usage := calculateStorageClassUsageFromPVCs(pvcs, fastStorageClass)
 			Expect(usage.String()).To(Equal("3Gi"))
 		})
 
 		It("should count pvcs by storage class", func() {
-			fast := "fast-ssd"
-			slow := "slow-hdd"
+			fast := fastStorageClass
+			slow := slowStorageClass
 			pvcs := []corev1.PersistentVolumeClaim{
 				{Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &fast}},
 				{Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &fast}},
 				{Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &slow}},
 			}
 
-			count := calculateStorageClassCountFromPVCs(pvcs, "fast-ssd")
+			count := calculateStorageClassCountFromPVCs(pvcs, fastStorageClass)
 			Expect(count).To(Equal(int64(2)))
 		})
 
 		It("should match legacy storage class annotation", func() {
 			pvc := corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{"volume.beta.kubernetes.io/storage-class": "fast-ssd"},
+					Annotations: map[string]string{"volume.beta.kubernetes.io/storage-class": fastStorageClass},
 				},
 			}
 
-			Expect(pvcMatchesStorageClass(&pvc, "fast-ssd")).To(BeTrue())
-			Expect(pvcMatchesStorageClass(&pvc, "slow-hdd")).To(BeFalse())
+			Expect(pvcMatchesStorageClass(&pvc, fastStorageClass)).To(BeTrue())
+			Expect(pvcMatchesStorageClass(&pvc, slowStorageClass)).To(BeFalse())
 		})
 
 		It("should count pvc objects", func() {
 			pvcs := []corev1.PersistentVolumeClaim{{}, {}, {}}
 			count := calculatePVCCountUsageFromPVCs(pvcs)
 			Expect(count.String()).To(Equal("3"))
+		})
+	})
+
+	Context("Shared Aggregation Semantics", func() {
+		It("should return identical usage for prefetched and fallback paths", func() {
+			fakeKubeClient := k8sfake.NewSimpleClientset(
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod-running", Namespace: "ns-a"},
+					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:                           resource.MustParse("250m"),
+								corev1.ResourceName("nvidia.com/gpu"):        resource.MustParse("2"),
+								corev1.ResourceName("hugepages-2Mi"):         resource.MustParse("10Mi"),
+								corev1.ResourceMemory:                        resource.MustParse("512Mi"),
+								corev1.ResourceEphemeralStorage:              resource.MustParse("1Gi"),
+								corev1.ResourceName("example.com/customres"): resource.MustParse("1"),
+							},
+							Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+						},
+					}}},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod-terminal", Namespace: "ns-a"},
+					Status:     corev1.PodStatus{Phase: corev1.PodSucceeded},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+						},
+					}}},
+				},
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-cluster", Namespace: "ns-a"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-lb", Namespace: "ns-a"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}},
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-np", Namespace: "ns-a"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort}},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "pvc-1", Namespace: "ns-a"},
+					Spec:       corev1.PersistentVolumeClaimSpec{Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}}},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "pvc-2", Namespace: "ns-a"},
+					Spec:       corev1.PersistentVolumeClaimSpec{Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("512Mi")}}},
+				},
+			)
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:            fakeKubeClient,
+				ComputeCalculator:     pod.NewPodResourceCalculator(fakeKubeClient, zap.NewNop()),
+				ServiceCalculator:     services.NewServiceResourceCalculator(fakeKubeClient, zap.NewNop()),
+				StorageCalculator:     storage.NewStorageResourceCalculator(fakeKubeClient, zap.NewNop()),
+				ObjectCountCalculator: nil,
+				logger:                zap.NewNop(),
+			}
+
+			snapshots, err := reconciler.prefetchNamespaceResources(ctx, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+
+			resources := []corev1.ResourceName{
+				corev1.ResourceRequestsCPU,
+				corev1.ResourceLimitsCPU,
+				corev1.ResourcePods,
+				usage.ResourceServices,
+				usage.ResourceServicesLoadBalancers,
+				usage.ResourceServicesNodePorts,
+				corev1.ResourceRequestsStorage,
+				usage.ResourcePersistentVolumeClaims,
+				corev1.ResourceName("requests.nvidia.com/gpu"),
+			}
+
+			for i := range resources {
+				resourceName := resources[i]
+				prefetchedUsage, prefetchedErr := reconciler.resolveNamespaceResourceUsage(
+					ctx,
+					"ns-a",
+					resourceName,
+					snapshots,
+				)
+				Expect(prefetchedErr).NotTo(HaveOccurred())
+
+				fallbackUsage, fallbackErr := reconciler.resolveNamespaceResourceUsage(
+					ctx,
+					"ns-a",
+					resourceName,
+					map[string]namespaceResourceSnapshot{},
+				)
+				Expect(fallbackErr).NotTo(HaveOccurred())
+				Expect(prefetchedUsage.Cmp(fallbackUsage)).To(Equal(0), "resource=%s", resourceName)
+			}
+		})
+
+		It("should keep storage class semantics identical for prefetched and fallback paths", func() {
+			fastClass := fastStorageClass
+			slowClass := slowStorageClass
+
+			fakeKubeClient := k8sfake.NewSimpleClientset(
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "pvc-spec", Namespace: "ns-a"},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: &fastClass,
+						Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}},
+					},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "pvc-legacy-annotation",
+						Namespace:   "ns-a",
+						Annotations: map[string]string{"volume.beta.kubernetes.io/storage-class": fastClass},
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")}},
+					},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "pvc-slow", Namespace: "ns-a"},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: &slowClass,
+						Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("8Gi")}},
+					},
+				},
+			)
+
+			storageCalculator := storage.NewStorageResourceCalculator(fakeKubeClient, zap.NewNop())
+			prefetchedReconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:        fakeKubeClient,
+				StorageCalculator: storageCalculator,
+				logger:            zap.NewNop(),
+			}
+			fallbackReconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:        nil,
+				StorageCalculator: storageCalculator,
+				logger:            zap.NewNop(),
+			}
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "storageclass-test"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/requests.storage"):       resource.MustParse("100Gi"),
+						corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims"): resource.MustParse("100"),
+					},
+				},
+			}
+
+			prefetchedTotal, prefetchedByNS, prefetchedErr := prefetchedReconciler.calculateAndAggregateUsage(
+				ctx,
+				crq,
+				[]string{"ns-a"},
+			)
+			Expect(prefetchedErr).NotTo(HaveOccurred())
+
+			fallbackTotal, fallbackByNS, fallbackErr := fallbackReconciler.calculateAndAggregateUsage(
+				ctx,
+				crq,
+				[]string{"ns-a"},
+			)
+			Expect(fallbackErr).NotTo(HaveOccurred())
+
+			storageResource := corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/requests.storage")
+			countResource := corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims")
+			prefetchedStorage := prefetchedTotal[storageResource]
+			prefetchedCount := prefetchedTotal[countResource]
+			fallbackStorage := fallbackTotal[storageResource]
+			fallbackCount := fallbackTotal[countResource]
+			prefetchedStorageByNS := prefetchedByNS[0].Status.Used[storageResource]
+			prefetchedCountByNS := prefetchedByNS[0].Status.Used[countResource]
+			fallbackStorageByNS := fallbackByNS[0].Status.Used[storageResource]
+			fallbackCountByNS := fallbackByNS[0].Status.Used[countResource]
+
+			Expect(prefetchedStorage.String()).To(Equal("3Gi"))
+			Expect(prefetchedCount.String()).To(Equal("2"))
+			Expect(fallbackStorage.Cmp(prefetchedStorage)).To(Equal(0))
+			Expect(fallbackCount.Cmp(prefetchedCount)).To(Equal(0))
+			Expect(prefetchedByNS).To(HaveLen(1))
+			Expect(fallbackByNS).To(HaveLen(1))
+			Expect(fallbackStorageByNS.Cmp(prefetchedStorageByNS)).To(Equal(0))
+			Expect(fallbackCountByNS.Cmp(prefetchedCountByNS)).To(Equal(0))
 		})
 	})
 

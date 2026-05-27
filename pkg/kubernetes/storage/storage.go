@@ -45,12 +45,7 @@ func (c *StorageResourceCalculator) CalculateStorageUsage(
 		return resource.Quantity{}, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
 	}
 
-	// Sum up storage requests from all PVCs
-	totalUsage := resource.NewQuantity(0, resource.BinarySI)
-	for _, pvc := range pvcList.Items {
-		storageRequest := getPVCStorageRequest(&pvc)
-		totalUsage.Add(storageRequest)
-	}
+	totalUsage := CalculateStorageUsageFromPVCs(pvcList.Items, usage.ResourceRequestsStorage)
 
 	correlationID := quota.GetCorrelationID(ctx)
 
@@ -60,7 +55,7 @@ func (c *StorageResourceCalculator) CalculateStorageUsage(
 		zap.String("total_usage", totalUsage.String()),
 		zap.Int("pvc_count", len(pvcList.Items)))
 
-	return *totalUsage, nil
+	return totalUsage, nil
 }
 
 // CalculateUsage calculates the total usage for a specific resource in a namespace
@@ -70,13 +65,17 @@ func (c *StorageResourceCalculator) CalculateUsage(
 	// For storage resources, we only handle storage-related resources
 	switch resourceName {
 	case usage.ResourceRequestsStorage, usage.ResourceStorage:
-		return c.CalculateStorageUsage(ctx, namespace)
+		pvcList, err := c.Client.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil {
+			return resource.Quantity{}, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
+		}
+		return CalculateStorageUsageFromPVCs(pvcList.Items, usage.ResourceRequestsStorage), nil
 	case usage.ResourcePersistentVolumeClaims:
-		pvcCount, err := c.CalculatePVCCount(ctx, namespace)
+		pvcList, err := c.Client.CoreV1().PersistentVolumeClaims(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return resource.Quantity{}, err
 		}
-		return *resource.NewQuantity(pvcCount, resource.DecimalSI), nil
+		return CalculatePVCCountUsageFromPVCs(pvcList.Items), nil
 	default:
 		// Return zero for non-storage resources
 		return resource.Quantity{}, nil
@@ -93,7 +92,8 @@ func (c *StorageResourceCalculator) CalculatePVCCount(ctx context.Context, names
 	}
 
 	correlationID := quota.GetCorrelationID(ctx)
-	count := int64(len(pvcList.Items))
+	countQty := CalculatePVCCountUsageFromPVCs(pvcList.Items)
+	count := countQty.Value()
 
 	c.logger.Debug("Calculated PVC count",
 		zap.String("correlation_id", correlationID),
@@ -116,17 +116,7 @@ func (c *StorageResourceCalculator) CalculateStorageClassUsage(
 		return resource.Quantity{}, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
 	}
 
-	// Sum up storage requests from PVCs with matching storage class
-	totalUsage := resource.NewQuantity(0, resource.BinarySI)
-	for _, pvc := range pvcList.Items {
-		pvcStorageClass := getPVCStorageClass(&pvc)
-		if pvcStorageClass == storageClass {
-			storageRequest := getPVCStorageRequest(&pvc)
-			totalUsage.Add(storageRequest)
-		}
-	}
-
-	return *totalUsage, nil
+	return CalculateStorageClassUsageFromPVCs(pvcList.Items, storageClass), nil
 }
 
 // CalculateStorageClassCount calculates the count of PVCs for a specific storage class in a namespace.
@@ -142,16 +132,68 @@ func (c *StorageResourceCalculator) CalculateStorageClassCount(
 		return 0, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
 	}
 
-	// Count PVCs with matching storage class
+	return CalculateStorageClassCountFromPVCs(pvcList.Items, storageClass), nil
+}
+
+// CalculateStorageUsageFromPVCs calculates requests.storage usage from an already loaded pvc list.
+func CalculateStorageUsageFromPVCs(
+	pvcs []corev1.PersistentVolumeClaim,
+	resourceName corev1.ResourceName,
+) resource.Quantity {
+	if resourceName != corev1.ResourceRequestsStorage {
+		return resource.Quantity{}
+	}
+
+	totalUsage := resource.NewQuantity(0, resource.BinarySI)
+	for i := range pvcs {
+		totalUsage.Add(getPVCStorageRequest(&pvcs[i]))
+	}
+
+	return *totalUsage
+}
+
+// CalculatePVCCountUsageFromPVCs calculates pvc object count from an already loaded pvc list.
+func CalculatePVCCountUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim) resource.Quantity {
+	return *resource.NewQuantity(int64(len(pvcs)), resource.DecimalSI)
+}
+
+// CalculateStorageClassUsageFromPVCs calculates storage usage for a specific storage class from a loaded pvc list.
+func CalculateStorageClassUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) resource.Quantity {
+	totalUsage := resource.NewQuantity(0, resource.BinarySI)
+
+	for i := range pvcs {
+		if !PVCMatchesStorageClass(&pvcs[i], storageClass) {
+			continue
+		}
+		totalUsage.Add(getPVCStorageRequest(&pvcs[i]))
+	}
+
+	return *totalUsage
+}
+
+// CalculateStorageClassCountFromPVCs counts pvc objects for a specific storage class from a loaded pvc list.
+func CalculateStorageClassCountFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) int64 {
 	var count int64
-	for _, pvc := range pvcList.Items {
-		pvcStorageClass := getPVCStorageClass(&pvc)
-		if pvcStorageClass == storageClass {
+	for i := range pvcs {
+		if PVCMatchesStorageClass(&pvcs[i], storageClass) {
 			count++
 		}
 	}
+	return count
+}
 
-	return count, nil
+// PVCMatchesStorageClass checks storage class name using both spec field and legacy annotation.
+func PVCMatchesStorageClass(pvc *corev1.PersistentVolumeClaim, storageClass string) bool {
+	if pvc == nil {
+		return false
+	}
+	if pvc.Spec.StorageClassName != nil {
+		return *pvc.Spec.StorageClassName == storageClass
+	}
+	if pvc.Annotations == nil {
+		return false
+	}
+	return pvc.Annotations["volume.beta.kubernetes.io/storage-class"] == storageClass
 }
 
 // getPVCStorageRequest extracts the storage request from a PersistentVolumeClaim.
@@ -181,8 +223,13 @@ func getPVCStorageClass(pvc *corev1.PersistentVolumeClaim) string {
 		return ""
 	}
 
-	if pvc.Spec.StorageClassName == nil {
-		return ""
+	if pvc.Spec.StorageClassName != nil {
+		return *pvc.Spec.StorageClassName
 	}
-	return *pvc.Spec.StorageClassName
+	if pvc.Annotations != nil {
+		if storageClass, ok := pvc.Annotations["volume.beta.kubernetes.io/storage-class"]; ok {
+			return storageClass
+		}
+	}
+	return ""
 }

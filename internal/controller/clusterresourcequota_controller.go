@@ -522,111 +522,31 @@ func shouldPrefetchNamespaceResources(hard quotav1alpha1.ResourceList) bool {
 }
 
 func calculateComputeUsageFromPods(pods []corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
-	if resourceName == corev1.ResourcePods {
-		var podCount int64
-		for i := range pods {
-			if !pod.IsPodTerminal(&pods[i]) {
-				podCount++
-			}
-		}
-		return *resource.NewQuantity(podCount, resource.DecimalSI)
-	}
-
-	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
-	for i := range pods {
-		if pod.IsPodTerminal(&pods[i]) {
-			continue
-		}
-		totalUsage.Add(pod.CalculatePodUsage(&pods[i], resourceName))
-	}
-
-	return *totalUsage
+	return pod.CalculateUsageFromPods(pods, resourceName)
 }
 
 func calculateServiceUsageFromServices(svcs []corev1.Service, resourceName corev1.ResourceName) resource.Quantity {
-	var count int64
-
-	switch resourceName {
-	case usage.ResourceServices:
-		count = int64(len(svcs))
-	case usage.ResourceServicesLoadBalancers:
-		for i := range svcs {
-			if svcs[i].Spec.Type == corev1.ServiceTypeLoadBalancer {
-				count++
-			}
-		}
-	case usage.ResourceServicesNodePorts:
-		for i := range svcs {
-			if svcs[i].Spec.Type == corev1.ServiceTypeNodePort {
-				count++
-			}
-		}
-	}
-
-	return *resource.NewQuantity(count, resource.DecimalSI)
+	return services.CalculateUsageFromServices(svcs, resourceName)
 }
 
 func calculateStorageUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim, resourceName corev1.ResourceName) resource.Quantity {
-	if resourceName != corev1.ResourceRequestsStorage {
-		return resource.Quantity{}
-	}
-
-	totalUsage := resource.NewQuantity(0, resource.BinarySI)
-	for i := range pvcs {
-		if pvcs[i].Spec.Resources.Requests == nil {
-			continue
-		}
-		if req, ok := pvcs[i].Spec.Resources.Requests[corev1.ResourceStorage]; ok {
-			totalUsage.Add(req)
-		}
-	}
-
-	return *totalUsage
+	return storage.CalculateStorageUsageFromPVCs(pvcs, resourceName)
 }
 
 func calculatePVCCountUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim) resource.Quantity {
-	return *resource.NewQuantity(int64(len(pvcs)), resource.DecimalSI)
+	return storage.CalculatePVCCountUsageFromPVCs(pvcs)
 }
 
 func calculateStorageClassUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) resource.Quantity {
-	totalUsage := resource.NewQuantity(0, resource.BinarySI)
-
-	for i := range pvcs {
-		if !pvcMatchesStorageClass(&pvcs[i], storageClass) {
-			continue
-		}
-		if pvcs[i].Spec.Resources.Requests == nil {
-			continue
-		}
-		if req, ok := pvcs[i].Spec.Resources.Requests[corev1.ResourceStorage]; ok {
-			totalUsage.Add(req)
-		}
-	}
-
-	return *totalUsage
+	return storage.CalculateStorageClassUsageFromPVCs(pvcs, storageClass)
 }
 
 func calculateStorageClassCountFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) int64 {
-	var count int64
-	for i := range pvcs {
-		if pvcMatchesStorageClass(&pvcs[i], storageClass) {
-			count++
-		}
-	}
-	return count
+	return storage.CalculateStorageClassCountFromPVCs(pvcs, storageClass)
 }
 
 func pvcMatchesStorageClass(pvc *corev1.PersistentVolumeClaim, storageClass string) bool {
-	if pvc == nil {
-		return false
-	}
-	if pvc.Spec.StorageClassName != nil {
-		return *pvc.Spec.StorageClassName == storageClass
-	}
-	if pvc.Annotations == nil {
-		return false
-	}
-	return pvc.Annotations["volume.beta.kubernetes.io/storage-class"] == storageClass
+	return storage.PVCMatchesStorageClass(pvc, storageClass)
 }
 
 type namespaceResourceSnapshot struct {

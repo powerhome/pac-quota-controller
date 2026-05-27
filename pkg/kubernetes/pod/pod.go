@@ -105,6 +105,30 @@ func CalculatePodUsage(pod *corev1.Pod, resourceName corev1.ResourceName) resour
 	return *totalUsage
 }
 
+// CalculateUsageFromPods calculates quota usage from an already loaded pod list.
+// It is shared by both prefetched and on-demand code paths to keep semantics aligned.
+func CalculateUsageFromPods(pods []corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
+	if resourceName == usage.ResourcePods {
+		var podCount int64
+		for i := range pods {
+			if !IsPodTerminal(&pods[i]) {
+				podCount++
+			}
+		}
+		return *resource.NewQuantity(podCount, resource.DecimalSI)
+	}
+
+	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
+	for i := range pods {
+		if IsPodTerminal(&pods[i]) {
+			continue
+		}
+		totalUsage.Add(CalculatePodUsage(&pods[i], resourceName))
+	}
+
+	return *totalUsage
+}
+
 // getContainerResourceUsage extracts the specified resource usage from a container
 func getContainerResourceUsage(container corev1.Container, resourceName corev1.ResourceName) resource.Quantity {
 	switch resourceName {
@@ -158,18 +182,6 @@ func (c *PodResourceCalculator) CalculateUsage(
 	namespace string,
 	resourceName corev1.ResourceName,
 ) (resource.Quantity, error) {
-	// Handle pod count separately
-	if resourceName == usage.ResourcePods {
-		podCount, err := c.CalculatePodCount(ctx, namespace)
-		if err != nil {
-			return resource.Quantity{}, err
-		}
-		return *resource.NewQuantity(
-			podCount,
-			resource.DecimalSI,
-		), nil
-	}
-
 	correlationID := quota.GetCorrelationID(ctx)
 
 	podList, err := c.Client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
@@ -181,19 +193,7 @@ func (c *PodResourceCalculator) CalculateUsage(
 		return resource.Quantity{}, err
 	}
 
-	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
-
-	for i := range podList.Items {
-		pod := &podList.Items[i]
-
-		// Skip terminal pods (Succeeded or Failed) as they don't consume resources
-		if IsPodTerminal(pod) {
-			continue
-		}
-
-		podUsage := CalculatePodUsage(pod, resourceName)
-		totalUsage.Add(podUsage)
-	}
+	totalUsage := CalculateUsageFromPods(podList.Items, resourceName)
 
 	c.logger.Debug("Calculated compute usage",
 		zap.String("correlation_id", correlationID),
@@ -201,7 +201,7 @@ func (c *PodResourceCalculator) CalculateUsage(
 		zap.String("resource", string(resourceName)),
 		zap.String("total_usage", totalUsage.String()),
 		zap.Int("pod_count", len(podList.Items)))
-	return *totalUsage, nil
+	return totalUsage, nil
 }
 
 // CalculatePodCount calculates the number of non-terminal pods in a namespace
@@ -217,17 +217,8 @@ func (c *PodResourceCalculator) CalculatePodCount(ctx context.Context, namespace
 		return 0, err
 	}
 
-	count := int64(0)
-	for i := range podList.Items {
-		pod := &podList.Items[i]
-
-		// Skip terminal pods (Succeeded or Failed) as they don't consume resources
-		if IsPodTerminal(pod) {
-			continue
-		}
-
-		count++
-	}
+	countQty := CalculateUsageFromPods(podList.Items, usage.ResourcePods)
+	count := countQty.Value()
 
 	c.logger.Debug("Calculated pod count",
 		zap.String("correlation_id", correlationID),

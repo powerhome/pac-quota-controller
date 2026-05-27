@@ -561,6 +561,32 @@ var _ = Describe("StorageResourceCalculator", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(usage.Value()).To(Equal(int64(0)))
 		})
+
+		It("should include legacy storage class annotation", func() {
+			storageClass := testStorageClass
+			pvc := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "pvc-legacy",
+					Namespace:   "test-ns",
+					Annotations: map[string]string{"volume.beta.kubernetes.io/storage-class": storageClass},
+				},
+				Spec: corev1.PersistentVolumeClaimSpec{
+					Resources: corev1.VolumeResourceRequirements{
+						Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("7Gi")},
+					},
+				},
+			}
+
+			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
+				ctx, pvc, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			usage, err := calculator.CalculateStorageClassUsage(ctx, "test-ns", storageClass)
+
+			Expect(err).NotTo(HaveOccurred())
+			expected := resource.MustParse("7Gi")
+			Expect(usage.Equal(expected)).To(BeTrue())
+		})
 	})
 
 	Describe("StorageResourceCalculator CalculateStorageClassCount", func() {
@@ -575,7 +601,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 		})
 
 		It("should count PVCs for specific storage class", func() {
-			storageClass := "fast-ssd"
+			storageClass := testStorageClass
 			pvc1 := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "pvc1",
@@ -610,7 +636,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 		})
 
 		It("should return zero for non-matching storage class", func() {
-			storageClass := "fast-ssd"
+			storageClass := testStorageClass
 			otherStorageClass := "slow-hdd"
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -630,6 +656,26 @@ var _ = Describe("StorageResourceCalculator", func() {
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(count).To(Equal(int64(0)))
+		})
+
+		It("should count legacy storage class annotation", func() {
+			storageClass := testStorageClass
+			pvc := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "pvc-legacy",
+					Namespace:   "test-ns",
+					Annotations: map[string]string{"volume.beta.kubernetes.io/storage-class": storageClass},
+				},
+			}
+
+			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
+				ctx, pvc, metav1.CreateOptions{})
+			Expect(err).NotTo(HaveOccurred())
+
+			count, err := calculator.CalculateStorageClassCount(ctx, "test-ns", storageClass)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(count).To(Equal(int64(1)))
 		})
 	})
 
