@@ -20,8 +20,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -278,6 +280,111 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			requests := reconciler.findQuotasForObject(ctx, testNamespace)
 			Expect(requests).To(HaveLen(1))
 			Expect(requests[0].Name).To(Equal(testQuota.Name))
+		})
+
+		It("should mark services dirty when service object maps to a quota", func() {
+			serviceObj := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "svc-a",
+					Namespace: testNamespace.Name,
+				},
+			}
+
+			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(testQuota, nil).Maybe()
+			reconciler.crqClient = mockCRQClient
+			reconciler.usageStateStore = newUsageStateStore()
+
+			requests := reconciler.findQuotasForObject(ctx, serviceObj)
+			Expect(requests).To(HaveLen(1))
+			dirty, found := reconciler.usageStateStore.getNamespaceDirtyState(testQuota.Name, testNamespace.Name)
+			Expect(found).To(BeTrue())
+			Expect(dirty.Services).To(BeTrue())
+			Expect(dirty.Compute).To(BeFalse())
+			Expect(dirty.Storage).To(BeFalse())
+			Expect(dirty.ObjectCount).To(BeFalse())
+		})
+
+		It("should not mark services dirty for namespace object mapping", func() {
+			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(testQuota, nil).Maybe()
+			reconciler.crqClient = mockCRQClient
+			reconciler.usageStateStore = newUsageStateStore()
+
+			requests := reconciler.findQuotasForObject(ctx, testNamespace)
+			Expect(requests).To(HaveLen(1))
+			dirty, found := reconciler.usageStateStore.getNamespaceDirtyState(testQuota.Name, testNamespace.Name)
+			Expect(found).To(BeFalse())
+			Expect(dirty).To(Equal(namespaceUsageDirtyState{}))
+		})
+
+		It("should mark compute dirty when pod object maps to a quota", func() {
+			podObj := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pod-a",
+					Namespace: testNamespace.Name,
+				},
+			}
+
+			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(testQuota, nil).Maybe()
+			reconciler.crqClient = mockCRQClient
+			reconciler.usageStateStore = newUsageStateStore()
+
+			requests := reconciler.findQuotasForObject(ctx, podObj)
+			Expect(requests).To(HaveLen(1))
+			dirty, found := reconciler.usageStateStore.getNamespaceDirtyState(testQuota.Name, testNamespace.Name)
+			Expect(found).To(BeTrue())
+			Expect(dirty.Compute).To(BeTrue())
+			Expect(dirty.Services).To(BeFalse())
+			Expect(dirty.Storage).To(BeFalse())
+			Expect(dirty.ObjectCount).To(BeFalse())
+		})
+
+		It("should mark storage dirty when pvc object maps to a quota", func() {
+			pvcObj := &corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pvc-a",
+					Namespace: testNamespace.Name,
+				},
+			}
+
+			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(testQuota, nil).Maybe()
+			reconciler.crqClient = mockCRQClient
+			reconciler.usageStateStore = newUsageStateStore()
+
+			requests := reconciler.findQuotasForObject(ctx, pvcObj)
+			Expect(requests).To(HaveLen(1))
+			dirty, found := reconciler.usageStateStore.getNamespaceDirtyState(testQuota.Name, testNamespace.Name)
+			Expect(found).To(BeTrue())
+			Expect(dirty.Storage).To(BeTrue())
+			Expect(dirty.Compute).To(BeFalse())
+			Expect(dirty.Services).To(BeFalse())
+			Expect(dirty.ObjectCount).To(BeFalse())
+		})
+
+		It("should mark object count dirty when configmap object maps to a quota", func() {
+			cmObj := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cm-a",
+					Namespace: testNamespace.Name,
+				},
+			}
+
+			mockCRQClient := mocks.NewMockCRQClientInterface(GinkgoT())
+			mockCRQClient.On("GetCRQByNamespace", mock.Anything, mock.AnythingOfType("*v1.Namespace")).Return(testQuota, nil).Maybe()
+			reconciler.crqClient = mockCRQClient
+			reconciler.usageStateStore = newUsageStateStore()
+
+			requests := reconciler.findQuotasForObject(ctx, cmObj)
+			Expect(requests).To(HaveLen(1))
+			dirty, found := reconciler.usageStateStore.getNamespaceDirtyState(testQuota.Name, testNamespace.Name)
+			Expect(found).To(BeTrue())
+			Expect(dirty.ObjectCount).To(BeTrue())
+			Expect(dirty.Compute).To(BeFalse())
+			Expect(dirty.Services).To(BeFalse())
+			Expect(dirty.Storage).To(BeFalse())
 		})
 
 		It("should not select namespaces that do not match the selector", func() {
@@ -1053,6 +1160,146 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		})
 	})
 
+	Context("Usage State Scaffolding", func() {
+		It("should initialize an empty usage state store", func() {
+			store := newUsageStateStore()
+			Expect(store).NotTo(BeNil())
+			Expect(store.quotas).To(BeEmpty())
+		})
+
+		It("should create quota and namespace dirty entries with zero values", func() {
+			store := newUsageStateStore()
+
+			state := store.ensureQuotaNamespaces("test-crq", []string{"ns-a", "ns-b", ""})
+			Expect(state).NotTo(BeNil())
+			Expect(store.quotas).To(HaveKey("test-crq"))
+			Expect(state.namespaceDirty).To(HaveLen(2))
+			Expect(state.namespaceDirty).To(HaveKey("ns-a"))
+			Expect(state.namespaceDirty).To(HaveKey("ns-b"))
+
+			Expect(state.namespaceDirty["ns-a"]).To(Equal(namespaceUsageDirtyState{}))
+			Expect(state.namespaceDirty["ns-b"]).To(Equal(namespaceUsageDirtyState{}))
+		})
+
+		It("should preserve existing namespace dirty state when ensuring again", func() {
+			store := newUsageStateStore()
+
+			state := store.ensureQuotaNamespaces("test-crq", []string{"ns-a"})
+			state.namespaceDirty["ns-a"] = namespaceUsageDirtyState{Compute: true}
+
+			state = store.ensureQuotaNamespaces("test-crq", []string{"ns-a", "ns-b"})
+			Expect(state.namespaceDirty["ns-a"].Compute).To(BeTrue())
+			Expect(state.namespaceDirty).To(HaveKey("ns-b"))
+		})
+
+		It("should mark only services as dirty for an existing namespace", func() {
+			store := newUsageStateStore()
+			store.ensureQuotaNamespaces("test-crq", []string{"ns-a"})
+
+			store.markNamespaceServicesDirty("test-crq", "ns-a")
+
+			dirty, found := store.getNamespaceDirtyState("test-crq", "ns-a")
+			Expect(found).To(BeTrue())
+			Expect(dirty.Services).To(BeTrue())
+			Expect(dirty.Compute).To(BeFalse())
+			Expect(dirty.Storage).To(BeFalse())
+			Expect(dirty.ObjectCount).To(BeFalse())
+		})
+
+		It("should create quota and namespace entries when marking services dirty", func() {
+			store := newUsageStateStore()
+
+			store.markNamespaceServicesDirty("test-crq", "ns-new")
+
+			dirty, found := store.getNamespaceDirtyState("test-crq", "ns-new")
+			Expect(found).To(BeTrue())
+			Expect(dirty.Services).To(BeTrue())
+		})
+
+		It("should ignore empty quota or namespace when marking services dirty", func() {
+			store := newUsageStateStore()
+
+			store.markNamespaceServicesDirty("", "ns-a")
+			store.markNamespaceServicesDirty("test-crq", "")
+
+			Expect(store.quotas).To(BeEmpty())
+		})
+
+		It("should consume and clear services dirty flag", func() {
+			store := newUsageStateStore()
+			store.markNamespaceServicesDirty("test-crq", "ns-a")
+
+			consumed := store.consumeNamespaceServicesDirty("test-crq", "ns-a")
+			Expect(consumed).To(BeTrue())
+
+			dirty, found := store.getNamespaceDirtyState("test-crq", "ns-a")
+			Expect(found).To(BeTrue())
+			Expect(dirty.Services).To(BeFalse())
+		})
+
+		It("should return false when consuming services dirty for unknown or clean namespace", func() {
+			store := newUsageStateStore()
+			store.ensureQuotaNamespaces("test-crq", []string{"ns-a"})
+
+			Expect(store.consumeNamespaceServicesDirty("test-crq", "ns-a")).To(BeFalse())
+			Expect(store.consumeNamespaceServicesDirty("test-crq", "missing")).To(BeFalse())
+			Expect(store.consumeNamespaceServicesDirty("missing-crq", "ns-a")).To(BeFalse())
+		})
+
+		It("should return false when consuming with empty quota or namespace", func() {
+			store := newUsageStateStore()
+			store.markNamespaceServicesDirty("test-crq", "ns-a")
+
+			Expect(store.consumeNamespaceServicesDirty("", "ns-a")).To(BeFalse())
+			Expect(store.consumeNamespaceServicesDirty("test-crq", "")).To(BeFalse())
+		})
+
+		It("should consume and clear compute dirty flag", func() {
+			store := newUsageStateStore()
+			store.markNamespaceComputeDirty("test-crq", "ns-a")
+
+			consumed := store.consumeNamespaceComputeDirty("test-crq", "ns-a")
+			Expect(consumed).To(BeTrue())
+
+			dirty, found := store.getNamespaceDirtyState("test-crq", "ns-a")
+			Expect(found).To(BeTrue())
+			Expect(dirty.Compute).To(BeFalse())
+		})
+
+		It("should return false when consuming compute dirty for unknown or clean namespace", func() {
+			store := newUsageStateStore()
+			store.ensureQuotaNamespaces("test-crq", []string{"ns-a"})
+
+			Expect(store.consumeNamespaceComputeDirty("test-crq", "ns-a")).To(BeFalse())
+			Expect(store.consumeNamespaceComputeDirty("test-crq", "missing")).To(BeFalse())
+			Expect(store.consumeNamespaceComputeDirty("missing-crq", "ns-a")).To(BeFalse())
+		})
+
+		It("should consume and clear storage dirty flag", func() {
+			store := newUsageStateStore()
+			store.markNamespaceStorageDirty("test-crq", "ns-a")
+
+			consumed := store.consumeNamespaceStorageDirty("test-crq", "ns-a")
+			Expect(consumed).To(BeTrue())
+
+			dirty, found := store.getNamespaceDirtyState("test-crq", "ns-a")
+			Expect(found).To(BeTrue())
+			Expect(dirty.Storage).To(BeFalse())
+		})
+
+		It("should consume and clear object count dirty flag", func() {
+			store := newUsageStateStore()
+			store.markNamespaceObjectCountDirty("test-crq", "ns-a")
+
+			consumed := store.consumeNamespaceObjectCountDirty("test-crq", "ns-a")
+			Expect(consumed).To(BeTrue())
+
+			dirty, found := store.getNamespaceDirtyState("test-crq", "ns-a")
+			Expect(found).To(BeTrue())
+			Expect(dirty.ObjectCount).To(BeFalse())
+		})
+	})
+
 	Context("Compute Usage From Prefetched Pods", func() {
 		It("should aggregate requests and limits from non-terminal pods", func() {
 			pods := []corev1.Pod{
@@ -1497,6 +1744,285 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			Expect(fallbackByNS).To(HaveLen(1))
 			Expect(fallbackStorageByNS.Cmp(prefetchedStorageByNS)).To(Equal(0))
 			Expect(fallbackCountByNS.Cmp(prefetchedCountByNS)).To(Equal(0))
+		})
+	})
+
+	Context("Service Incremental Aggregation", func() {
+		It("should reuse cached service usage when namespace is clean", func() {
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "svc-cache-test"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						usage.ResourceServices: resource.MustParse("100"),
+					},
+				},
+				Status: quotav1alpha1.ClusterResourceQuotaStatus{
+					Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
+						{
+							Namespace: "ns-a",
+							Status: quotav1alpha1.ResourceQuotaStatus{
+								Used: quotav1alpha1.ResourceList{
+									usage.ResourceServices: resource.MustParse("5"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				logger:          zap.NewNop(),
+				usageStateStore: newUsageStateStore(),
+			}
+			reconciler.usageStateStore.ensureQuotaNamespaces(crq.Name, []string{"ns-a"})
+
+			totalUsage, usageByNamespace, err := reconciler.calculateAndAggregateUsage(ctx, crq, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+			totalServices := totalUsage[usage.ResourceServices]
+			Expect(totalServices.String()).To(Equal("5"))
+			Expect(usageByNamespace).To(HaveLen(1))
+			namespaceServices := usageByNamespace[0].Status.Used[usage.ResourceServices]
+			Expect(namespaceServices.String()).To(Equal("5"))
+		})
+
+		It("should refresh service usage when namespace is dirty and then clear dirty flag", func() {
+			fakeKubeClient := k8sfake.NewSimpleClientset(
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-a", Namespace: "ns-a"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
+			)
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "svc-dirty-test"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						usage.ResourceServices: resource.MustParse("100"),
+					},
+				},
+				Status: quotav1alpha1.ClusterResourceQuotaStatus{
+					Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
+						{
+							Namespace: "ns-a",
+							Status: quotav1alpha1.ResourceQuotaStatus{
+								Used: quotav1alpha1.ResourceList{
+									usage.ResourceServices: resource.MustParse("5"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:      fakeKubeClient,
+				logger:          zap.NewNop(),
+				usageStateStore: newUsageStateStore(),
+			}
+			reconciler.usageStateStore.markNamespaceServicesDirty(crq.Name, "ns-a")
+
+			totalUsage, usageByNamespace, err := reconciler.calculateAndAggregateUsage(ctx, crq, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+			totalServices := totalUsage[usage.ResourceServices]
+			Expect(totalServices.String()).To(Equal("1"))
+			Expect(usageByNamespace).To(HaveLen(1))
+			namespaceServices := usageByNamespace[0].Status.Used[usage.ResourceServices]
+			Expect(namespaceServices.String()).To(Equal("1"))
+
+			consumedAgain := reconciler.usageStateStore.consumeNamespaceServicesDirty(crq.Name, "ns-a")
+			Expect(consumedAgain).To(BeFalse())
+		})
+
+		It("should skip service prefetch when service usage is clean and cached", func() {
+			fakeKubeClient := k8sfake.NewSimpleClientset()
+			serviceListCalls := 0
+			fakeKubeClient.PrependReactor("list", "services", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				serviceListCalls++
+				return false, nil, nil
+			})
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "svc-prefetch-clean"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						usage.ResourceServices: resource.MustParse("100"),
+					},
+				},
+				Status: quotav1alpha1.ClusterResourceQuotaStatus{
+					Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
+						{
+							Namespace: "ns-a",
+							Status: quotav1alpha1.ResourceQuotaStatus{
+								Used: quotav1alpha1.ResourceList{
+									usage.ResourceServices: resource.MustParse("3"),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:      fakeKubeClient,
+				logger:          zap.NewNop(),
+				usageStateStore: newUsageStateStore(),
+			}
+			reconciler.usageStateStore.ensureQuotaNamespaces(crq.Name, []string{"ns-a"})
+
+			totalUsage, _, err := reconciler.calculateAndAggregateUsage(ctx, crq, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+			totalServices := totalUsage[usage.ResourceServices]
+			Expect(totalServices.String()).To(Equal("3"))
+			Expect(serviceListCalls).To(Equal(0))
+		})
+
+		It("should prefetch services on cache miss for service usage", func() {
+			fakeKubeClient := k8sfake.NewSimpleClientset(
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-a", Namespace: "ns-a"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
+			)
+			serviceListCalls := 0
+			fakeKubeClient.PrependReactor("list", "services", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				serviceListCalls++
+				return false, nil, nil
+			})
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "svc-prefetch-miss"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						usage.ResourceServices: resource.MustParse("100"),
+					},
+				},
+				Status: quotav1alpha1.ClusterResourceQuotaStatus{
+					Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{},
+				},
+			}
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:      fakeKubeClient,
+				logger:          zap.NewNop(),
+				usageStateStore: newUsageStateStore(),
+			}
+			reconciler.usageStateStore.ensureQuotaNamespaces(crq.Name, []string{"ns-a"})
+
+			totalUsage, _, err := reconciler.calculateAndAggregateUsage(ctx, crq, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+			totalServices := totalUsage[usage.ResourceServices]
+			Expect(totalServices.String()).To(Equal("1"))
+			Expect(serviceListCalls).To(BeNumerically(">", 0))
+		})
+	})
+
+	Context("Compute Storage ObjectCount Incremental Aggregation", func() {
+		It("should skip pod prefetch when compute usage is clean and cached", func() {
+			fakeKubeClient := k8sfake.NewSimpleClientset()
+			podListCalls := 0
+			fakeKubeClient.PrependReactor("list", "pods", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				podListCalls++
+				return false, nil, nil
+			})
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "compute-prefetch-clean"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						corev1.ResourcePods: resource.MustParse("100"),
+					},
+				},
+				Status: quotav1alpha1.ClusterResourceQuotaStatus{
+					Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
+						{
+							Namespace: "ns-a",
+							Status: quotav1alpha1.ResourceQuotaStatus{
+								Used: quotav1alpha1.ResourceList{corev1.ResourcePods: resource.MustParse("7")},
+							},
+						},
+					},
+				},
+			}
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:      fakeKubeClient,
+				logger:          zap.NewNop(),
+				usageStateStore: newUsageStateStore(),
+			}
+			reconciler.usageStateStore.ensureQuotaNamespaces(crq.Name, []string{"ns-a"})
+
+			totalUsage, _, err := reconciler.calculateAndAggregateUsage(ctx, crq, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+			totalPods := totalUsage[corev1.ResourcePods]
+			Expect(totalPods.String()).To(Equal("7"))
+			Expect(podListCalls).To(Equal(0))
+		})
+
+		It("should skip pvc prefetch when storage usage is clean and cached", func() {
+			fakeKubeClient := k8sfake.NewSimpleClientset()
+			pvcListCalls := 0
+			fakeKubeClient.PrependReactor("list", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				pvcListCalls++
+				return false, nil, nil
+			})
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "storage-prefetch-clean"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						corev1.ResourceRequestsStorage: resource.MustParse("100Gi"),
+					},
+				},
+				Status: quotav1alpha1.ClusterResourceQuotaStatus{
+					Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
+						{
+							Namespace: "ns-a",
+							Status: quotav1alpha1.ResourceQuotaStatus{
+								Used: quotav1alpha1.ResourceList{corev1.ResourceRequestsStorage: resource.MustParse("2Gi")},
+							},
+						},
+					},
+				},
+			}
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:      fakeKubeClient,
+				logger:          zap.NewNop(),
+				usageStateStore: newUsageStateStore(),
+			}
+			reconciler.usageStateStore.ensureQuotaNamespaces(crq.Name, []string{"ns-a"})
+
+			totalUsage, _, err := reconciler.calculateAndAggregateUsage(ctx, crq, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+			totalStorage := totalUsage[corev1.ResourceRequestsStorage]
+			Expect(totalStorage.String()).To(Equal("2Gi"))
+			Expect(pvcListCalls).To(Equal(0))
+		})
+
+		It("should reuse cached object count usage when namespace is clean", func() {
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "objectcount-cache-clean"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						usage.ResourceConfigMaps: resource.MustParse("100"),
+					},
+				},
+				Status: quotav1alpha1.ClusterResourceQuotaStatus{
+					Namespaces: []quotav1alpha1.ResourceQuotaStatusByNamespace{
+						{
+							Namespace: "ns-a",
+							Status: quotav1alpha1.ResourceQuotaStatus{
+								Used: quotav1alpha1.ResourceList{usage.ResourceConfigMaps: resource.MustParse("9")},
+							},
+						},
+					},
+				},
+			}
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				logger:          zap.NewNop(),
+				usageStateStore: newUsageStateStore(),
+			}
+			reconciler.usageStateStore.ensureQuotaNamespaces(crq.Name, []string{"ns-a"})
+
+			totalUsage, _, err := reconciler.calculateAndAggregateUsage(ctx, crq, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+			totalConfigMaps := totalUsage[usage.ResourceConfigMaps]
+			Expect(totalConfigMaps.String()).To(Equal("9"))
 		})
 	})
 
