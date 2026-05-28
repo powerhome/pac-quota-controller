@@ -42,6 +42,7 @@ func SetupManager(
 		Scheme:           scheme,
 		LeaderElection:   cfg.EnableLeaderElection,
 		LeaderElectionID: "81307769.powerapp.cloud",
+		PprofBindAddress: cfg.PprofBindAddress,
 	}
 
 	// Configure leader election timing if enabled

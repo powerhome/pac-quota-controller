@@ -41,10 +41,28 @@ func NewServiceResourceCalculator(c kubernetes.Interface, logger *zap.Logger) *S
 	}
 }
 
-// resourceNameToServiceType maps usage resource names to corev1.ServiceType values.
-var resourceNameToServiceType = map[corev1.ResourceName]corev1.ServiceType{
-	usage.ResourceServicesLoadBalancers: corev1.ServiceTypeLoadBalancer,
-	usage.ResourceServicesNodePorts:     corev1.ServiceTypeNodePort,
+// CalculateUsageFromServices calculates service quota usage from an already loaded service list.
+func CalculateUsageFromServices(svcs []corev1.Service, resourceName corev1.ResourceName) resource.Quantity {
+	var count int64
+
+	switch resourceName {
+	case usage.ResourceServices:
+		count = int64(len(svcs))
+	case usage.ResourceServicesLoadBalancers:
+		for i := range svcs {
+			if svcs[i].Spec.Type == corev1.ServiceTypeLoadBalancer {
+				count++
+			}
+		}
+	case usage.ResourceServicesNodePorts:
+		for i := range svcs {
+			if svcs[i].Spec.Type == corev1.ServiceTypeNodePort {
+				count++
+			}
+		}
+	}
+
+	return *resource.NewQuantity(count, resource.DecimalSI)
 }
 
 // CalculateUsage returns the usage count for a specific service type resource in the namespace.
@@ -56,23 +74,26 @@ func (c *ServiceResourceCalculator) CalculateUsage(
 	resource.Quantity,
 	error,
 ) {
-	total, byType, err := c.countServicesByType(ctx, namespace)
+	correlationID := quota.GetCorrelationID(ctx)
+	serviceList, err := c.Client.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
+		c.logger.Error("Failed to list services",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", namespace),
+			zap.Error(err))
 		return resource.Quantity{}, err
 	}
 
-	switch resourceName {
-	case usage.ResourceServices:
-		return *resource.NewQuantity(total, resource.DecimalSI), nil
-	case usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
-		serviceType, ok := resourceNameToServiceType[resourceName]
-		if !ok {
-			return resource.Quantity{}, nil
-		}
-		return *resource.NewQuantity(byType[serviceType], resource.DecimalSI), nil
-	default:
-		return resource.Quantity{}, nil
-	}
+	usageQty := CalculateUsageFromServices(serviceList.Items, resourceName)
+
+	c.logger.Debug("Calculated service usage",
+		zap.String("correlation_id", correlationID),
+		zap.String("namespace", namespace),
+		zap.String("resource", string(resourceName)),
+		zap.String("usage", usageQty.String()),
+		zap.Int("service_count", len(serviceList.Items)))
+
+	return usageQty, nil
 }
 
 // CountServices returns the total number of services and a breakdown by type in the namespace.

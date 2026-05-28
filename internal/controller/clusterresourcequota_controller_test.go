@@ -10,6 +10,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 	"github.com/powerhome/pac-quota-controller/pkg/mocks"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -17,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -24,6 +29,11 @@ import (
 )
 
 var testOwnNamespace string = "pac-quota-controller-system"
+
+const (
+	fastStorageClass = "fast-ssd"
+	slowStorageClass = "slow-hdd"
+)
 
 // --- Fakes for error path testing ---
 // Only for forcing errors in the kubeclient
@@ -49,6 +59,21 @@ func (f *successStatusWriter) Update(ctx context.Context, obj client.Object, opt
 	return nil
 }
 func (f *successStatusWriter) Create(ctx context.Context, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+	return nil
+}
+
+type countingStatusWriter struct {
+	patchCalls int
+}
+
+func (f *countingStatusWriter) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+	f.patchCalls++
+	return nil
+}
+func (f *countingStatusWriter) Update(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+	return nil
+}
+func (f *countingStatusWriter) Create(ctx context.Context, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
 	return nil
 }
 
@@ -136,6 +161,87 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			result, err := reconciler.Reconcile(ctx, req)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
+		})
+	})
+
+	Context("Status Updates", func() {
+		It("should skip patch when status is unchanged", func() {
+			statusWriter := &countingStatusWriter{}
+			reconciler := &ClusterResourceQuotaReconciler{
+				Client: &fakeClient{statusWriter: statusWriter},
+				logger: logger,
+			}
+
+			totalUsage := quotav1alpha1.ResourceList{
+				corev1.ResourceRequestsCPU: resource.MustParse("500m"),
+			}
+			usageByNamespace := []quotav1alpha1.ResourceQuotaStatusByNamespace{
+				{
+					Namespace: "example-ns",
+					Status: quotav1alpha1.ResourceQuotaStatus{
+						Used: quotav1alpha1.ResourceList{
+							corev1.ResourceRequestsCPU: resource.MustParse("500m"),
+						},
+					},
+				},
+			}
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-crq"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						corev1.ResourceRequestsCPU: resource.MustParse("1"),
+					},
+				},
+				Status: quotav1alpha1.ClusterResourceQuotaStatus{
+					Total: quotav1alpha1.ResourceQuotaStatus{
+						Hard: quotav1alpha1.ResourceList{
+							corev1.ResourceRequestsCPU: resource.MustParse("1"),
+						},
+						Used: totalUsage,
+					},
+					Namespaces: usageByNamespace,
+				},
+			}
+
+			err := reconciler.updateStatus(ctx, crq, totalUsage, usageByNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(statusWriter.patchCalls).To(Equal(0))
+		})
+
+		It("should patch when status changes", func() {
+			statusWriter := &countingStatusWriter{}
+			reconciler := &ClusterResourceQuotaReconciler{
+				Client: &fakeClient{statusWriter: statusWriter},
+				logger: logger,
+			}
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-crq"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						corev1.ResourceRequestsCPU: resource.MustParse("1"),
+					},
+				},
+			}
+
+			totalUsage := quotav1alpha1.ResourceList{
+				corev1.ResourceRequestsCPU: resource.MustParse("250m"),
+			}
+			usageByNamespace := []quotav1alpha1.ResourceQuotaStatusByNamespace{
+				{
+					Namespace: "example-ns",
+					Status: quotav1alpha1.ResourceQuotaStatus{
+						Used: quotav1alpha1.ResourceList{
+							corev1.ResourceRequestsCPU: resource.MustParse("250m"),
+						},
+					},
+				},
+			}
+
+			err := reconciler.updateStatus(ctx, crq, totalUsage, usageByNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(statusWriter.patchCalls).To(Equal(1))
 		})
 	})
 
@@ -410,7 +516,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			Expect(predicate.Update(event)).To(BeTrue())
 		})
 
-		It("should reconcile for non-terminal phase changes (e.g., Pending -> Running)", func() {
+		It("should not reconcile for non-terminal phase changes (e.g., Pending -> Running)", func() {
 			oldPod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Generation: 1,
@@ -431,7 +537,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				ObjectOld: oldPod,
 				ObjectNew: newPod,
 			}
-			Expect(predicate.Update(event)).To(BeTrue())
+			Expect(predicate.Update(event)).To(BeFalse())
 		})
 
 		It("should reconcile when a container terminates within a pod", func() {
@@ -871,6 +977,526 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 			requests := reconciler.findQuotasForObject(ctx, zeroResourcePod)
 			Expect(requests).To(BeEmpty()) // No CRQ client configured
+		})
+	})
+
+	Context("Aggregation Step Classification", func() {
+		var reconciler *ClusterResourceQuotaReconciler
+
+		BeforeEach(func() {
+			reconciler = &ClusterResourceQuotaReconciler{}
+		})
+
+		It("should classify standard compute resources", func() {
+			Expect(reconciler.aggregationStepForResource(corev1.ResourceRequestsCPU)).To(Equal("compute"))
+			Expect(reconciler.aggregationStepForResource(corev1.ResourceLimitsMemory)).To(Equal("compute"))
+			Expect(reconciler.aggregationStepForResource(corev1.ResourcePods)).To(Equal("compute"))
+		})
+
+		It("should classify storage and service resources", func() {
+			Expect(reconciler.aggregationStepForResource(corev1.ResourceRequestsStorage)).To(Equal("storage"))
+			Expect(reconciler.aggregationStepForResource(usage.ResourceServices)).To(Equal("services"))
+			Expect(reconciler.aggregationStepForResource(usage.ResourceServicesLoadBalancers)).To(Equal("services"))
+		})
+
+		It("should classify extended compute resources", func() {
+			Expect(reconciler.aggregationStepForResource(corev1.ResourceName("requests.nvidia.com/gpu"))).To(Equal("compute_extended"))
+			Expect(reconciler.aggregationStepForResource(corev1.ResourceName("hugepages-2Mi"))).To(Equal("compute_extended"))
+		})
+
+		It("should classify object count resources", func() {
+			Expect(reconciler.aggregationStepForResource(usage.ResourceConfigMaps)).To(Equal("object_count"))
+			Expect(reconciler.aggregationStepForResource(usage.ResourceIngresses)).To(Equal("object_count"))
+		})
+	})
+
+	Context("Namespace Resource Prefetch", func() {
+		It("should prefetch pods, services, and pvcs by namespace", func() {
+			kubeClient := k8sfake.NewSimpleClientset(
+				&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "ns-a"}},
+				&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: "ns-b"}},
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-a", Namespace: "ns-a"}},
+				&corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "pvc-a", Namespace: "ns-a"}},
+			)
+
+			reconciler := &ClusterResourceQuotaReconciler{KubeClient: kubeClient}
+
+			snapshots, err := reconciler.prefetchNamespaceResources(ctx, []string{"ns-a", "ns-b"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(snapshots).To(HaveLen(2))
+
+			Expect(snapshots["ns-a"].Pods).To(HaveLen(1))
+			Expect(snapshots["ns-a"].Services).To(HaveLen(1))
+			Expect(snapshots["ns-a"].PVCs).To(HaveLen(1))
+
+			Expect(snapshots["ns-b"].Pods).To(HaveLen(1))
+			Expect(snapshots["ns-b"].Services).To(BeEmpty())
+			Expect(snapshots["ns-b"].PVCs).To(BeEmpty())
+		})
+
+		It("should skip empty namespace entries", func() {
+			kubeClient := k8sfake.NewSimpleClientset()
+			reconciler := &ClusterResourceQuotaReconciler{KubeClient: kubeClient}
+
+			snapshots, err := reconciler.prefetchNamespaceResources(ctx, []string{"ns-a", ""})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(snapshots).To(HaveLen(1))
+			_, hasEmpty := snapshots[""]
+			Expect(hasEmpty).To(BeFalse())
+		})
+
+		It("should return error when kube client is nil", func() {
+			reconciler := &ClusterResourceQuotaReconciler{}
+			snapshots, err := reconciler.prefetchNamespaceResources(ctx, []string{"ns-a"})
+			Expect(err).To(HaveOccurred())
+			Expect(snapshots).To(BeNil())
+		})
+	})
+
+	Context("Compute Usage From Prefetched Pods", func() {
+		It("should aggregate requests and limits from non-terminal pods", func() {
+			pods := []corev1.Pod{
+				{
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("250m")},
+							Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+						},
+					}}},
+				},
+				{
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+							Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+						},
+					}}},
+				},
+				{
+					Status: corev1.PodStatus{Phase: corev1.PodSucceeded},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("5")},
+							Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("5")},
+						},
+					}}},
+				},
+			}
+
+			requestsCPU := calculateComputeUsageFromPods(pods, corev1.ResourceRequestsCPU)
+			limitsCPU := calculateComputeUsageFromPods(pods, corev1.ResourceLimitsCPU)
+
+			Expect(requestsCPU.String()).To(Equal("750m"))
+			Expect(limitsCPU.String()).To(Equal("1500m"))
+		})
+
+		It("should count only non-terminal pods for pod quota", func() {
+			pods := []corev1.Pod{
+				{Status: corev1.PodStatus{Phase: corev1.PodRunning}},
+				{Status: corev1.PodStatus{Phase: corev1.PodPending}},
+				{Status: corev1.PodStatus{Phase: corev1.PodFailed}},
+			}
+
+			podCount := calculateComputeUsageFromPods(pods, corev1.ResourcePods)
+			Expect(podCount.String()).To(Equal("2"))
+		})
+
+		It("should resolve cached compute usage via resolver", func() {
+			reconciler := &ClusterResourceQuotaReconciler{}
+			snapshots := map[string]namespaceResourceSnapshot{
+				"ns-a": {
+					Pods: []corev1.Pod{
+						{
+							Status: corev1.PodStatus{Phase: corev1.PodRunning},
+							Spec: corev1.PodSpec{Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("300m")},
+								},
+							}}},
+						},
+					},
+				},
+			}
+
+			usageQty, err := reconciler.resolveNamespaceResourceUsage(
+				ctx,
+				"ns-a",
+				corev1.ResourceRequestsCPU,
+				snapshots,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(usageQty.String()).To(Equal("300m"))
+		})
+
+		It("should resolve fallback service usage via resolver", func() {
+			reconciler := &ClusterResourceQuotaReconciler{logger: zap.NewNop()}
+
+			usageQty, err := reconciler.resolveNamespaceResourceUsage(
+				ctx,
+				"ns-a",
+				usage.ResourceServices,
+				map[string]namespaceResourceSnapshot{},
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(usageQty.String()).To(Equal("0"))
+		})
+
+		It("should resolve cached extended compute usage via resolver", func() {
+			reconciler := &ClusterResourceQuotaReconciler{}
+			snapshots := map[string]namespaceResourceSnapshot{
+				"ns-a": {
+					Pods: []corev1.Pod{
+						{
+							Status: corev1.PodStatus{Phase: corev1.PodRunning},
+							Spec: corev1.PodSpec{Containers: []corev1.Container{{
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										corev1.ResourceName("nvidia.com/gpu"): resource.MustParse("2"),
+									},
+								},
+							}}},
+						},
+					},
+				},
+			}
+
+			usageQty, err := reconciler.resolveNamespaceResourceUsage(
+				ctx,
+				"ns-a",
+				corev1.ResourceName("requests.nvidia.com/gpu"),
+				snapshots,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(usageQty.String()).To(Equal("2"))
+		})
+	})
+
+	Context("Service Usage From Prefetched Services", func() {
+		It("should count total services", func() {
+			services := []corev1.Service{
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort}},
+			}
+
+			total := calculateServiceUsageFromServices(services, usage.ResourceServices)
+			Expect(total.String()).To(Equal("3"))
+		})
+
+		It("should count only load balancer services", func() {
+			services := []corev1.Service{
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}},
+			}
+
+			lbCount := calculateServiceUsageFromServices(services, usage.ResourceServicesLoadBalancers)
+			Expect(lbCount.String()).To(Equal("2"))
+		})
+
+		It("should count only node port services", func() {
+			services := []corev1.Service{
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
+				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort}},
+			}
+
+			npCount := calculateServiceUsageFromServices(services, usage.ResourceServicesNodePorts)
+			Expect(npCount.String()).To(Equal("2"))
+		})
+	})
+
+	Context("Namespace Prefetch Decision", func() {
+		It("should prefetch for cache-backed resources", func() {
+			hard := quotav1alpha1.ResourceList{
+				corev1.ResourceRequestsCPU: resource.MustParse("1"),
+			}
+			Expect(shouldPrefetchNamespaceResources(hard)).To(BeTrue())
+		})
+
+		It("should prefetch for storage class resources", func() {
+			hard := quotav1alpha1.ResourceList{
+				corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/requests.storage"): resource.MustParse("10Gi"),
+			}
+			Expect(shouldPrefetchNamespaceResources(hard)).To(BeTrue())
+		})
+
+		It("should not prefetch for object-count-only resources", func() {
+			hard := quotav1alpha1.ResourceList{
+				usage.ResourceConfigMaps: resource.MustParse("10"),
+			}
+			Expect(shouldPrefetchNamespaceResources(hard)).To(BeFalse())
+		})
+	})
+
+	Context("Storage Usage From Prefetched PVCs", func() {
+		It("should aggregate requests.storage from pvc requests", func() {
+			pvcs := []corev1.PersistentVolumeClaim{
+				{
+					Spec: corev1.PersistentVolumeClaimSpec{
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+						},
+					},
+				},
+				{
+					Spec: corev1.PersistentVolumeClaimSpec{
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("512Mi")},
+						},
+					},
+				},
+			}
+
+			usage := calculateStorageUsageFromPVCs(pvcs, corev1.ResourceRequestsStorage)
+			Expect(usage.String()).To(Equal("1536Mi"))
+		})
+
+		It("should return zero for non-storage resources", func() {
+			usage := calculateStorageUsageFromPVCs(nil, usage.ResourceServices)
+			Expect(usage.IsZero()).To(BeTrue())
+		})
+
+		It("should aggregate storage usage by storage class", func() {
+			fast := fastStorageClass
+			slow := slowStorageClass
+			pvcs := []corev1.PersistentVolumeClaim{
+				{
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: &fast,
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")},
+						},
+					},
+				},
+				{
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: &fast,
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")},
+						},
+					},
+				},
+				{
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: &slow,
+						Resources: corev1.VolumeResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("8Gi")},
+						},
+					},
+				},
+			}
+
+			usage := calculateStorageClassUsageFromPVCs(pvcs, fastStorageClass)
+			Expect(usage.String()).To(Equal("3Gi"))
+		})
+
+		It("should count pvcs by storage class", func() {
+			fast := fastStorageClass
+			slow := slowStorageClass
+			pvcs := []corev1.PersistentVolumeClaim{
+				{Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &fast}},
+				{Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &fast}},
+				{Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &slow}},
+			}
+
+			count := calculateStorageClassCountFromPVCs(pvcs, fastStorageClass)
+			Expect(count).To(Equal(int64(2)))
+		})
+
+		It("should match legacy storage class annotation", func() {
+			pvc := corev1.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{"volume.beta.kubernetes.io/storage-class": fastStorageClass},
+				},
+			}
+
+			Expect(pvcMatchesStorageClass(&pvc, fastStorageClass)).To(BeTrue())
+			Expect(pvcMatchesStorageClass(&pvc, slowStorageClass)).To(BeFalse())
+		})
+
+		It("should count pvc objects", func() {
+			pvcs := []corev1.PersistentVolumeClaim{{}, {}, {}}
+			count := calculatePVCCountUsageFromPVCs(pvcs)
+			Expect(count.String()).To(Equal("3"))
+		})
+	})
+
+	Context("Shared Aggregation Semantics", func() {
+		It("should return identical usage for prefetched and fallback paths", func() {
+			fakeKubeClient := k8sfake.NewSimpleClientset(
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod-running", Namespace: "ns-a"},
+					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:                           resource.MustParse("250m"),
+								corev1.ResourceName("nvidia.com/gpu"):        resource.MustParse("2"),
+								corev1.ResourceName("hugepages-2Mi"):         resource.MustParse("10Mi"),
+								corev1.ResourceMemory:                        resource.MustParse("512Mi"),
+								corev1.ResourceEphemeralStorage:              resource.MustParse("1Gi"),
+								corev1.ResourceName("example.com/customres"): resource.MustParse("1"),
+							},
+							Limits: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+						},
+					}}},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod-terminal", Namespace: "ns-a"},
+					Status:     corev1.PodStatus{Phase: corev1.PodSucceeded},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10")},
+						},
+					}}},
+				},
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-cluster", Namespace: "ns-a"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-lb", Namespace: "ns-a"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}},
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-np", Namespace: "ns-a"}, Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort}},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "pvc-1", Namespace: "ns-a"},
+					Spec:       corev1.PersistentVolumeClaimSpec{Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}}},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "pvc-2", Namespace: "ns-a"},
+					Spec:       corev1.PersistentVolumeClaimSpec{Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("512Mi")}}},
+				},
+			)
+
+			reconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:            fakeKubeClient,
+				ComputeCalculator:     pod.NewPodResourceCalculator(fakeKubeClient, zap.NewNop()),
+				ServiceCalculator:     services.NewServiceResourceCalculator(fakeKubeClient, zap.NewNop()),
+				StorageCalculator:     storage.NewStorageResourceCalculator(fakeKubeClient, zap.NewNop()),
+				ObjectCountCalculator: nil,
+				logger:                zap.NewNop(),
+			}
+
+			snapshots, err := reconciler.prefetchNamespaceResources(ctx, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+
+			resources := []corev1.ResourceName{
+				corev1.ResourceRequestsCPU,
+				corev1.ResourceLimitsCPU,
+				corev1.ResourcePods,
+				usage.ResourceServices,
+				usage.ResourceServicesLoadBalancers,
+				usage.ResourceServicesNodePorts,
+				corev1.ResourceRequestsStorage,
+				usage.ResourcePersistentVolumeClaims,
+				corev1.ResourceName("requests.nvidia.com/gpu"),
+			}
+
+			for i := range resources {
+				resourceName := resources[i]
+				prefetchedUsage, prefetchedErr := reconciler.resolveNamespaceResourceUsage(
+					ctx,
+					"ns-a",
+					resourceName,
+					snapshots,
+				)
+				Expect(prefetchedErr).NotTo(HaveOccurred())
+
+				fallbackUsage, fallbackErr := reconciler.resolveNamespaceResourceUsage(
+					ctx,
+					"ns-a",
+					resourceName,
+					map[string]namespaceResourceSnapshot{},
+				)
+				Expect(fallbackErr).NotTo(HaveOccurred())
+				Expect(prefetchedUsage.Cmp(fallbackUsage)).To(Equal(0), "resource=%s", resourceName)
+			}
+		})
+
+		It("should keep storage class semantics identical for prefetched and fallback paths", func() {
+			fastClass := fastStorageClass
+			slowClass := slowStorageClass
+
+			fakeKubeClient := k8sfake.NewSimpleClientset(
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "pvc-spec", Namespace: "ns-a"},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: &fastClass,
+						Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("1Gi")}},
+					},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:        "pvc-legacy-annotation",
+						Namespace:   "ns-a",
+						Annotations: map[string]string{"volume.beta.kubernetes.io/storage-class": fastClass},
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("2Gi")}},
+					},
+				},
+				&corev1.PersistentVolumeClaim{
+					ObjectMeta: metav1.ObjectMeta{Name: "pvc-slow", Namespace: "ns-a"},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						StorageClassName: &slowClass,
+						Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("8Gi")}},
+					},
+				},
+			)
+
+			storageCalculator := storage.NewStorageResourceCalculator(fakeKubeClient, zap.NewNop())
+			prefetchedReconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:        fakeKubeClient,
+				StorageCalculator: storageCalculator,
+				logger:            zap.NewNop(),
+			}
+			fallbackReconciler := &ClusterResourceQuotaReconciler{
+				KubeClient:        nil,
+				StorageCalculator: storageCalculator,
+				logger:            zap.NewNop(),
+			}
+
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "storageclass-test"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/requests.storage"):       resource.MustParse("100Gi"),
+						corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims"): resource.MustParse("100"),
+					},
+				},
+			}
+
+			prefetchedTotal, prefetchedByNS, prefetchedErr := prefetchedReconciler.calculateAndAggregateUsage(
+				ctx,
+				crq,
+				[]string{"ns-a"},
+			)
+			Expect(prefetchedErr).NotTo(HaveOccurred())
+
+			fallbackTotal, fallbackByNS, fallbackErr := fallbackReconciler.calculateAndAggregateUsage(
+				ctx,
+				crq,
+				[]string{"ns-a"},
+			)
+			Expect(fallbackErr).NotTo(HaveOccurred())
+
+			storageResource := corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/requests.storage")
+			countResource := corev1.ResourceName("fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims")
+			prefetchedStorage := prefetchedTotal[storageResource]
+			prefetchedCount := prefetchedTotal[countResource]
+			fallbackStorage := fallbackTotal[storageResource]
+			fallbackCount := fallbackTotal[countResource]
+			prefetchedStorageByNS := prefetchedByNS[0].Status.Used[storageResource]
+			prefetchedCountByNS := prefetchedByNS[0].Status.Used[countResource]
+			fallbackStorageByNS := fallbackByNS[0].Status.Used[storageResource]
+			fallbackCountByNS := fallbackByNS[0].Status.Used[countResource]
+
+			Expect(prefetchedStorage.String()).To(Equal("3Gi"))
+			Expect(prefetchedCount.String()).To(Equal("2"))
+			Expect(fallbackStorage.Cmp(prefetchedStorage)).To(Equal(0))
+			Expect(fallbackCount.Cmp(prefetchedCount)).To(Equal(0))
+			Expect(prefetchedByNS).To(HaveLen(1))
+			Expect(fallbackByNS).To(HaveLen(1))
+			Expect(fallbackStorageByNS.Cmp(prefetchedStorageByNS)).To(Equal(0))
+			Expect(fallbackCountByNS.Cmp(prefetchedCountByNS)).To(Equal(0))
 		})
 	})
 

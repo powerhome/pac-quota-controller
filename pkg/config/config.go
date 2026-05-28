@@ -15,6 +15,7 @@ var setupLog = logf.Log.WithName("setup.config")
 type Config struct {
 	MetricsEnable               bool
 	EnableHTTP2                 bool
+	PprofBindAddress            string
 	EnableLeaderElection        bool
 	ExcludeNamespaceLabelKey    string
 	ExcludedNamespaces          []string
@@ -54,6 +55,7 @@ func setDefaults() {
 	viper.SetDefault("metrics-cert-name", "tls.crt")
 	viper.SetDefault("metrics-cert-key", "tls.key")
 	viper.SetDefault("enable-http2", false)
+	viper.SetDefault("pprof-bind-address", "0")
 	viper.SetDefault("log-level", "info")
 	viper.SetDefault("log-format", "json")
 	viper.SetDefault("exclude-namespace-label-key", "pac-quota-controller.powerapp.cloud/exclude")
@@ -85,6 +87,7 @@ func InitConfig() *Config {
 	}
 	return &Config{
 		EnableHTTP2:                 viper.GetBool("enable-http2"),
+		PprofBindAddress:            viper.GetString("pprof-bind-address"),
 		MetricsEnable:               viper.GetBool("metrics-enable"),
 		EnableLeaderElection:        viper.GetBool("leader-elect"),
 		ExcludeNamespaceLabelKey:    viper.GetString("exclude-namespace-label-key"),
@@ -135,6 +138,8 @@ func SetupFlags(cmd *cobra.Command) {
 		"The directory that contains the metrics server certificate (tls.crt/tls.key).")
 	cmd.Flags().Bool("enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	cmd.Flags().String("pprof-bind-address", "0",
+		"The address the pprof endpoint binds to (e.g. ':6060'). Use '0' to disable.")
 	cmd.Flags().String("log-level", "info", "Log level (debug, info, warn, error)")
 	cmd.Flags().String("log-format", "json", "Log format (json or console)")
 	cmd.Flags().Int("webhook-port", 9443, "The port the webhook server listens on.")
