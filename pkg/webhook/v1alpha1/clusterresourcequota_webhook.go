@@ -52,9 +52,6 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
-// TODO: the []string return is a future-proofing placeholder for admission
-// warnings. Once any validator actually emits warnings, plumb them through
-// runWebhook into AdmissionResponse.Warnings.
 func (h *ClusterResourceQuotaWebhook) validate(
 	ctx context.Context,
 	req *admissionv1.AdmissionRequest,
@@ -75,6 +72,20 @@ func (h *ClusterResourceQuotaWebhook) validate(
 			zap.String("operation", string(req.Operation)))
 		return nil, nil
 	}
+}
+
+func (h *ClusterResourceQuotaWebhook) validateCreate(
+	ctx context.Context,
+	crq *quotav1alpha1.ClusterResourceQuota,
+) error {
+	return h.validateOperation(ctx, crq)
+}
+
+func (h *ClusterResourceQuotaWebhook) validateUpdate(
+	ctx context.Context,
+	crq *quotav1alpha1.ClusterResourceQuota,
+) error {
+	return h.validateOperation(ctx, crq)
 }
 
 // validateOperation is a shared helper for create/update validation

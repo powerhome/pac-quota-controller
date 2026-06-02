@@ -53,38 +53,49 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
-// TODO: the []string return is a future-proofing placeholder for admission
-// warnings. Once any validator actually emits warnings, plumb them through
-// runWebhook into AdmissionResponse.Warnings.
 func (h *PersistentVolumeClaimWebhook) validate(
 	ctx context.Context,
 	req *admissionv1.AdmissionRequest,
 ) ([]string, error) {
-	switch req.Operation {
-	case admissionv1.Create, admissionv1.Update:
-	default:
-		return nil, unsupportedOperationError(req.Operation, "PersistentVolumeClaim")
-	}
-
 	var pvc corev1.PersistentVolumeClaim
 	if err := decodeAdmissionObject(req.Object.Raw, &pvc, "PersistentVolumeClaim"); err != nil {
 		return nil, err
 	}
 
-	return nil, h.validateOperation(ctx, &pvc)
+	switch req.Operation {
+	case admissionv1.Create, admissionv1.Update:
+		if err := h.validateStorageQuota(ctx, &pvc); err != nil {
+			h.logger.Error("PVC blocked due to quota violation",
+				zap.String("pvc", pvc.GetName()),
+				zap.String("namespace", pvc.GetNamespace()),
+				zap.String("operation", string(req.Operation)),
+				zap.Error(err))
+			return nil, err
+		}
+		return nil, nil
+	default:
+		return nil, unsupportedOperationError(req.Operation, "PersistentVolumeClaim")
+	}
 }
 
-func (h *PersistentVolumeClaimWebhook) validateOperation(
+func (h *PersistentVolumeClaimWebhook) validateCreate(ctx context.Context, pvc *corev1.PersistentVolumeClaim) error {
+	return h.validateStorageQuota(ctx, pvc)
+}
+
+func (h *PersistentVolumeClaimWebhook) validateUpdate(ctx context.Context, pvc *corev1.PersistentVolumeClaim) error {
+	return h.validateStorageQuota(ctx, pvc)
+}
+
+func (h *PersistentVolumeClaimWebhook) validateStorageQuota(
 	ctx context.Context,
 	pvc *corev1.PersistentVolumeClaim,
 ) error {
 	storageRequest := getStorageRequest(pvc)
 
-	if err := validateAgainstCRQ(
-		ctx, h.client, h.crqClient, h.logger,
-		pvc.Namespace, usage.ResourceRequestsStorage, storageRequest, h.calculateCurrentUsage,
-	); err != nil {
-		return fmt.Errorf("ClusterResourceQuota storage validation failed: %w", err)
+	if !storageRequest.IsZero() {
+		if err := h.validateResourceQuota(ctx, pvc.Namespace, usage.ResourceRequestsStorage, storageRequest); err != nil {
+			return fmt.Errorf("ClusterResourceQuota storage validation failed: %w", err)
+		}
 	}
 
 	pvcCount := resource.NewQuantity(1, resource.DecimalSI)
@@ -98,13 +109,12 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 	if pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName != "" {
 		storageClass := *pvc.Spec.StorageClassName
 
-		storageClassStorageResource := corev1.ResourceName(fmt.Sprintf(
-			"%s.storageclass.storage.k8s.io/requests.storage", storageClass))
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			pvc.Namespace, storageClassStorageResource, storageRequest, h.calculateCurrentUsage,
-		); err != nil {
-			return fmt.Errorf("ClusterResourceQuota storage class '%s' storage validation failed: %w", storageClass, err)
+		if !storageRequest.IsZero() {
+			storageClassStorageResource := corev1.ResourceName(fmt.Sprintf(
+				"%s.storageclass.storage.k8s.io/requests.storage", storageClass))
+			if err := h.validateResourceQuota(ctx, pvc.Namespace, storageClassStorageResource, storageRequest); err != nil {
+				return fmt.Errorf("ClusterResourceQuota storage class '%s' storage validation failed: %w", storageClass, err)
+			}
 		}
 
 		storageClassCountResource := corev1.ResourceName(fmt.Sprintf(
@@ -128,6 +138,19 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 		zap.String("namespace", pvc.Namespace),
 		zap.String("storageRequest", storageRequest.String()))
 	return nil
+}
+
+func (h *PersistentVolumeClaimWebhook) validateResourceQuota(
+	ctx context.Context,
+	namespace string,
+	resourceName corev1.ResourceName,
+	requested resource.Quantity,
+) error {
+	return validateAgainstCRQ(ctx, h.client, h.crqClient, h.logger,
+		namespace, resourceName, requested,
+		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
+			return h.calculateCurrentUsage(ctx, ns, rn)
+		})
 }
 
 // calculateCurrentUsage calculates the current usage of a resource in a namespace

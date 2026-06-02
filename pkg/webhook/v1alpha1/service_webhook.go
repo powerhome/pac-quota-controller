@@ -53,29 +53,35 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
-// TODO: the []string return is a future-proofing placeholder for admission
-// warnings. Once any validator actually emits warnings, plumb them through
-// runWebhook into AdmissionResponse.Warnings.
 func (h *ServiceWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
-	switch req.Operation {
-	case admissionv1.Create, admissionv1.Update:
-	default:
-		return nil, unsupportedOperationError(req.Operation, "Service")
-	}
-
 	var svc corev1.Service
 	if err := decodeAdmissionObject(req.Object.Raw, &svc, "Service"); err != nil {
 		return nil, err
 	}
 
-	return h.validateOperation(ctx, &svc, req.Operation)
+	switch req.Operation {
+	case admissionv1.Create:
+		return h.validateServiceOperation(ctx, &svc, OperationCreate)
+	case admissionv1.Update:
+		return h.validateServiceOperation(ctx, &svc, OperationUpdate)
+	default:
+		return nil, unsupportedOperationError(req.Operation, "Service")
+	}
 }
 
-// validateOperation is shared between create and update validation.
-func (h *ServiceWebhook) validateOperation(
+func (h *ServiceWebhook) validateCreate(ctx context.Context, s *corev1.Service) ([]string, error) {
+	return h.validateServiceOperation(ctx, s, OperationCreate)
+}
+
+func (h *ServiceWebhook) validateUpdate(ctx context.Context, s *corev1.Service) ([]string, error) {
+	return h.validateServiceOperation(ctx, s, OperationUpdate)
+}
+
+// validateServiceOperation is shared between create and update validation.
+func (h *ServiceWebhook) validateServiceOperation(
 	ctx context.Context,
 	svc *corev1.Service,
-	op admissionv1.Operation,
+	op operation,
 ) ([]string, error) {
 	var subtype corev1.ResourceName
 	switch svc.Spec.Type {
@@ -90,10 +96,7 @@ func (h *ServiceWebhook) validateOperation(
 	}
 
 	for _, rn := range resourceNames {
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			svc.Namespace, rn, *resource.NewQuantity(1, resource.DecimalSI), h.calculateCurrentUsage,
-		); err != nil {
+		if err := h.validateResourceQuota(ctx, svc.Namespace, rn, *resource.NewQuantity(1, resource.DecimalSI)); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota service count validation failed for %s: %w", rn, err)
 		}
 	}
@@ -103,6 +106,19 @@ func (h *ServiceWebhook) validateOperation(
 		zap.String("namespace", svc.Namespace),
 		zap.String("operation", string(op)))
 	return nil, nil
+}
+
+func (h *ServiceWebhook) validateResourceQuota(
+	ctx context.Context,
+	namespace string,
+	resourceName corev1.ResourceName,
+	requested resource.Quantity,
+) error {
+	return validateAgainstCRQ(ctx, h.client, h.crqClient, h.logger,
+		namespace, resourceName, requested,
+		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
+			return h.calculateCurrentUsage(ctx, ns, rn)
+		})
 }
 
 func (h *ServiceWebhook) calculateCurrentUsage(ctx context.Context, namespace string,

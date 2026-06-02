@@ -57,29 +57,35 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
-// TODO: the []string return is a future-proofing placeholder for admission
-// warnings. Once any validator actually emits warnings, plumb them through
-// runWebhook into AdmissionResponse.Warnings.
 func (h *PodWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
-	switch req.Operation {
-	case admissionv1.Create, admissionv1.Update:
-	default:
-		return nil, unsupportedOperationError(req.Operation, "Pod")
-	}
-
 	var podObj corev1.Pod
 	if err := decodeAdmissionObject(req.Object.Raw, &podObj, "Pod"); err != nil {
 		return nil, err
 	}
 
-	return h.validateOperation(ctx, &podObj, req.Operation)
+	switch req.Operation {
+	case admissionv1.Create:
+		return h.validatePodOperation(ctx, &podObj, OperationCreate)
+	case admissionv1.Update:
+		return h.validatePodOperation(ctx, &podObj, OperationUpdate)
+	default:
+		return nil, unsupportedOperationError(req.Operation, "Pod")
+	}
 }
 
-// validateOperation is shared between create and update validation.
-func (h *PodWebhook) validateOperation(
+func (h *PodWebhook) validateCreate(ctx context.Context, p *corev1.Pod) ([]string, error) {
+	return h.validatePodOperation(ctx, p, OperationCreate)
+}
+
+func (h *PodWebhook) validateUpdate(ctx context.Context, p *corev1.Pod) ([]string, error) {
+	return h.validatePodOperation(ctx, p, OperationUpdate)
+}
+
+// validatePodOperation is shared between create and update validation.
+func (h *PodWebhook) validatePodOperation(
 	ctx context.Context,
 	podObj *corev1.Pod,
-	op admissionv1.Operation,
+	op operation,
 ) ([]string, error) {
 	if podObj == nil {
 		h.logger.Info("Skipping CRQ validation for nil pod on " + string(op))
@@ -88,40 +94,28 @@ func (h *PodWebhook) validateOperation(
 
 	podUsage := pod.CalculatePodUsage(podObj, usage.ResourceRequestsCPU)
 	if !podUsage.IsZero() {
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, usage.ResourceRequestsCPU, podUsage, h.calculateCurrentUsage,
-		); err != nil {
+		if err := h.validateResourceQuota(ctx, podObj.Namespace, usage.ResourceRequestsCPU, podUsage); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota CPU requests validation failed: %w", err)
 		}
 	}
 
 	podUsage = pod.CalculatePodUsage(podObj, usage.ResourceRequestsMemory)
 	if !podUsage.IsZero() {
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, usage.ResourceRequestsMemory, podUsage, h.calculateCurrentUsage,
-		); err != nil {
+		if err := h.validateResourceQuota(ctx, podObj.Namespace, usage.ResourceRequestsMemory, podUsage); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota memory requests validation failed: %w", err)
 		}
 	}
 
 	podUsage = pod.CalculatePodUsage(podObj, usage.ResourceLimitsCPU)
 	if !podUsage.IsZero() {
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, usage.ResourceLimitsCPU, podUsage, h.calculateCurrentUsage,
-		); err != nil {
+		if err := h.validateResourceQuota(ctx, podObj.Namespace, usage.ResourceLimitsCPU, podUsage); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota CPU limits validation failed: %w", err)
 		}
 	}
 
 	podUsage = pod.CalculatePodUsage(podObj, usage.ResourceLimitsMemory)
 	if !podUsage.IsZero() {
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, usage.ResourceLimitsMemory, podUsage, h.calculateCurrentUsage,
-		); err != nil {
+		if err := h.validateResourceQuota(ctx, podObj.Namespace, usage.ResourceLimitsMemory, podUsage); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota memory limits validation failed: %w", err)
 		}
 	}
@@ -140,6 +134,19 @@ func (h *PodWebhook) validateOperation(
 		zap.String("operation", string(op)),
 	)
 	return nil, nil
+}
+
+func (h *PodWebhook) validateResourceQuota(
+	ctx context.Context,
+	namespace string,
+	resourceName corev1.ResourceName,
+	requested resource.Quantity,
+) error {
+	return validateAgainstCRQ(ctx, h.client, h.crqClient, h.logger,
+		namespace, resourceName, requested,
+		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
+			return h.calculateCurrentUsage(ctx, ns, rn)
+		})
 }
 
 // calculateCurrentUsage calculates the current usage of a resource in a namespace

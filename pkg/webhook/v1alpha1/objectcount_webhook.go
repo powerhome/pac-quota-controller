@@ -53,9 +53,6 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
-// TODO: the []string return is a future-proofing placeholder for admission
-// warnings. Once any validator actually emits warnings, plumb them through
-// runWebhook into AdmissionResponse.Warnings.
 func (h *ObjectCountWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
 	crqKey := req.Resource.Resource
 	if req.Resource.Group != "" {
@@ -64,28 +61,27 @@ func (h *ObjectCountWebhook) validate(ctx context.Context, req *admissionv1.Admi
 	resourceName := corev1.ResourceName(crqKey)
 
 	switch req.Operation {
-	case admissionv1.Create, admissionv1.Update:
-		return h.validateOperation(ctx, req.Namespace, resourceName, req.Operation)
+	case admissionv1.Create:
+		return h.validateObjectOperation(ctx, req.Namespace, resourceName, OperationCreate)
+	case admissionv1.Update:
+		return h.validateObjectOperation(ctx, req.Namespace, resourceName, OperationUpdate)
 	default:
 		return nil, unsupportedOperationError(req.Operation, "ObjectCount")
 	}
 }
 
-// validateOperation is shared between create and update validation.
-func (h *ObjectCountWebhook) validateOperation(
+// validateObjectOperation is shared between create and update validation.
+func (h *ObjectCountWebhook) validateObjectOperation(
 	ctx context.Context,
 	namespace string,
 	resourceName corev1.ResourceName,
-	op admissionv1.Operation,
+	op operation,
 ) ([]string, error) {
 	if resourceName == "" {
 		h.logger.Info("Skipping CRQ validation for empty resource name on " + string(op))
 		return nil, nil
 	}
-	if err := validateAgainstCRQ(
-		ctx, h.client, h.crqClient, h.logger,
-		namespace, resourceName, resource.MustParse("1"), h.objectCountCalculator.CalculateUsage,
-	); err != nil {
+	if err := h.validateResourceQuota(ctx, namespace, resourceName, resource.MustParse("1")); err != nil {
 		return nil, err
 	}
 	h.logger.Debug("Object CRQ validation passed",
@@ -93,4 +89,17 @@ func (h *ObjectCountWebhook) validateOperation(
 		zap.String("namespace", namespace),
 		zap.String("operation", string(op)))
 	return nil, nil
+}
+
+func (h *ObjectCountWebhook) validateResourceQuota(
+	ctx context.Context,
+	namespace string,
+	resourceName corev1.ResourceName,
+	requested resource.Quantity,
+) error {
+	return validateAgainstCRQ(ctx, h.client, h.crqClient, h.logger,
+		namespace, resourceName, requested,
+		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
+			return h.objectCountCalculator.CalculateUsage(ctx, ns, rn)
+		})
 }
