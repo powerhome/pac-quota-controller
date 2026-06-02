@@ -369,6 +369,21 @@ var _ = Describe("ObjectCountWebhook", func() {
 				_ = json.Unmarshal(w.Body.Bytes(), &resp)
 				Expect(resp.Response.Allowed).To(BeTrue())
 			})
+
+			It("should reject UPDATE with unsupportedOperationError", func() {
+				review := createObjectCountAdmissionReview("2020", nsName, "configmaps")
+				review.Request.Operation = admissionv1.Update
+				body, _ := json.Marshal(review)
+				req := httptest.NewRequest("POST", "/webhook", bytes.NewReader(body))
+				w := httptest.NewRecorder()
+				ginEngine.ServeHTTP(w, req)
+				Expect(w.Code).To(Equal(200))
+				var resp admissionv1.AdmissionReview
+				_ = json.Unmarshal(w.Body.Bytes(), &resp)
+				Expect(resp.Response.Allowed).To(BeFalse())
+				Expect(resp.Response.Result.Code).To(Equal(int32(400)))
+				Expect(resp.Response.Result.Message).To(ContainSubstring("Operation UPDATE is not supported for ObjectCount"))
+			})
 		})
 	})
 })

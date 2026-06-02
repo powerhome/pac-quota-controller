@@ -54,31 +54,24 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 }
 
 func (h *ObjectCountWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
+	if req.Operation != admissionv1.Create {
+		return nil, unsupportedOperationError(req.Operation, "ObjectCount")
+	}
 	crqKey := req.Resource.Resource
 	if req.Resource.Group != "" {
 		crqKey = crqKey + "." + req.Resource.Group
 	}
 	resourceName := corev1.ResourceName(crqKey)
-
-	switch req.Operation {
-	case admissionv1.Create:
-		return h.validateObjectOperation(ctx, req.Namespace, resourceName, OperationCreate)
-	case admissionv1.Update:
-		return h.validateObjectOperation(ctx, req.Namespace, resourceName, OperationUpdate)
-	default:
-		return nil, unsupportedOperationError(req.Operation, "ObjectCount")
-	}
+	return h.validateObjectCreate(ctx, req.Namespace, resourceName)
 }
 
-// validateObjectOperation is shared between create and update validation.
-func (h *ObjectCountWebhook) validateObjectOperation(
+func (h *ObjectCountWebhook) validateObjectCreate(
 	ctx context.Context,
 	namespace string,
 	resourceName corev1.ResourceName,
-	op operation,
 ) ([]string, error) {
 	if resourceName == "" {
-		h.logger.Info("Skipping CRQ validation for empty resource name on " + string(op))
+		h.logger.Info("Skipping CRQ validation for empty resource name on " + string(OperationCreate))
 		return nil, nil
 	}
 	if err := h.validateResourceQuota(ctx, namespace, resourceName, resource.MustParse("1")); err != nil {
@@ -87,7 +80,7 @@ func (h *ObjectCountWebhook) validateObjectOperation(
 	h.logger.Debug("Object CRQ validation passed",
 		zap.String("object", resourceName.String()),
 		zap.String("namespace", namespace),
-		zap.String("operation", string(op)))
+		zap.String("operation", string(OperationCreate)))
 	return nil, nil
 }
 

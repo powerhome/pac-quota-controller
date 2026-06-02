@@ -52,7 +52,7 @@ webhooks:
     rules:
       - apiGroups: [""]
         apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE"]
+        operations: ["CREATE"]
         resources: ["namespaces"]
     namespaceSelector:
       matchExpressions:
@@ -78,8 +78,12 @@ webhooks:
     rules:
       - apiGroups: [""]
         apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE"]
+        operations: ["CREATE"]
         resources: ["pods"]
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["pods/resize"]
     namespaceSelector:
       matchExpressions:
         - key: kubernetes.io/metadata.name
@@ -156,23 +160,23 @@ webhooks:
     rules:
       - apiGroups: [""]
         apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE"]
+        operations: ["CREATE"]
         resources: ["configmaps", "secrets", "replicationcontrollers"]
       - apiGroups: ["apps"]
         apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE"]
+        operations: ["CREATE"]
         resources: ["deployments", "statefulsets", "daemonsets"]
       - apiGroups: ["batch"]
         apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE"]
+        operations: ["CREATE"]
         resources: ["jobs", "cronjobs"]
       - apiGroups: ["autoscaling"]
         apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE"]
+        operations: ["CREATE"]
         resources: ["horizontalpodautoscalers"]
       - apiGroups: ["networking.k8s.io"]
         apiVersions: ["v1"]
-        operations: ["CREATE", "UPDATE"]
+        operations: ["CREATE"]
         resources: ["ingresses"]
     namespaceSelector:
       matchExpressions:
