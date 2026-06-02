@@ -44,11 +44,8 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 
 > **Namespace label semantics**: For namespaced webhooks (Pod, PVC, Service,
 > ResourceQuota) the value is the admitted object's namespace. For
-> cluster-scoped webhooks (Namespace, ClusterResourceQuota) the label is left
-> empty, since those resources have no namespace of their own. Emitting the
-> object name there would be misleading for dashboards and alert routing that
-> treat the label as a real namespace, and would explode cardinality with one
-> series per cluster-scoped object.
+> cluster-scoped webhooks (Namespace, ClusterResourceQuota) it is the admitted
+> object's name, since those resources have no namespace of their own.
 >
 > **Cardinality note**: In large clusters (~1000 namespaces × 6 webhooks ×
 > 2 operations × 2 decisions ≈ 24k series for
