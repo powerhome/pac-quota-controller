@@ -27,20 +27,30 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 ### `pac_quota_controller_webhook_validation_total`
 
 - **Type:** Counter
-- **Labels:** `webhook`, `operation`
+- **Labels:** `webhook`, `operation`, `namespace`
 - **Description:** Total number of webhook validation requests.
 
 ### `pac_quota_controller_webhook_validation_duration_seconds`
 
 - **Type:** Histogram
-- **Labels:** `webhook`, `operation`
+- **Labels:** `webhook`, `operation`, `namespace`
 - **Description:** Duration of webhook validation requests.
 
 ### `pac_quota_controller_webhook_admission_decision_total`
 
 - **Type:** Counter
-- **Labels:** `webhook`, `operation`, `decision`
+- **Labels:** `webhook`, `operation`, `decision`, `namespace`
 - **Description:** Total number of webhook admission decisions (allowed/denied).
+
+> **Namespace label semantics**: For namespaced webhooks (Pod, PVC, Service,
+> ResourceQuota) the value is the admitted object's namespace. For
+> cluster-scoped webhooks (Namespace, ClusterResourceQuota) it is the admitted
+> object's name, since those resources have no namespace of their own.
+>
+> **Cardinality note**: In large clusters (~1000 namespaces × 6 webhooks ×
+> 2 operations × 2 decisions ≈ 24k series for
+> `pac_quota_controller_webhook_admission_decision_total`). Prometheus handles
+> this well, but operators should be aware when sizing storage and alerts.
 
 ---
 
