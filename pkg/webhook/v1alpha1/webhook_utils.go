@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,10 +16,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"github.com/gin-gonic/gin"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
 
 type operation string
@@ -29,127 +28,9 @@ const (
 	OperationDelete operation = "deletion"
 )
 
-// validateCRQResourceQuotaWithNamespace is a shared function for validating resource quotas
-// across webhooks with actual namespace object
-func validateCRQResourceQuotaWithNamespace(
-	ctx context.Context,
-	crqClient *quota.CRQClient,
-	kubernetesClient kubernetes.Interface,
-	ns *corev1.Namespace,
-	resourceName corev1.ResourceName,
-	requestedQuantity resource.Quantity,
-	calculateCurrentUsage func(string, corev1.ResourceName) (resource.Quantity, error),
-	logger *zap.Logger,
-) error {
-	correlationID := quota.GetCorrelationID(ctx)
-
-	if crqClient == nil {
-		logger.Info("Skipping CRQ validation - no CRQ client available",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.String("resource", string(resourceName)),
-			zap.String("requested_quantity", requestedQuantity.String()))
-		return nil
-	}
-
-	logger.Debug("Starting CRQ validation",
-		zap.String("correlation_id", correlationID),
-		zap.String("namespace", ns.Name),
-		zap.String("resource", string(resourceName)),
-		zap.String("requested_quantity", requestedQuantity.String()),
-		zap.Any("namespace_labels", ns.Labels))
-
-	// Find the CRQ that applies to this namespace
-	crq, err := crqClient.GetCRQByNamespace(ctx, ns)
-	if err != nil {
-		logger.Error("Failed to get CRQ for namespace",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.Error(err))
-		return nil
-	}
-
-	// If no CRQ applies to this namespace, allow the operation
-	if crq == nil {
-		logger.Debug("No CRQ applies to namespace, allowing operation",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.String("resource", string(resourceName)))
-		return nil
-	}
-
-	logger.Debug("Found matching CRQ",
-		zap.String("correlation_id", correlationID),
-		zap.String("namespace", ns.Name),
-		zap.String("crq_name", crq.Name),
-		zap.String("resource", string(resourceName)))
-
-	// Check if the requested quantity would exceed the quota
-	if quotaLimit, exists := crq.Spec.Hard[resourceName]; exists {
-		logger.Debug("Found quota limit for resource",
-			zap.String("correlation_id", correlationID),
-			zap.String("resource", string(resourceName)),
-			zap.String("quota_limit", quotaLimit.String()))
-
-		// Calculate current usage across ALL namespaces that match the CRQ selector
-		currentUsage, err := calculateCRQCurrentUsage(ctx, kubernetesClient, crq, resourceName, calculateCurrentUsage, logger)
-		if err != nil {
-			logger.Error("Failed to calculate current usage across CRQ namespaces",
-				zap.String("correlation_id", correlationID),
-				zap.String("namespace", ns.Name),
-				zap.String("resource", string(resourceName)),
-				zap.Error(err))
-			return fmt.Errorf("failed to calculate current usage: %w", err)
-		}
-
-		// Calculate total usage after this operation
-		totalUsage := currentUsage.DeepCopy()
-		totalUsage.Add(requestedQuantity)
-
-		logger.Debug("Quota validation check",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.String("resource", string(resourceName)),
-			zap.String("current_usage", currentUsage.String()),
-			zap.String("requested_quantity", requestedQuantity.String()),
-			zap.String("total_usage", totalUsage.String()),
-			zap.String("quota_limit", quotaLimit.String()))
-
-		// Check if total usage would exceed quota
-		if totalUsage.Cmp(quotaLimit) > 0 {
-			logger.Info("Resource quota would be exceeded",
-				zap.String("correlation_id", correlationID),
-				zap.String("namespace", ns.Name),
-				zap.String("resource", string(resourceName)),
-				zap.String("current_usage", currentUsage.String()),
-				zap.String("requested_quantity", requestedQuantity.String()),
-				zap.String("total_usage", totalUsage.String()),
-				zap.String("quota_limit", quotaLimit.String()),
-				zap.String("crq_name", crq.Name))
-
-			return fmt.Errorf("ClusterResourceQuota '%s' %s limit exceeded: requested %s, current usage %s, "+
-				"quota limit %s, total would be %s",
-				crq.Name, resourceName, requestedQuantity.String(), currentUsage.String(), quotaLimit.String(), totalUsage.String())
-		}
-	} else {
-		logger.Debug("No quota limit defined for resource, allowing operation",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.String("resource", string(resourceName)),
-			zap.String("crq_name", crq.Name))
-	}
-
-	logger.Debug("CRQ validation passed",
-		zap.String("correlation_id", correlationID),
-		zap.String("namespace", ns.Name),
-		zap.String("resource", string(resourceName)),
-		zap.String("requested_quantity", requestedQuantity.String()),
-		zap.String("crq_name", crq.Name))
-	return nil
-}
-
-// calculateCRQCurrentUsage calculates the current usage of a resource across all namespaces
-// that match the ClusterResourceQuota selector
+// calculateCRQCurrentUsage sums the per-resource usage across every namespace
+// that matches the CRQ selector. It's the cross-namespace half of
+// validateAgainstCRQ in webhook_handler.go.
 func calculateCRQCurrentUsage(
 	ctx context.Context,
 	kubernetesClient kubernetes.Interface,
@@ -158,7 +39,6 @@ func calculateCRQCurrentUsage(
 	calculateCurrentUsage func(string, corev1.ResourceName) (resource.Quantity, error),
 	logger *zap.Logger,
 ) (resource.Quantity, error) {
-	// Get all namespaces that match the CRQ selector
 	namespaceNames, err := namespace.GetSelectedNamespaces(ctx, kubernetesClient, crq)
 	if err != nil {
 		return resource.Quantity{}, fmt.Errorf("failed to get namespaces matching CRQ selector: %w", err)
@@ -169,7 +49,6 @@ func calculateCRQCurrentUsage(
 		zap.String("resource", string(resourceName)),
 		zap.Strings("namespaces", namespaceNames))
 
-	// Calculate total usage across all matching namespaces
 	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
 	for _, namespaceName := range namespaceNames {
 		nsUsage, err := calculateCurrentUsage(namespaceName, resourceName)
@@ -197,6 +76,8 @@ func calculateCRQCurrentUsage(
 	return *totalUsage, nil
 }
 
+// sendWebhookRequest is a test helper that drives the gin engine through an
+// HTTP round-trip and decodes the resulting AdmissionReview.
 func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.AdmissionReview) *admissionv1.AdmissionReview {
 	body, _ := json.Marshal(admissionReview)
 	req, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(body))
@@ -207,7 +88,6 @@ func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.Admissi
 
 	var response admissionv1.AdmissionReview
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
-		// If unmarshaling fails, create a default response
 		response = admissionv1.AdmissionReview{
 			Response: &admissionv1.AdmissionResponse{
 				Allowed: false,
@@ -218,34 +98,4 @@ func sendWebhookRequest(engine *gin.Engine, admissionReview *admissionv1.Admissi
 		}
 	}
 	return &response
-}
-
-// handleWebhookOperation is a shared helper for operation switch logic in pod/service webhooks
-func handleWebhookOperation(
-	logger *zap.Logger,
-	operation admissionv1.Operation,
-	createFn func() ([]string, error),
-	updateFn func() ([]string, error),
-	c *gin.Context,
-	admissionReview *admissionv1.AdmissionReview,
-	resourceType string,
-) ([]string, error) {
-	var warnings []string
-	var err error
-	switch operation {
-	case admissionv1.Create:
-		warnings, err = createFn()
-	case admissionv1.Update:
-		warnings, err = updateFn()
-	default:
-		logger.Info("Unsupported operation", zap.String("operation", string(operation)))
-		admissionReview.Response.Allowed = false
-		admissionReview.Response.Result = &metav1.Status{
-			Code:    400,
-			Message: fmt.Sprintf("Operation %s is not supported for %s", operation, resourceType),
-		}
-		c.JSON(200, admissionReview)
-		return nil, fmt.Errorf("unsupported operation")
-	}
-	return warnings, err
 }
