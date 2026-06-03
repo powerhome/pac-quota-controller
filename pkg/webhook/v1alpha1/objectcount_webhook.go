@@ -32,6 +32,7 @@ func NewObjectCountWebhook(
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	logger = logger.Named("objectcount-webhook")
 	return &ObjectCountWebhook{
 		client:                k8sClient,
 		objectCountCalculator: objectcount.NewObjectCountCalculator(k8sClient, logger),
@@ -60,27 +61,28 @@ func (h *ObjectCountWebhook) validate(ctx context.Context, req *admissionv1.Admi
 	resourceName := corev1.ResourceName(crqKey)
 
 	switch req.Operation {
-	case admissionv1.Create:
-		return h.validateObjectOperation(ctx, req.Namespace, resourceName, OperationCreate)
-	case admissionv1.Update:
-		return h.validateObjectOperation(ctx, req.Namespace, resourceName, OperationUpdate)
+	case admissionv1.Create, admissionv1.Update:
+		return h.validateOperation(ctx, req.Namespace, resourceName, req.Operation)
 	default:
 		return nil, unsupportedOperationError(req.Operation, "ObjectCount")
 	}
 }
 
-// validateObjectOperation is shared between create and update validation.
-func (h *ObjectCountWebhook) validateObjectOperation(
+// validateOperation is shared between create and update validation.
+func (h *ObjectCountWebhook) validateOperation(
 	ctx context.Context,
 	namespace string,
 	resourceName corev1.ResourceName,
-	op operation,
+	op admissionv1.Operation,
 ) ([]string, error) {
 	if resourceName == "" {
 		h.logger.Info("Skipping CRQ validation for empty resource name on " + string(op))
 		return nil, nil
 	}
-	if err := h.validateResourceQuota(ctx, namespace, resourceName, resource.MustParse("1")); err != nil {
+	if err := validateAgainstCRQ(
+		ctx, h.client, h.crqClient, h.logger,
+		namespace, resourceName, resource.MustParse("1"), h.objectCountCalculator.CalculateUsage,
+	); err != nil {
 		return nil, err
 	}
 	h.logger.Debug("Object CRQ validation passed",
@@ -88,17 +90,4 @@ func (h *ObjectCountWebhook) validateObjectOperation(
 		zap.String("namespace", namespace),
 		zap.String("operation", string(op)))
 	return nil, nil
-}
-
-func (h *ObjectCountWebhook) validateResourceQuota(
-	ctx context.Context,
-	namespace string,
-	resourceName corev1.ResourceName,
-	requested resource.Quantity,
-) error {
-	return validateAgainstCRQ(ctx, h.client, h.crqClient, h.logger,
-		namespace, resourceName, requested,
-		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
-			return h.objectCountCalculator.CalculateUsage(ctx, ns, rn)
-		})
 }

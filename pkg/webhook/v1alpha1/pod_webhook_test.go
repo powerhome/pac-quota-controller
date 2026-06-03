@@ -349,7 +349,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateCreate(ctx, pod)
+			warnings, err := webhook.validateOperation(ctx, pod, admissionv1.Create)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -376,13 +376,13 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateUpdate(ctx, pod)
+			warnings, err := webhook.validateOperation(ctx, pod, admissionv1.Update)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
 	})
 
-	Describe("validatePodOperation", func() {
+	Describe("validateOperation", func() {
 		It("should validate pod operation for creation", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -398,7 +398,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validatePodOperation(ctx, pod, "creation")
+			warnings, err := webhook.validateOperation(ctx, pod, "creation")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -418,13 +418,13 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validatePodOperation(ctx, pod, "update")
+			warnings, err := webhook.validateOperation(ctx, pod, "update")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
 
 		It("should handle nil pod", func() {
-			warnings, err := webhook.validatePodOperation(ctx, nil, "creation")
+			warnings, err := webhook.validateOperation(ctx, nil, "creation")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})

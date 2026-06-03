@@ -78,7 +78,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(Equal(k8sClient))
-			Expect(webhook.logger).To(Equal(logger))
+			Expect(webhook.logger).NotTo(BeNil())
 			Expect(webhook.storageCalculator).NotTo(BeNil())
 		})
 
@@ -87,7 +87,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(BeNil())
-			Expect(webhook.logger).To(Equal(logger))
+			Expect(webhook.logger).NotTo(BeNil())
 		})
 
 		It("should create webhook with nil logger", func() {
@@ -254,7 +254,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				},
 			}
 
-			err := webhook.validateCreate(ctx, pvc)
+			err := webhook.validateOperation(ctx, pvc)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -275,12 +275,12 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				},
 			}
 
-			err := webhook.validateUpdate(ctx, pvc)
+			err := webhook.validateOperation(ctx, pvc)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
-	Describe("validateStorageQuota", func() {
+	Describe("validateOperation", func() {
 		It("should validate storage quota successfully", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -296,7 +296,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				},
 			}
 
-			err := webhook.validateStorageQuota(ctx, pvc)
+			err := webhook.validateOperation(ctx, pvc)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -313,19 +313,23 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				},
 			}
 
-			err := webhook.validateStorageQuota(ctx, pvc)
+			err := webhook.validateOperation(ctx, pvc)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
-	Describe("validateResourceQuota", func() {
+	Describe("validateAgainstCRQ", func() {
 		It("should validate storage quota successfully when within limits", func() {
-			err := webhook.validateResourceQuota(ctx, testNamespace.Name, corev1.ResourceStorage, resource.MustParse("1Gi"))
+			err := validateAgainstCRQ(ctx, webhook.client, webhook.crqClient, webhook.logger,
+				testNamespace.Name, corev1.ResourceStorage, resource.MustParse("1Gi"),
+				webhook.calculateCurrentUsage)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should handle namespace not found", func() {
-			err := webhook.validateResourceQuota(ctx, "nonexistent-namespace", corev1.ResourceStorage, resource.MustParse("1Gi"))
+			err := validateAgainstCRQ(ctx, webhook.client, webhook.crqClient, webhook.logger,
+				"nonexistent-namespace", corev1.ResourceStorage, resource.MustParse("1Gi"),
+				webhook.calculateCurrentUsage)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("namespaces \"nonexistent-namespace\" not found"))
 		})
@@ -661,7 +665,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 				Expect(usage.Value()).To(BeNumerically("==", 2)) // Should count the PVCs with specific storage class
 			})
 
-			Describe("validateStorageQuota edge cases", func() {
+			Describe("validateOperation edge cases", func() {
 				var namespace *corev1.Namespace
 				var crq *quotav1alpha1.ClusterResourceQuota
 				var ctx context.Context
@@ -716,7 +720,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 						},
 					}
 
-					err := webhook.validateStorageQuota(ctx, pvc)
+					err := webhook.validateOperation(ctx, pvc)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("premium-ssd.storageclass.storage.k8s.io/requests.storage"))
 				})
@@ -758,7 +762,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 						Expect(err).NotTo(HaveOccurred())
 					}
 
-					err := webhook.validateStorageQuota(ctx, pvc)
+					err := webhook.validateOperation(ctx, pvc)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("requests.storage"))
 				})
@@ -778,7 +782,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 						},
 					}
 
-					err := webhook.validateStorageQuota(ctx, pvc)
+					err := webhook.validateOperation(ctx, pvc)
 					Expect(err).NotTo(HaveOccurred()) // Should pass with general storage quota
 				})
 
@@ -795,7 +799,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 						},
 					}
 
-					err := webhook.validateStorageQuota(ctx, pvc)
+					err := webhook.validateOperation(ctx, pvc)
 					Expect(err).NotTo(HaveOccurred()) // Should pass when no storage requested
 				})
 			})
@@ -859,7 +863,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					// Just change labels, not storage
 					updatedPVC.Labels = map[string]string{"updated": "true"}
 
-					err := webhook.validateUpdate(ctx, updatedPVC)
+					err := webhook.validateOperation(ctx, updatedPVC)
 					Expect(err).NotTo(HaveOccurred())
 				})
 
@@ -903,7 +907,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 					// Would make total 55Gi > 50Gi
 					updatedPVC.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("20Gi")
 
-					err = webhook.validateUpdate(ctx, updatedPVC)
+					err = webhook.validateOperation(ctx, updatedPVC)
 					Expect(err).To(HaveOccurred())
 					Expect(err.Error()).To(ContainSubstring("requests.storage"))
 				})
@@ -923,7 +927,7 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 						},
 					}
 
-					err := webhook.validateUpdate(ctx, newPVC)
+					err := webhook.validateOperation(ctx, newPVC)
 					Expect(err).NotTo(HaveOccurred()) // Should validate as normal
 				})
 			})

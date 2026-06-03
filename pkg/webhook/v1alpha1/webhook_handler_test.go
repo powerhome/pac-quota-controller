@@ -259,7 +259,7 @@ var _ = Describe("validateAgainstCRQ", func() {
 		return quota.NewCRQClient(cl, logger)
 	}
 
-	calc := func(_ string, _ corev1.ResourceName) (resource.Quantity, error) {
+	calc := func(_ context.Context, _ string, _ corev1.ResourceName) (resource.Quantity, error) {
 		return *resource.NewQuantity(0, resource.DecimalSI), nil
 	}
 
@@ -331,7 +331,7 @@ var _ = Describe("validateAgainstCRQ", func() {
 			},
 		}
 		crqClient = newCRQClient(crq)
-		usage := func(_ string, _ corev1.ResourceName) (resource.Quantity, error) {
+		usage := func(_ context.Context, _ string, _ corev1.ResourceName) (resource.Quantity, error) {
 			return resource.MustParse("2"), nil
 		}
 		err := validateAgainstCRQ(ctx, fakeClient, crqClient, logger,
@@ -353,7 +353,7 @@ var _ = Describe("validateAgainstCRQ", func() {
 			},
 		}
 		crqClient = newCRQClient(crq)
-		usage := func(_ string, _ corev1.ResourceName) (resource.Quantity, error) {
+		usage := func(_ context.Context, _ string, _ corev1.ResourceName) (resource.Quantity, error) {
 			return resource.MustParse("2"), nil
 		}
 		err := validateAgainstCRQ(ctx, fakeClient, crqClient, logger,
@@ -374,7 +374,7 @@ var _ = Describe("validateAgainstCRQ", func() {
 			},
 		}
 		crqClient = newCRQClient(crq)
-		failing := func(_ string, _ corev1.ResourceName) (resource.Quantity, error) {
+		failing := func(_ context.Context, _ string, _ corev1.ResourceName) (resource.Quantity, error) {
 			return resource.Quantity{}, errors.New("boom")
 		}
 		err := validateAgainstCRQ(ctx, fakeClient, crqClient, logger,
@@ -405,7 +405,7 @@ var _ = Describe("calculateCRQCurrentUsage", func() {
 			},
 		}
 		total, err := calculateCRQCurrentUsage(ctx, fakeClient, crq, corev1.ResourceCPU,
-			func(string, corev1.ResourceName) (resource.Quantity, error) {
+			func(context.Context, string, corev1.ResourceName) (resource.Quantity, error) {
 				return resource.MustParse("99"), nil
 			}, logger)
 		Expect(err).NotTo(HaveOccurred())
@@ -424,7 +424,7 @@ var _ = Describe("calculateCRQCurrentUsage", func() {
 			},
 		}
 		total, err := calculateCRQCurrentUsage(ctx, fakeClient, crq, corev1.ResourceCPU,
-			func(_ string, _ corev1.ResourceName) (resource.Quantity, error) {
+			func(_ context.Context, _ string, _ corev1.ResourceName) (resource.Quantity, error) {
 				return resource.MustParse("3"), nil
 			}, logger)
 		Expect(err).NotTo(HaveOccurred())
@@ -442,7 +442,7 @@ var _ = Describe("calculateCRQCurrentUsage", func() {
 			},
 		}
 		_, err := calculateCRQCurrentUsage(ctx, fakeClient, crq, corev1.ResourceCPU,
-			func(string, corev1.ResourceName) (resource.Quantity, error) {
+			func(context.Context, string, corev1.ResourceName) (resource.Quantity, error) {
 				return resource.Quantity{}, errors.New("calc boom")
 			}, logger)
 		Expect(err).To(HaveOccurred())
@@ -462,7 +462,7 @@ var _ = Describe("calculateCRQCurrentUsage", func() {
 			},
 		}
 		_, err := calculateCRQCurrentUsage(ctx, fakeClient, crq, corev1.ResourceCPU,
-			func(string, corev1.ResourceName) (resource.Quantity, error) {
+			func(context.Context, string, corev1.ResourceName) (resource.Quantity, error) {
 				return resource.Quantity{}, nil
 			}, logger)
 		Expect(err).To(HaveOccurred())

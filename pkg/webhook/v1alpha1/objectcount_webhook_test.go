@@ -59,7 +59,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 			webhook = NewObjectCountWebhook(fakeClient, crqClient, logger)
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(Equal(fakeClient))
-			Expect(webhook.logger).To(Equal(logger))
+			Expect(webhook.logger).NotTo(BeNil())
 			Expect(webhook.crqClient).To(Equal(crqClient))
 		})
 

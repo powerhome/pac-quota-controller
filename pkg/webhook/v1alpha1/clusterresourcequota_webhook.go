@@ -31,6 +31,7 @@ func NewClusterResourceQuotaWebhook(
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	logger = logger.Named("crq-webhook")
 	return &ClusterResourceQuotaWebhook{
 		client:    k8sClient,
 		crqClient: crqClient,
@@ -71,20 +72,6 @@ func (h *ClusterResourceQuotaWebhook) validate(
 			zap.String("operation", string(req.Operation)))
 		return nil, nil
 	}
-}
-
-func (h *ClusterResourceQuotaWebhook) validateCreate(
-	ctx context.Context,
-	crq *quotav1alpha1.ClusterResourceQuota,
-) error {
-	return h.validateOperation(ctx, crq)
-}
-
-func (h *ClusterResourceQuotaWebhook) validateUpdate(
-	ctx context.Context,
-	crq *quotav1alpha1.ClusterResourceQuota,
-) error {
-	return h.validateOperation(ctx, crq)
 }
 
 // validateOperation is a shared helper for create/update validation

@@ -30,6 +30,7 @@ func NewNamespaceWebhook(
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	logger = logger.Named("namespace-webhook")
 	return &NamespaceWebhook{
 		client:    k8sClient,
 		crqClient: crqClient,
@@ -47,32 +48,25 @@ func (h *NamespaceWebhook) Handle(c *gin.Context) {
 }
 
 func (h *NamespaceWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
+	switch req.Operation {
+	case admissionv1.Create, admissionv1.Update:
+	default:
+		return nil, unsupportedOperationError(req.Operation, "Namespace")
+	}
+
 	var ns corev1.Namespace
 	if err := decodeAdmissionObject(req.Object.Raw, &ns, "Namespace"); err != nil {
 		return nil, err
 	}
 
-	switch req.Operation {
-	case admissionv1.Create, admissionv1.Update:
-		h.logger.Debug("Validating namespace for CRQ conflicts",
-			zap.String("namespace", ns.Name),
-			zap.String("operation", string(req.Operation)))
-		return nil, h.validateNamespaceAgainstCRQs(ctx, &ns)
-	default:
-		return nil, unsupportedOperationError(req.Operation, "Namespace")
-	}
+	h.logger.Debug("Validating namespace for CRQ conflicts",
+		zap.String("namespace", ns.Name),
+		zap.String("operation", string(req.Operation)))
+	return nil, h.validateOperation(ctx, &ns)
 }
 
-func (h *NamespaceWebhook) validateCreate(ctx context.Context, ns *corev1.Namespace) error {
-	return h.validateNamespaceAgainstCRQs(ctx, ns)
-}
-
-func (h *NamespaceWebhook) validateUpdate(ctx context.Context, ns *corev1.Namespace) error {
-	return h.validateNamespaceAgainstCRQs(ctx, ns)
-}
-
-// validateNamespaceAgainstCRQs checks if the namespace would conflict with existing CRQs
-func (h *NamespaceWebhook) validateNamespaceAgainstCRQs(ctx context.Context, ns *corev1.Namespace) error {
+// validateOperation checks if the namespace would conflict with existing CRQs
+func (h *NamespaceWebhook) validateOperation(ctx context.Context, ns *corev1.Namespace) error {
 	if h.crqClient == nil {
 		h.logger.Info("No CRQ client available, skipping CRQ validation",
 			zap.String("namespace", ns.Name))

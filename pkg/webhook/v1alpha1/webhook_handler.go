@@ -18,6 +18,9 @@ import (
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/metrics"
+
+	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
 )
 
 // statusError carries an HTTP status code alongside an error message so callbacks
@@ -132,7 +135,7 @@ func decodeAdmissionObject(raw []byte, into runtime.Object, kind string) error {
 		raw,
 		into,
 	); err != nil {
-		return newStatusErrorf(http.StatusBadRequest, "Unable to decode %s object", kind)
+		return newStatusErrorf(http.StatusBadRequest, "Unable to decode %s object: %v", kind, err)
 	}
 	return nil
 }
@@ -156,7 +159,7 @@ func validateAgainstCRQ(
 	namespaceName string,
 	resourceName corev1.ResourceName,
 	requested resource.Quantity,
-	calculateCurrentUsage func(string, corev1.ResourceName) (resource.Quantity, error),
+	calculateCurrentUsage func(context.Context, string, corev1.ResourceName) (resource.Quantity, error),
 ) error {
 	correlationID := quota.GetCorrelationID(ctx)
 
@@ -181,15 +184,7 @@ func validateAgainstCRQ(
 		zap.String("requested_quantity", requested.String()),
 		zap.Any("namespace_labels", ns.Labels))
 
-	crq, err := crqClient.GetCRQByNamespace(ctx, ns)
-	if err != nil {
-		logger.Error("Failed to get CRQ for namespace",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.Error(err))
-		return nil
-	}
-
+	crq, _ := crqClient.GetCRQByNamespace(ctx, ns)
 	if crq == nil {
 		logger.Debug("No CRQ applies to namespace, allowing operation",
 			zap.String("correlation_id", correlationID),
@@ -255,4 +250,52 @@ func validateAgainstCRQ(
 		zap.String("requested_quantity", requested.String()),
 		zap.String("crq_name", crq.Name))
 	return nil
+}
+
+// calculateCRQCurrentUsage sums the per-resource usage across every namespace
+// that matches the CRQ selector. It's the cross-namespace half of
+// validateAgainstCRQ.
+func calculateCRQCurrentUsage(
+	ctx context.Context,
+	kubernetesClient kubernetes.Interface,
+	crq *quotav1alpha1.ClusterResourceQuota,
+	resourceName corev1.ResourceName,
+	calculateCurrentUsage func(context.Context, string, corev1.ResourceName) (resource.Quantity, error),
+	logger *zap.Logger,
+) (resource.Quantity, error) {
+	namespaceNames, err := namespace.GetSelectedNamespaces(ctx, kubernetesClient, crq)
+	if err != nil {
+		return resource.Quantity{}, fmt.Errorf("failed to get namespaces matching CRQ selector: %w", err)
+	}
+
+	logger.Debug("Calculating usage across CRQ namespaces",
+		zap.String("crq", crq.Name),
+		zap.String("resource", string(resourceName)),
+		zap.Strings("namespaces", namespaceNames))
+
+	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
+	for _, namespaceName := range namespaceNames {
+		nsUsage, err := calculateCurrentUsage(ctx, namespaceName, resourceName)
+		if err != nil {
+			logger.Error("Failed to calculate usage for namespace",
+				zap.String("namespace", namespaceName),
+				zap.String("resource", string(resourceName)),
+				zap.Error(err))
+			return resource.Quantity{}, fmt.Errorf("failed to calculate usage for namespace %s: %w", namespaceName, err)
+		}
+		totalUsage.Add(nsUsage)
+
+		logger.Debug("Namespace usage calculated",
+			zap.String("namespace", namespaceName),
+			zap.String("resource", string(resourceName)),
+			zap.String("usage", nsUsage.String()))
+	}
+
+	logger.Debug("Total CRQ usage calculated",
+		zap.String("crq", crq.Name),
+		zap.String("resource", string(resourceName)),
+		zap.String("total_usage", totalUsage.String()),
+		zap.Strings("namespaces", namespaceNames))
+
+	return *totalUsage, nil
 }
