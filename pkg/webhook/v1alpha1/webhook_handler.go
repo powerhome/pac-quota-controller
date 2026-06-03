@@ -188,7 +188,18 @@ func validateAgainstCRQ(
 		zap.String("requested_quantity", requested.String()),
 		zap.Any("namespace_labels", ns.Labels))
 
-	crq, _ := crqClient.GetCRQByNamespace(ctx, ns)
+	crq, err := crqClient.GetCRQByNamespace(ctx, ns)
+	if err != nil {
+		// TODO: currently fail-open on CRQ-lookup errors (log + admit) to
+		// avoid blocking unrelated workloads during transient API/informer issues.
+		// Revisit once we are confident the CRQ informer is reliably available;
+		logger.Error("Failed to get CRQ for namespace",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", ns.Name),
+			zap.Error(err))
+		return nil
+	}
+
 	if crq == nil {
 		logger.Debug("No CRQ applies to namespace, allowing operation",
 			zap.String("correlation_id", correlationID),
