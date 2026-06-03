@@ -87,7 +87,7 @@ var _ = Describe("NamespaceWebhook", func() {
 				},
 			}
 
-			err := webhook.validateCreate(ctx, namespace)
+			err := webhook.validateOperation(ctx, namespace)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
@@ -100,7 +100,7 @@ var _ = Describe("NamespaceWebhook", func() {
 				},
 			}
 
-			err := webhook.validateUpdate(ctx, namespace)
+			err := webhook.validateOperation(ctx, namespace)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
@@ -248,7 +248,7 @@ var _ = Describe("NamespaceWebhook", func() {
 			Expect(w.Code).To(Equal(http.StatusOK))
 		})
 
-		Describe("validateNamespaceAgainstCRQs edge cases", func() {
+		Describe("validateOperation edge cases", func() {
 			var ctx context.Context
 
 			It("should handle namespace with no CRQ client", func() {
@@ -264,7 +264,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhookNoCRQ.validateNamespaceAgainstCRQs(ctx, namespace)
+				err := webhookNoCRQ.validateOperation(ctx, namespace)
 				Expect(err).NotTo(HaveOccurred()) // Should pass when no CRQ client
 			})
 
@@ -314,7 +314,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhook.validateNamespaceAgainstCRQs(ctx, namespace)
+				err := webhook.validateOperation(ctx, namespace)
 				Expect(err).To(HaveOccurred()) // Should fail when multiple CRQs select the same namespace
 				Expect(err.Error()).To(ContainSubstring("multiple ClusterResourceQuotas select namespace"))
 			})
@@ -329,7 +329,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhook.validateNamespaceAgainstCRQs(ctx, namespace)
+				err := webhook.validateOperation(ctx, namespace)
 				Expect(err).NotTo(HaveOccurred()) // Should pass when no CRQs match
 			})
 
@@ -341,7 +341,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhook.validateNamespaceAgainstCRQs(ctx, namespace)
+				err := webhook.validateOperation(ctx, namespace)
 				Expect(err).NotTo(HaveOccurred()) // Should pass when namespace has no labels
 			})
 
@@ -408,7 +408,7 @@ var _ = Describe("NamespaceWebhook", func() {
 					},
 				}
 
-				err := webhook.validateNamespaceAgainstCRQs(ctx, newNamespace)
+				err := webhook.validateOperation(ctx, newNamespace)
 				// This should pass because namespace validation doesn't check current usage
 				Expect(err).NotTo(HaveOccurred())
 			})

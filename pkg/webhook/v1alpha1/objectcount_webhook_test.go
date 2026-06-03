@@ -59,7 +59,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 			webhook = NewObjectCountWebhook(fakeClient, crqClient, logger)
 			Expect(webhook).NotTo(BeNil())
 			Expect(webhook.client).To(Equal(fakeClient))
-			Expect(webhook.logger).To(Equal(logger))
+			Expect(webhook.logger).NotTo(BeNil())
 			Expect(webhook.crqClient).To(Equal(crqClient))
 		})
 
@@ -353,7 +353,7 @@ var _ = Describe("ObjectCountWebhook", func() {
 				var resp admissionv1.AdmissionReview
 				_ = json.Unmarshal(w.Body.Bytes(), &resp)
 				Expect(resp.Response.Allowed).To(BeFalse())
-				Expect(resp.Response.Result.Message).To(ContainSubstring("Namespace is required for object count validation"))
+				Expect(resp.Response.Result.Message).To(ContainSubstring("Namespace is required for objectcount validation"))
 			})
 
 			It("should allow creation when CRQClient fails", func() {

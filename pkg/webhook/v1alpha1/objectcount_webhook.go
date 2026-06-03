@@ -2,24 +2,19 @@ package v1alpha1
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/objectcount"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
-	"github.com/powerhome/pac-quota-controller/pkg/metrics"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
-// ObjectCountWebhook handles webhook requests for Object count resources
+// ObjectCountWebhook handles webhook requests for Object count resources.
 // It enforces object count quotas for objects and subtypes.
 type ObjectCountWebhook struct {
 	client                kubernetes.Interface
@@ -37,6 +32,7 @@ func NewObjectCountWebhook(
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	logger = logger.Named("objectcount-webhook")
 	return &ObjectCountWebhook{
 		client:                k8sClient,
 		objectCountCalculator: objectcount.NewObjectCountCalculator(k8sClient, logger),
@@ -45,146 +41,53 @@ func NewObjectCountWebhook(
 	}
 }
 
-// Handle handles the webhook request for Object
+// Handle handles the webhook request for object count resources.
+// Unlike the other webhooks, ObjectCount intentionally skips the GVK check
+// because it serves many different object kinds via a single endpoint and
+// derives the resource name from AdmissionRequest.Resource instead.
 func (h *ObjectCountWebhook) Handle(c *gin.Context) {
-	var admissionReview admissionv1.AdmissionReview
-	if err := c.ShouldBindJSON(&admissionReview); err != nil {
-		h.logger.Error("Failed to bind admission review", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
+	runWebhook(c, h.logger, webhookConfig{
+		name:             "objectcount",
+		expectedGVK:      nil,
+		requireNamespace: true,
+	}, h.validate)
+}
 
-	// Check for malformed requests (like {}) that don't have proper AdmissionReview structure
-	if admissionReview.Request == nil {
-		h.logger.Error("Malformed admission review request")
-		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
-		return
-	}
-	if namespace := admissionReview.Request.Namespace; namespace == "" {
-		h.logger.Info("Admission review request namespace is empty")
-		admissionReview.Response = &admissionv1.AdmissionResponse{
-			UID:     admissionReview.Request.UID,
-			Allowed: false,
-			Result: &metav1.Status{
-				Code:    http.StatusBadRequest,
-				Message: "Namespace is required for object count validation",
-			},
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
-	}
-
-	// Metrics: start timer and increment validation count
-	operation := string(admissionReview.Request.Operation)
-	webhookName := "objectcount"
-	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
-	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
-	defer timer.ObserveDuration()
-
-	admissionReview.Response = &admissionv1.AdmissionResponse{
-		UID: admissionReview.Request.UID,
-	}
-
-	crqKey := admissionReview.Request.Resource.Resource
-	if admissionReview.Request.Resource.Group != "" {
-		crqKey = crqKey + "." + admissionReview.Request.Resource.Group
+func (h *ObjectCountWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
+	crqKey := req.Resource.Resource
+	if req.Resource.Group != "" {
+		crqKey = crqKey + "." + req.Resource.Group
 	}
 	resourceName := corev1.ResourceName(crqKey)
-	namespace := admissionReview.Request.Namespace
-	var warnings []string
-	var err error
-	ctx := c.Request.Context()
-	switch admissionReview.Request.Operation {
-	case admissionv1.Create:
-		warnings, err = h.validateCreate(ctx, namespace, resourceName)
-	case admissionv1.Update:
-		warnings, err = h.validateUpdate(ctx, namespace, resourceName)
+
+	switch req.Operation {
+	case admissionv1.Create, admissionv1.Update:
+		return h.validateOperation(ctx, req.Namespace, resourceName, req.Operation)
 	default:
-		h.logger.Info("Unsupported operation", zap.String("operation", string(admissionReview.Request.Operation)))
-		admissionReview.Response.Allowed = false
-		admissionReview.Response.Result = &metav1.Status{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("Operation %s is not supported for Service", admissionReview.Request.Operation),
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
+		return nil, unsupportedOperationError(req.Operation, "ObjectCount")
 	}
-	if err != nil {
-		h.logger.Error("Validation failed", zap.Error(err))
-		admissionReview.Response.Allowed = false
-		admissionReview.Response.Result = &metav1.Status{
-			Code:    http.StatusForbidden,
-			Message: err.Error(),
-		}
-		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "denied").Inc()
-	} else {
-		admissionReview.Response.Allowed = true
-		if len(warnings) > 0 {
-			admissionReview.Response.Warnings = warnings
-		}
-		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "allowed").Inc()
-	}
-
-	c.JSON(http.StatusOK, admissionReview)
 }
 
-func (h *ObjectCountWebhook) validateCreate(
-	ctx context.Context,
-	namespace string,
-	resourceName corev1.ResourceName) ([]string, error) {
-	return h.validateObjectOperation(ctx, namespace, resourceName, "creation")
-}
-
-func (h *ObjectCountWebhook) validateUpdate(
+// validateOperation is shared between create and update validation.
+func (h *ObjectCountWebhook) validateOperation(
 	ctx context.Context,
 	namespace string,
 	resourceName corev1.ResourceName,
-) ([]string, error) {
-	return h.validateObjectOperation(ctx, namespace, resourceName, "update")
-}
-
-// validateObjectOperation is a shared function for both create and update validation
-func (h *ObjectCountWebhook) validateObjectOperation(
-	ctx context.Context,
-	namespace string,
-	resourceName corev1.ResourceName,
-	operation string,
+	op admissionv1.Operation,
 ) ([]string, error) {
 	if resourceName == "" {
-		h.logger.Info("Skipping CRQ validation for nil object on " + operation)
+		h.logger.Info("Skipping CRQ validation for empty resource name on " + string(op))
 		return nil, nil
 	}
-	err := h.validateResourceQuota(ctx, namespace, resourceName, resource.MustParse("1"))
-	if err != nil {
+	if err := validateAgainstCRQ(
+		ctx, h.client, h.crqClient, h.logger,
+		namespace, resourceName, resource.MustParse("1"), h.objectCountCalculator.CalculateUsage,
+	); err != nil {
 		return nil, err
 	}
 	h.logger.Debug("Object CRQ validation passed",
 		zap.String("object", resourceName.String()),
 		zap.String("namespace", namespace),
-		zap.String("operation", operation))
+		zap.String("operation", string(op)))
 	return nil, nil
-}
-
-// validateResourceQuota validates if a resource operation would exceed any applicable ClusterResourceQuota
-func (h *ObjectCountWebhook) validateResourceQuota(
-	ctx context.Context,
-	namespace string,
-	resourceName corev1.ResourceName,
-	requestedQuantity resource.Quantity,
-) error {
-	ns, err := h.client.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
-	}
-
-	return validateCRQResourceQuotaWithNamespace(ctx, h.crqClient, h.client, ns, resourceName, requestedQuantity,
-		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
-			return h.calculateCurrentUsage(ctx, ns, rn)
-		}, h.logger)
-}
-
-// calculateCurrentUsage calculates the current usage of a resource in a namespace
-func (h *ObjectCountWebhook) calculateCurrentUsage(ctx context.Context, namespace string,
-	resourceName corev1.ResourceName) (resource.Quantity, error) {
-	return h.objectCountCalculator.CalculateUsage(ctx, namespace, resourceName)
 }

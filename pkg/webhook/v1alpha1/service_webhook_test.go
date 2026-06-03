@@ -279,7 +279,7 @@ var _ = Describe("ServiceWebhook", func() {
 						},
 					},
 				}
-				warnings, err := webhook.validateCreate(ctx, svc)
+				warnings, err := webhook.validateOperation(ctx, svc, admissionv1.Create)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(warnings).To(BeNil())
 			})
@@ -302,7 +302,7 @@ var _ = Describe("ServiceWebhook", func() {
 						},
 					},
 				}
-				warnings, err := webhook.validateUpdate(ctx, svc)
+				warnings, err := webhook.validateOperation(ctx, svc, admissionv1.Update)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(warnings).To(BeNil())
 			})

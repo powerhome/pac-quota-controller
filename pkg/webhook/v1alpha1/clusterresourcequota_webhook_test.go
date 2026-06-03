@@ -95,7 +95,7 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 				},
 			}
 
-			err := webhook.validateCreate(ctx, crq)
+			err := webhook.validateOperation(ctx, crq)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
@@ -119,7 +119,7 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 				},
 			}
 
-			err := webhook.validateUpdate(ctx, crq)
+			err := webhook.validateOperation(ctx, crq)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})

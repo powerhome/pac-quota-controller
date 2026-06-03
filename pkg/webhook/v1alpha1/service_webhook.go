@@ -3,26 +3,21 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
-	"github.com/powerhome/pac-quota-controller/pkg/metrics"
-	"github.com/prometheus/client_golang/prometheus"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 )
 
-// ServiceWebhook handles webhook requests for Service resources
+// ServiceWebhook handles webhook requests for Service resources.
 // It enforces object count quotas for services and subtypes.
 type ServiceWebhook struct {
 	client            kubernetes.Interface
@@ -35,10 +30,12 @@ type ServiceWebhook struct {
 func NewServiceWebhook(
 	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
-	logger *zap.Logger) *ServiceWebhook {
+	logger *zap.Logger,
+) *ServiceWebhook {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
+	logger = logger.Named("service-webhook")
 	return &ServiceWebhook{
 		client:            k8sClient,
 		serviceCalculator: *services.NewServiceResourceCalculator(k8sClient, logger),
@@ -49,148 +46,51 @@ func NewServiceWebhook(
 
 // Handle handles the webhook request for Service
 func (h *ServiceWebhook) Handle(c *gin.Context) {
-	var admissionReview admissionv1.AdmissionReview
-	if err := c.ShouldBindJSON(&admissionReview); err != nil {
-		h.logger.Error("Failed to bind admission review", zap.Error(err))
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+	runWebhook(c, h.logger, webhookConfig{
+		name:             "service",
+		expectedGVK:      &metav1.GroupVersionKind{Group: "", Version: "v1", Kind: "Service"},
+		requireNamespace: true,
+	}, h.validate)
+}
+
+func (h *ServiceWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
+	switch req.Operation {
+	case admissionv1.Create, admissionv1.Update:
+	default:
+		return nil, unsupportedOperationError(req.Operation, "Service")
 	}
 
-	// Check for malformed requests
-	if admissionReview.Request == nil {
-		h.logger.Error("Malformed admission review request")
-		c.JSON(http.StatusBadRequest, http.StatusBadRequest)
-		return
-	}
-
-	if namespace := admissionReview.Request.Namespace; namespace == "" {
-		h.logger.Info("Admission review request namespace is empty")
-		admissionReview.Response = &admissionv1.AdmissionResponse{
-			UID:     admissionReview.Request.UID,
-			Allowed: false,
-			Result: &metav1.Status{
-				Code:    http.StatusBadRequest,
-				Message: "Namespace is required for object count validation",
-			},
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
-	}
-
-	// Metrics: start timer and increment validation count
-	operation := string(admissionReview.Request.Operation)
-	webhookName := "service"
-	metrics.WebhookValidationCount.WithLabelValues(webhookName, operation).Inc()
-	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(webhookName, operation))
-	defer timer.ObserveDuration()
-
-	admissionReview.Response = &admissionv1.AdmissionResponse{
-		UID: admissionReview.Request.UID,
-	}
-
-	// Only handle Service resources
-	expectedGVK := metav1.GroupVersionKind{
-		Group:   "",
-		Version: "v1",
-		Kind:    "Service",
-	}
-	if admissionReview.Request.Kind != expectedGVK {
-		h.logger.Info("Unexpected resource type", zap.String("got", admissionReview.Request.Kind.Kind))
-		admissionReview.Response.Allowed = false
-		admissionReview.Response.Result = &metav1.Status{
-			Code:    http.StatusBadRequest,
-			Message: fmt.Sprintf("Expected %s resource, got %s", expectedGVK.Kind, admissionReview.Request.Kind.Kind),
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
-	}
-
-	// Decode the Service object
 	var svc corev1.Service
-	if err := runtime.DecodeInto(
-		serializer.NewCodecFactory(runtime.NewScheme()).UniversalDeserializer(),
-		admissionReview.Request.Object.Raw,
-		&svc,
-	); err != nil {
-		h.logger.Error("Failed to decode Service", zap.Error(err))
-		admissionReview.Response.Allowed = false
-		admissionReview.Response.Result = &metav1.Status{
-			Code:    http.StatusBadRequest,
-			Message: "Unable to decode Service object",
-		}
-		c.JSON(http.StatusOK, admissionReview)
-		return
+	if err := decodeAdmissionObject(req.Object.Raw, &svc, "Service"); err != nil {
+		return nil, err
 	}
 
-	var warnings []string
-	var err error
-	ctx := c.Request.Context()
-	warnings, err = handleWebhookOperation(
-		h.logger,
-		admissionReview.Request.Operation,
-		func() ([]string, error) { return h.validateCreate(ctx, &svc) },
-		func() ([]string, error) { return h.validateUpdate(ctx, &svc) },
-		c,
-		&admissionReview,
-		"Service",
-	)
-
-	if err != nil {
-		h.logger.Error("Validation failed", zap.Error(err))
-		admissionReview.Response.Allowed = false
-		admissionReview.Response.Result = &metav1.Status{
-			Code:    http.StatusForbidden,
-			Message: err.Error(),
-		}
-		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "denied").Inc()
-	} else {
-		admissionReview.Response.Allowed = true
-		if len(warnings) > 0 {
-			admissionReview.Response.Warnings = warnings
-		}
-		metrics.WebhookAdmissionDecision.WithLabelValues(webhookName, operation, "allowed").Inc()
-	}
-
-	c.JSON(http.StatusOK, admissionReview)
+	return h.validateOperation(ctx, &svc, req.Operation)
 }
 
-func (h *ServiceWebhook) validateCreate(ctx context.Context, svc *corev1.Service) ([]string, error) {
-	return h.validateServiceOperation(ctx, svc, "creation")
-}
-
-func (h *ServiceWebhook) validateUpdate(ctx context.Context, svc *corev1.Service) ([]string, error) {
-	return h.validateServiceOperation(ctx, svc, "update")
-}
-
-// validateServiceOperation is a shared function for both create and update validation
-func (h *ServiceWebhook) validateServiceOperation(
+// validateOperation is shared between create and update validation.
+func (h *ServiceWebhook) validateOperation(
 	ctx context.Context,
 	svc *corev1.Service,
-	operation string,
+	op admissionv1.Operation,
 ) ([]string, error) {
-	if svc == nil {
-		h.logger.Info("Skipping CRQ validation for nil service on " + operation)
-		return nil, nil
-	}
-
-	// Determine the resource names to check (generic + subtype)
-	var resourceName corev1.ResourceName
+	var subtype corev1.ResourceName
 	switch svc.Spec.Type {
 	case corev1.ServiceTypeLoadBalancer:
-		resourceName = usage.ResourceServicesLoadBalancers
+		subtype = usage.ResourceServicesLoadBalancers
 	case corev1.ServiceTypeNodePort:
-		resourceName = usage.ResourceServicesNodePorts
-	default:
-		resourceName = usage.ResourceServices
+		subtype = usage.ResourceServicesNodePorts
 	}
-	resourceNames := []corev1.ResourceName{usage.ResourceServices, resourceName}
+	resourceNames := []corev1.ResourceName{usage.ResourceServices}
+	if subtype != "" {
+		resourceNames = append(resourceNames, subtype)
+	}
 
 	for _, rn := range resourceNames {
-		if rn == "" {
-			continue
-		}
-		// Always +1 for the service being created/updated
-		if err := h.validateResourceQuota(ctx, svc.Namespace, rn, *resource.NewQuantity(1, resource.DecimalSI)); err != nil {
+		if err := validateAgainstCRQ(
+			ctx, h.client, h.crqClient, h.logger,
+			svc.Namespace, rn, *resource.NewQuantity(1, resource.DecimalSI), h.calculateCurrentUsage,
+		); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota service count validation failed for %s: %w", rn, err)
 		}
 	}
@@ -198,29 +98,10 @@ func (h *ServiceWebhook) validateServiceOperation(
 	h.logger.Debug("Service CRQ validation passed",
 		zap.String("service", svc.Name),
 		zap.String("namespace", svc.Namespace),
-		zap.String("operation", operation))
+		zap.String("operation", string(op)))
 	return nil, nil
 }
 
-// validateResourceQuota validates if a resource operation would exceed any applicable ClusterResourceQuota
-func (h *ServiceWebhook) validateResourceQuota(
-	ctx context.Context,
-	namespace string,
-	resourceName corev1.ResourceName,
-	requestedQuantity resource.Quantity,
-) error {
-	ns, err := h.client.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
-	}
-
-	return validateCRQResourceQuotaWithNamespace(ctx, h.crqClient, h.client, ns, resourceName, requestedQuantity,
-		func(ns string, rn corev1.ResourceName) (resource.Quantity, error) {
-			return h.calculateCurrentUsage(ctx, ns, rn)
-		}, h.logger)
-}
-
-// calculateCurrentUsage calculates the current usage of a resource in a namespace
 func (h *ServiceWebhook) calculateCurrentUsage(ctx context.Context, namespace string,
 	resourceName corev1.ResourceName) (resource.Quantity, error) {
 	switch resourceName {
