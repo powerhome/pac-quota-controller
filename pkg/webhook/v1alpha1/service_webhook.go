@@ -53,6 +53,9 @@ func (h *ServiceWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
+// TODO: the []string return is a future-proofing placeholder for admission
+// warnings. Once any validator actually emits warnings, plumb them through
+// runWebhook into AdmissionResponse.Warnings.
 func (h *ServiceWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
 	switch req.Operation {
 	case admissionv1.Create, admissionv1.Update:

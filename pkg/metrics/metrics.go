@@ -27,21 +27,21 @@ var (
 			Name: "pac_quota_controller_webhook_validation_total",
 			Help: "Total number of webhook validation requests.",
 		},
-		[]string{"webhook", "operation"},
+		[]string{"webhook", "operation", "namespace"},
 	)
 	WebhookValidationDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name: "pac_quota_controller_webhook_validation_duration_seconds",
 			Help: "Duration of webhook validation requests.",
 		},
-		[]string{"webhook", "operation"},
+		[]string{"webhook", "operation", "namespace"},
 	)
 	WebhookAdmissionDecision = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_webhook_admission_decision_total",
 			Help: "Total number of webhook admission decisions (allowed/denied).",
 		},
-		[]string{"webhook", "operation", "decision"},
+		[]string{"webhook", "operation", "decision", "namespace"},
 	)
 
 	// New metrics for controller reconciliation
