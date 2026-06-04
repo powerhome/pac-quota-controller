@@ -132,7 +132,7 @@ var _ = Describe("Manager", Ordered, func() {
 			By("waiting for controller to acquire leadership")
 			Eventually(func(g Gomega) {
 				logs := utils.GetPodLogs(ctx, clientSet, namespace, controllerPodName)
-				g.Expect(logs).To(ContainSubstring("successfully acquired lease"), "Controller should have acquired leadership")
+				g.Expect(logs).To(ContainSubstring("Successfully acquired lease"), "Controller should have acquired leadership")
 			}, 2*time.Minute, 5*time.Second).Should(Succeed())
 		})
 	})
