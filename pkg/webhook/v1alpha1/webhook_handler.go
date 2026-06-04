@@ -86,9 +86,6 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 
 	op := string(review.Request.Operation)
 	ns := review.Request.Namespace
-	if !cfg.requireNamespace {
-		ns = review.Request.Name
-	}
 	metrics.WebhookValidationCount.WithLabelValues(cfg.name, op, ns).Inc()
 	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(cfg.name, op, ns))
 	defer timer.ObserveDuration()
