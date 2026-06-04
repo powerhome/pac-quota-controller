@@ -86,7 +86,7 @@ var _ = Describe("PodWebhook", func() {
 			Expect(response.Response.UID).To(Equal(admissionReview.Request.UID))
 		})
 
-		It("should handle valid pod update request", func() {
+		It("should handle valid pod update request (resize subresource)", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -107,10 +107,32 @@ var _ = Describe("PodWebhook", func() {
 			}
 
 			admissionReview := createPodAdmissionReview(pod, admissionv1.Update)
+			admissionReview.Request.SubResource = "resize"
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
 			Expect(response.Response.UID).To(Equal(admissionReview.Request.UID))
+		})
+
+		It("should reject DELETE with unsupportedOperationError", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "test-container"},
+					},
+				},
+			}
+
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Delete)
+			response := sendWebhookRequest(ginEngine, admissionReview)
+
+			Expect(response.Response.Allowed).To(BeFalse())
+			Expect(response.Response.Result.Code).To(Equal(int32(http.StatusBadRequest)))
+			Expect(response.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported for Pod"))
 		})
 
 		It("should reject request with nil admission review", func() {
@@ -349,7 +371,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateOperation(ctx, pod, admissionv1.Create)
+			warnings, err := webhook.validateOperation(ctx, pod, nil, admissionv1.Create)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -376,7 +398,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateOperation(ctx, pod, admissionv1.Update)
+			warnings, err := webhook.validateOperation(ctx, pod, nil, admissionv1.Update)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -398,7 +420,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateOperation(ctx, pod, "creation")
+			warnings, err := webhook.validateOperation(ctx, pod, nil, "creation")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -418,13 +440,13 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateOperation(ctx, pod, "update")
+			warnings, err := webhook.validateOperation(ctx, pod, nil, "update")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
 
 		It("should handle nil pod", func() {
-			warnings, err := webhook.validateOperation(ctx, nil, "creation")
+			warnings, err := webhook.validateOperation(ctx, nil, nil, "creation")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})

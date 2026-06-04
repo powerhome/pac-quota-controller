@@ -43,12 +43,11 @@ func NewPodWebhook(
 	}
 }
 
-// Handle handles the webhook request for Pod
+// Handle handles the webhook request for Pod.
 //
-// TODO: add Dynamic Resource Allocation (DRA) quota enforcement. DRA quotas
-// belong on resourceclaims.resource.k8s.io rather than Pod, but pods may
-// indirectly consume claims and should be revisited once the upstream API
-// stabilizes.
+// DRA: when resource.k8s.io stabilizes, enforce resourceClaim quota via a
+// separate webhook on resourceclaims.resource.k8s.io (CREATE). Pod.spec.resourceClaims
+// is immutable so widening the Pod rule is not the right design.
 func (h *PodWebhook) Handle(c *gin.Context) {
 	runWebhook(c, h.logger, webhookConfig{
 		name:             "pod",
@@ -72,13 +71,26 @@ func (h *PodWebhook) validate(ctx context.Context, req *admissionv1.AdmissionReq
 		return nil, err
 	}
 
-	return h.validateOperation(ctx, &podObj, req.Operation)
+	var oldPod *corev1.Pod
+	if req.Operation == admissionv1.Update && len(req.OldObject.Raw) > 0 {
+		var p corev1.Pod
+		if err := decodeAdmissionObject(req.OldObject.Raw, &p, "Pod"); err != nil {
+			return nil, err
+		}
+		oldPod = &p
+	}
+
+	return h.validateOperation(ctx, &podObj, oldPod, req.Operation)
 }
 
 // validateOperation is shared between create and update validation.
+// For UPDATE (pods/resize) the current namespace usage already includes the
+// pre-resize pod, so we charge only the positive delta (new - old) per compute
+// resource and skip the +1 pod-count charge.
 func (h *PodWebhook) validateOperation(
 	ctx context.Context,
 	podObj *corev1.Pod,
+	oldPod *corev1.Pod,
 	op admissionv1.Operation,
 ) ([]string, error) {
 	if podObj == nil {
@@ -86,52 +98,41 @@ func (h *PodWebhook) validateOperation(
 		return nil, nil
 	}
 
-	podUsage := pod.CalculatePodUsage(podObj, usage.ResourceRequestsCPU)
-	if !podUsage.IsZero() {
+	computeResources := []struct {
+		resource corev1.ResourceName
+		label    string
+	}{
+		{usage.ResourceRequestsCPU, "CPU requests"},
+		{usage.ResourceRequestsMemory, "memory requests"},
+		{usage.ResourceLimitsCPU, "CPU limits"},
+		{usage.ResourceLimitsMemory, "memory limits"},
+	}
+
+	for _, c := range computeResources {
+		delta := pod.CalculatePodUsage(podObj, c.resource)
+		if oldPod != nil {
+			oldUsage := pod.CalculatePodUsage(oldPod, c.resource)
+			delta.Sub(oldUsage)
+		}
+		if delta.Sign() <= 0 {
+			continue
+		}
 		if err := validateAgainstCRQ(
 			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, usage.ResourceRequestsCPU, podUsage, h.calculateCurrentUsage,
+			podObj.Namespace, c.resource, delta, h.calculateCurrentUsage,
 		); err != nil {
-			return nil, fmt.Errorf("ClusterResourceQuota CPU requests validation failed: %w", err)
+			return nil, fmt.Errorf("ClusterResourceQuota %s validation failed: %w", c.label, err)
 		}
 	}
 
-	podUsage = pod.CalculatePodUsage(podObj, usage.ResourceRequestsMemory)
-	if !podUsage.IsZero() {
+	if op == admissionv1.Create {
+		podCount := resource.NewQuantity(1, resource.DecimalSI)
 		if err := validateAgainstCRQ(
 			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, usage.ResourceRequestsMemory, podUsage, h.calculateCurrentUsage,
+			podObj.Namespace, usage.ResourcePods, *podCount, h.calculateCurrentUsage,
 		); err != nil {
-			return nil, fmt.Errorf("ClusterResourceQuota memory requests validation failed: %w", err)
+			return nil, fmt.Errorf("ClusterResourceQuota pod count validation failed: %w", err)
 		}
-	}
-
-	podUsage = pod.CalculatePodUsage(podObj, usage.ResourceLimitsCPU)
-	if !podUsage.IsZero() {
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, usage.ResourceLimitsCPU, podUsage, h.calculateCurrentUsage,
-		); err != nil {
-			return nil, fmt.Errorf("ClusterResourceQuota CPU limits validation failed: %w", err)
-		}
-	}
-
-	podUsage = pod.CalculatePodUsage(podObj, usage.ResourceLimitsMemory)
-	if !podUsage.IsZero() {
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, usage.ResourceLimitsMemory, podUsage, h.calculateCurrentUsage,
-		); err != nil {
-			return nil, fmt.Errorf("ClusterResourceQuota memory limits validation failed: %w", err)
-		}
-	}
-
-	podCount := resource.NewQuantity(1, resource.DecimalSI)
-	if err := validateAgainstCRQ(
-		ctx, h.client, h.crqClient, h.logger,
-		podObj.Namespace, usage.ResourcePods, *podCount, h.calculateCurrentUsage,
-	); err != nil {
-		return nil, fmt.Errorf("ClusterResourceQuota pod count validation failed: %w", err)
 	}
 
 	h.logger.Debug("Pod CRQ validation passed",
