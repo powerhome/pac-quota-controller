@@ -53,6 +53,9 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
+// TODO: the []string return is a future-proofing placeholder for admission
+// warnings. Once any validator actually emits warnings, plumb them through
+// runWebhook into AdmissionResponse.Warnings.
 func (h *ObjectCountWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
 	crqKey := req.Resource.Resource
 	if req.Resource.Group != "" {

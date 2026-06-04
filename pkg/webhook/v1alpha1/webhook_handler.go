@@ -85,8 +85,9 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 	}
 
 	op := string(review.Request.Operation)
-	metrics.WebhookValidationCount.WithLabelValues(cfg.name, op).Inc()
-	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(cfg.name, op))
+	ns := review.Request.Namespace
+	metrics.WebhookValidationCount.WithLabelValues(cfg.name, op, ns).Inc()
+	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(cfg.name, op, ns))
 	defer timer.ObserveDuration()
 
 	if cfg.expectedGVK != nil && review.Request.Kind != *cfg.expectedGVK {
@@ -114,13 +115,13 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 			Code:    int32(code),
 			Message: err.Error(),
 		}
-		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "denied").Inc()
+		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "denied", ns).Inc()
 	} else {
 		review.Response.Allowed = true
 		if len(warnings) > 0 {
 			review.Response.Warnings = warnings
 		}
-		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "allowed").Inc()
+		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "allowed", ns).Inc()
 	}
 
 	c.JSON(http.StatusOK, review)
@@ -184,7 +185,18 @@ func validateAgainstCRQ(
 		zap.String("requested_quantity", requested.String()),
 		zap.Any("namespace_labels", ns.Labels))
 
-	crq, _ := crqClient.GetCRQByNamespace(ctx, ns)
+	crq, err := crqClient.GetCRQByNamespace(ctx, ns)
+	if err != nil {
+		// TODO: currently fail-open on CRQ-lookup errors (log + admit) to
+		// avoid blocking unrelated workloads during transient API/informer issues.
+		// Revisit once we are confident the CRQ informer is reliably available;
+		logger.Error("Failed to get CRQ for namespace",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", ns.Name),
+			zap.Error(err))
+		return nil
+	}
+
 	if crq == nil {
 		logger.Debug("No CRQ applies to namespace, allowing operation",
 			zap.String("correlation_id", correlationID),
