@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	testutils "github.com/powerhome/pac-quota-controller/test/utils"
@@ -287,6 +288,90 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 
 			pod.Spec.InitContainers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("300m") // Exceeds limit
 			Expect(k8sClient.Update(ctx, pod)).ToNot(Succeed())
+		})
+	})
+
+	Context("Pod Resize Subresource Webhook", func() {
+		// These specs exercise the pods/resize verb directly (K8s 1.33+ GA).
+		// They verify that the webhook charges only the positive delta on UPDATE
+		// instead of the full new request -- otherwise resizing a pod that
+		// currently fits inside the quota would be rejected as if it were a new
+		// allocation.
+
+		// waitForPodRunning blocks until the pod reaches the Running phase. The
+		// apiserver requires Running before accepting an in-place resize, so we
+		// must reach this state before exercising the webhook.
+		waitForPodRunning := func(name string) {
+			Eventually(func() corev1.PodPhase {
+				p, err := testutils.GetPod(ctx, k8sClient, testNamespace, name)
+				if err != nil {
+					return ""
+				}
+				return p.Status.Phase
+			}, 2*time.Minute, 2*time.Second).Should(Equal(corev1.PodRunning))
+		}
+
+		// resizePodCPU sends an UPDATE on the pods/resize subresource with new
+		// CPU requests on container[0] and returns the apiserver error.
+		resizePodCPU := func(pod *corev1.Pod, cpu resource.Quantity) error {
+			patch := []byte(`{"spec":{"containers":[{"name":"` +
+				pod.Spec.Containers[0].Name +
+				`","resources":{"requests":{"cpu":"` + cpu.String() + `"}}}]}}`)
+			_, err := clientSet.CoreV1().Pods(pod.Namespace).Patch(
+				ctx, pod.Name, types.StrategicMergePatchType, patch,
+				metav1.PatchOptions{}, "resize",
+			)
+			return err
+		}
+
+		It("allows a resize-up whose delta fits within the remaining quota", func() {
+			pod, err := testutils.CreatePod(ctx, k8sClient, testNamespace,
+				"resize-fit-"+testSuffix,
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("40m")},
+				nil)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod) })
+
+			waitForPodRunning(pod.Name)
+			Expect(resizePodCPU(pod, resource.MustParse("90m"))).To(Succeed(),
+				"resize within quota (delta 50m, total 90m <= 100m) should be allowed")
+		})
+
+		It("rejects a resize-up whose delta would exceed the quota", func() {
+			pod, err := testutils.CreatePod(ctx, k8sClient, testNamespace,
+				"resize-deny-"+testSuffix,
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("60m")},
+				nil)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod) })
+
+			waitForPodRunning(pod.Name)
+			err = resizePodCPU(pod, resource.MustParse("200m"))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("CPU requests validation failed"))
+		})
+
+		It("allows a resize-up when pod count is at the limit (no +1 charge on UPDATE)", func() {
+			// CRQ has pods=2. Create both pods so the count is at the limit; a
+			// resize on either pod must not be rejected by the pod-count rule
+			// because UPDATE only charges resource deltas, not +1 pod.
+			pod1, err := testutils.CreatePod(ctx, k8sClient, testNamespace,
+				"resize-count-1-"+testSuffix,
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m")},
+				nil)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod1) })
+
+			pod2, err := testutils.CreatePod(ctx, k8sClient, testNamespace,
+				"resize-count-2-"+testSuffix,
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("20m")},
+				nil)
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod2) })
+
+			waitForPodRunning(pod1.Name)
+			Expect(resizePodCPU(pod1, resource.MustParse("40m"))).To(Succeed(),
+				"resize at pod-count limit should still be allowed on UPDATE")
 		})
 	})
 
