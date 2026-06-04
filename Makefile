@@ -67,6 +67,11 @@ test: manifests generate fmt vet setup-envtest ## Run tests.
 
 KIND_CLUSTER ?= pac-quota-controller-test-e2e
 
+# Pinned kindest/node image to match the cluster Kubernetes version we ship
+# against (server-side 1.34.x). Use a digest for reproducibility/security and
+# bump in lockstep with k8s.io/api in go.mod.
+KIND_NODE_IMAGE ?= kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
 	@$(KIND) delete cluster --name $(KIND_CLUSTER) || true
@@ -85,7 +90,7 @@ test-e2e-setup:
 	@echo "[test-e2e-setup] Ensuring Kind cluster exists..."
 	$(eval KIND_CLUSTER ?= pac-quota-controller-test-e2e)
 	@if ! kind get clusters | grep -q "^$(KIND_CLUSTER)$$" ; then \
-		kind create cluster --name $(KIND_CLUSTER); \
+		kind create cluster --name $(KIND_CLUSTER) --image $(KIND_NODE_IMAGE); \
 	fi
 	@echo "[test-e2e-setup] Loading image to Kind..."
 	kind load docker-image $(IMG) --name $(KIND_CLUSTER)
@@ -134,7 +139,7 @@ kind-up: ## Create a local Kind cluster for development
 	}
 	@$(KIND) get clusters | grep -q $(KIND_DEV_CLUSTER) || { \
 		echo "Creating Kind cluster: $(KIND_DEV_CLUSTER)"; \
-		$(KIND) create cluster --name $(KIND_DEV_CLUSTER); \
+		$(KIND) create cluster --name $(KIND_DEV_CLUSTER) --image $(KIND_NODE_IMAGE); \
 	}
 	@$(KUBECTL) config use-context kind-$(KIND_DEV_CLUSTER)
 	@echo "Kind cluster $(KIND_DEV_CLUSTER) is ready"
