@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// RequestLogger returns a gin.HandlerFunc that logs requests using Zap
+// RequestLogger returns a gin.HandlerFunc that logs requests using Zap.
 func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -40,29 +40,43 @@ func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 		clientIP := c.ClientIP()
 		method := c.Request.Method
 
+		fields := []zap.Field{
+			zap.String("correlation_id", correlationID),
+			zap.Int("status", statusCode),
+			zap.String("method", method),
+			zap.String("path", path),
+			zap.String("query", query),
+			zap.String("ip", clientIP),
+			zap.Duration("latency", latency),
+		}
+
 		if len(c.Errors) > 0 {
 			for _, e := range c.Errors.Errors() {
-				logger.Error("Request failed",
-					zap.String("correlation_id", correlationID),
-					zap.String("error", e),
-					zap.Int("status", statusCode),
-					zap.String("method", method),
-					zap.String("path", path),
-					zap.String("query", query),
-					zap.String("ip", clientIP),
-					zap.Duration("latency", latency),
-				)
+				logger.Error("Request failed", append(fields, zap.String("error", e))...)
 			}
-		} else {
-			logger.Info("Request completed",
-				zap.String("correlation_id", correlationID),
-				zap.Int("status", statusCode),
-				zap.String("method", method),
-				zap.String("path", path),
-				zap.String("query", query),
-				zap.String("ip", clientIP),
-				zap.Duration("latency", latency),
-			)
+			return
+		}
+
+		switch {
+		case statusCode >= 500:
+			logger.Error("Request completed", fields...)
+		case statusCode >= 400:
+			logger.Warn("Request completed", fields...)
+		case isProbePath(path):
+			// 2xx probe traffic is noise; suppress entirely.
+			return
+		default:
+			logger.Debug("Request completed", fields...)
 		}
 	}
+}
+
+// isProbePath returns true for paths that are hit by Kubernetes probes or
+// metrics scrapers — endpoints whose 2xx traffic is uninteresting in logs.
+func isProbePath(path string) bool {
+	switch path {
+	case "/healthz", "/readyz", "/livez", "/metrics":
+		return true
+	}
+	return false
 }

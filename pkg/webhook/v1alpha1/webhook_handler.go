@@ -108,7 +108,15 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 		if se, ok := err.(*statusError); ok {
 			code = se.code
 		}
-		logger.Error("Validation failed", zap.Error(err))
+		logger.Info("Admission denied",
+			zap.String("webhook", cfg.name),
+			zap.String("operation", op),
+			zap.String("kind", review.Request.Kind.Kind),
+			zap.String("resource", review.Request.Resource.Resource),
+			zap.String("namespace", review.Request.Namespace),
+			zap.String("name", review.Request.Name),
+			zap.Int("code", code),
+			zap.Error(err))
 		review.Response.Allowed = false
 		review.Response.Result = &metav1.Status{
 			Code:    int32(code),
