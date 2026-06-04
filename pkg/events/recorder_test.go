@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
@@ -27,7 +27,7 @@ func TestEventRecorder(t *testing.T) {
 var _ = Describe("EventRecorder", func() {
 	var (
 		eventRecorder *EventRecorder
-		fakeRecorder  *record.FakeRecorder
+		fakeRecorder  *events.FakeRecorder
 		testCRQ       *quotav1alpha1.ClusterResourceQuota
 		logger        *zap.Logger
 	)
@@ -36,7 +36,7 @@ var _ = Describe("EventRecorder", func() {
 		var err error
 		logger, err = zap.NewDevelopment()
 		Expect(err).ToNot(HaveOccurred())
-		fakeRecorder = record.NewFakeRecorder(100)
+		fakeRecorder = events.NewFakeRecorder(100)
 
 		scheme := runtime.NewScheme()
 		Expect(quotav1alpha1.AddToScheme(scheme)).To(Succeed())
