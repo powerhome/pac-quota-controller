@@ -22,17 +22,17 @@ rules:
   - list
   - watch
 - apiGroups:
-  - ""
+  - events.k8s.io
   resources:
   - events
   verbs:
-  - create
-  - delete
   - get
   - list
+  - watch
+  - create
   - patch
   - update
-  - watch
+  - delete
 - apiGroups:
   - apps
   resources:

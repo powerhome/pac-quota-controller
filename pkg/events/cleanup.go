@@ -6,9 +6,25 @@ import (
 	"time"
 
 	"go.uber.org/zap"
-	corev1 "k8s.io/api/core/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// eventTime returns the most recent observation time for an Event, falling
+// back through Series.LastObservedTime, EventTime, and the deprecated
+// LastTimestamp/FirstTimestamp fields for events translated from core/v1.
+func eventTime(e *eventsv1.Event) time.Time {
+	if e.Series != nil && !e.Series.LastObservedTime.IsZero() {
+		return e.Series.LastObservedTime.Time
+	}
+	if !e.EventTime.IsZero() {
+		return e.EventTime.Time
+	}
+	if !e.DeprecatedLastTimestamp.IsZero() {
+		return e.DeprecatedLastTimestamp.Time
+	}
+	return e.DeprecatedFirstTimestamp.Time
+}
 
 // CleanupConfig holds configuration for event cleanup
 type CleanupConfig struct {
@@ -104,7 +120,7 @@ func (m *EventCleanupManager) cleanup(ctx context.Context) error {
 	}
 
 	// Group events by CRQ
-	eventsByCRQ := make(map[string][]corev1.Event)
+	eventsByCRQ := make(map[string][]eventsv1.Event)
 	for _, event := range allEvents {
 		crqName := event.Labels[LabelCRQName]
 		if crqName == "" {
@@ -131,8 +147,8 @@ func (m *EventCleanupManager) cleanup(ctx context.Context) error {
 }
 
 // getPACEvents retrieves PAC quota events by source
-func (m *EventCleanupManager) getPACEvents(ctx context.Context) (*corev1.EventList, error) {
-	events := &corev1.EventList{}
+func (m *EventCleanupManager) getPACEvents(ctx context.Context) (*eventsv1.EventList, error) {
+	events := &eventsv1.EventList{}
 	listOpts := []client.ListOption{
 		client.MatchingLabels{LabelEventSource: "controller"},
 	}
@@ -146,20 +162,14 @@ func (m *EventCleanupManager) getPACEvents(ctx context.Context) (*corev1.EventLi
 
 // cleanupEventsForCRQ cleans up events for a specific CRQ
 func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName string,
-	events []corev1.Event, cutoff time.Time) int {
+	events []eventsv1.Event, cutoff time.Time) int {
 
-	var toDelete []corev1.Event
-	var validEvents []corev1.Event
+	var toDelete []eventsv1.Event
+	var validEvents []eventsv1.Event
 
 	// First pass: remove events older than MaxAge
 	for _, event := range events {
-		eventTime := event.LastTimestamp.Time
-		if eventTime.IsZero() {
-			// Fallback to FirstTimestamp if LastTimestamp is not set
-			eventTime = event.FirstTimestamp.Time
-		}
-
-		if eventTime.Before(cutoff) {
+		if eventTime(&event).Before(cutoff) {
 			toDelete = append(toDelete, event)
 		} else {
 			validEvents = append(validEvents, event)
@@ -168,17 +178,8 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 
 	// Second pass: if we still have too many events, keep only the most recent
 	if len(validEvents) > m.config.MaxEventsPerCRQ {
-		// Sort by timestamp (most recent first)
 		sort.Slice(validEvents, func(i, j int) bool {
-			timeI := validEvents[i].LastTimestamp.Time
-			if timeI.IsZero() {
-				timeI = validEvents[i].FirstTimestamp.Time
-			}
-			timeJ := validEvents[j].LastTimestamp.Time
-			if timeJ.IsZero() {
-				timeJ = validEvents[j].FirstTimestamp.Time
-			}
-			return timeI.After(timeJ)
+			return eventTime(&validEvents[i]).After(eventTime(&validEvents[j]))
 		})
 
 		// Mark excess events for deletion
@@ -201,7 +202,7 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 				zap.String("event", event.Name),
 				zap.String("crq", crqName),
 				zap.String("reason", event.Reason),
-				zap.Duration("age", time.Since(event.LastTimestamp.Time)))
+				zap.Duration("age", time.Since(eventTime(&event))))
 		}
 	}
 
