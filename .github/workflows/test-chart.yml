@@ -18,15 +18,6 @@ jobs:
         uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6
         with:
           go-version-file: go.mod
-
-      # Disable Docker's containerd snapshotter so `kind load docker-image`
-      # can detect the snapshotter and import images.
-      # See https://github.com/kubernetes-sigs/kind/issues/3795.
-      - name: Disable Docker containerd snapshotter
-        run: |
-          echo '{"features": {"containerd-snapshotter": false}}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-
       - name: Install the latest version of kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
