@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
@@ -37,7 +37,7 @@ const (
 
 // EventRecorder wraps the Kubernetes event recorder with PAC-specific functionality
 type EventRecorder struct {
-	recorder       record.EventRecorder
+	recorder       events.EventRecorder
 	violationCache map[string]*ViolationTracker
 	logger         *zap.Logger
 	namespace      string
@@ -54,7 +54,7 @@ type ViolationTracker struct {
 
 // NewEventRecorder creates a new EventRecorder
 func NewEventRecorder(
-	recorder record.EventRecorder,
+	recorder events.EventRecorder,
 	namespace string,
 	logger *zap.Logger) *EventRecorder {
 	return &EventRecorder{
@@ -118,8 +118,7 @@ func (r *EventRecorder) InvalidSelector(crq *quotav1alpha1.ClusterResourceQuota,
 func (r *EventRecorder) recordEvent(crq *quotav1alpha1.ClusterResourceQuota,
 	eventType, reason, message string) {
 
-	// AnnotatedEventf uses the object NS for event creation
-	r.recorder.Eventf(crq, eventType, reason, message)
+	r.recorder.Eventf(crq, nil, eventType, reason, reason, message)
 }
 
 // CleanupExpiredViolations removes old violation tracking entries

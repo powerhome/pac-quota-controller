@@ -9,7 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/record"
+	k8sevents "k8s.io/client-go/tools/events"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/pkg/events"
@@ -18,7 +18,7 @@ import (
 var _ = Describe("ClusterResourceQuota Helpers", func() {
 	var (
 		reconciler   *ClusterResourceQuotaReconciler
-		fakeRecorder *record.FakeRecorder
+		fakeRecorder *k8sevents.FakeRecorder
 		testCRQ      *quotav1alpha1.ClusterResourceQuota
 		logger       *zap.Logger
 	)
@@ -27,7 +27,7 @@ var _ = Describe("ClusterResourceQuota Helpers", func() {
 		var err error
 		logger, err = zap.NewDevelopment()
 		Expect(err).ToNot(HaveOccurred())
-		fakeRecorder = record.NewFakeRecorder(100)
+		fakeRecorder = k8sevents.NewFakeRecorder(100)
 
 		// Create reconciler with mock event recorder
 		reconciler = &ClusterResourceQuotaReconciler{
