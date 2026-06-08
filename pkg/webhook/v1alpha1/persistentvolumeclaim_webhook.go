@@ -3,7 +3,6 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -11,24 +10,19 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 )
 
 // PersistentVolumeClaimWebhook handles webhook requests for PersistentVolumeClaim resources
 type PersistentVolumeClaimWebhook struct {
-	client            kubernetes.Interface
-	storageCalculator storage.StorageResourceCalculator
-	crqClient         *quota.CRQClient
-	logger            *zap.Logger
+	crqClient *quota.CRQClient
+	logger    *zap.Logger
 }
 
 // NewPersistentVolumeClaimWebhook creates a new PersistentVolumeClaimWebhook
 func NewPersistentVolumeClaimWebhook(
-	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
 	logger *zap.Logger,
 ) *PersistentVolumeClaimWebhook {
@@ -37,10 +31,8 @@ func NewPersistentVolumeClaimWebhook(
 	}
 	logger = logger.Named("pvc-webhook")
 	return &PersistentVolumeClaimWebhook{
-		client:            k8sClient,
-		storageCalculator: *storage.NewStorageResourceCalculator(k8sClient, logger),
-		crqClient:         crqClient,
-		logger:            logger,
+		crqClient: crqClient,
+		logger:    logger,
 	}
 }
 
@@ -53,9 +45,6 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
-// TODO: the []string return is a future-proofing placeholder for admission
-// warnings. Once any validator actually emits warnings, plumb them through
-// runWebhook into AdmissionResponse.Warnings.
 func (h *PersistentVolumeClaimWebhook) validate(
 	ctx context.Context,
 	req *admissionv1.AdmissionRequest,
@@ -78,49 +67,45 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 	ctx context.Context,
 	pvc *corev1.PersistentVolumeClaim,
 ) error {
-	storageRequest := getStorageRequest(pvc)
-
-	if err := validateAgainstCRQ(
-		ctx, h.client, h.crqClient, h.logger,
-		pvc.Namespace, usage.ResourceRequestsStorage, storageRequest, h.calculateCurrentUsage,
-	); err != nil {
-		return fmt.Errorf("ClusterResourceQuota storage validation failed: %w", err)
+	crq := resolveCRQForNamespace(ctx, h.crqClient, h.logger, pvc.Namespace)
+	if crq == nil {
+		return nil
 	}
 
-	pvcCount := resource.NewQuantity(1, resource.DecimalSI)
-	if err := validateAgainstCRQ(
-		ctx, h.client, h.crqClient, h.logger,
-		pvc.Namespace, usage.ResourcePersistentVolumeClaims, *pvcCount, h.calculateCurrentUsage,
-	); err != nil {
-		return fmt.Errorf("ClusterResourceQuota PVC count validation failed: %w", err)
+	correlationID := quota.GetCorrelationID(ctx)
+	storageRequest := getStorageRequest(pvc)
+	pvcCount := *resource.NewQuantity(1, resource.DecimalSI)
+
+	type check struct {
+		resource corev1.ResourceName
+		quantity resource.Quantity
+		errFmt   string
+	}
+	checks := []check{
+		{usage.ResourceRequestsStorage, storageRequest, "ClusterResourceQuota storage validation failed: %w"},
+		{usage.ResourcePersistentVolumeClaims, pvcCount, "ClusterResourceQuota PVC count validation failed: %w"},
 	}
 
 	if pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName != "" {
 		storageClass := *pvc.Spec.StorageClassName
+		checks = append(checks,
+			check{
+				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/requests.storage", storageClass)),
+				storageRequest,
+				fmt.Sprintf("ClusterResourceQuota storage class '%s' storage validation failed: %%w", storageClass),
+			},
+			check{
+				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClass)),
+				pvcCount,
+				fmt.Sprintf("ClusterResourceQuota storage class '%s' PVC count validation failed: %%w", storageClass),
+			},
+		)
+	}
 
-		storageClassStorageResource := corev1.ResourceName(fmt.Sprintf(
-			"%s.storageclass.storage.k8s.io/requests.storage", storageClass))
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			pvc.Namespace, storageClassStorageResource, storageRequest, h.calculateCurrentUsage,
-		); err != nil {
-			return fmt.Errorf("ClusterResourceQuota storage class '%s' storage validation failed: %w", storageClass, err)
+	for _, c := range checks {
+		if err := validateCRQStatusUsage(crq, c.resource, c.quantity, h.logger, correlationID); err != nil {
+			return fmt.Errorf(c.errFmt, err)
 		}
-
-		storageClassCountResource := corev1.ResourceName(fmt.Sprintf(
-			"%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClass))
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			pvc.Namespace, storageClassCountResource, *pvcCount, h.calculateCurrentUsage,
-		); err != nil {
-			return fmt.Errorf("ClusterResourceQuota storage class '%s' PVC count validation failed: %w", storageClass, err)
-		}
-
-		h.logger.Debug("PVC storage class specific CRQ validation passed",
-			zap.String("pvc", pvc.Name),
-			zap.String("namespace", pvc.Namespace),
-			zap.String("storageClass", storageClass),
-			zap.String("storageRequest", storageRequest.String()))
 	}
 
 	h.logger.Debug("PVC CRQ validation passed",
@@ -128,36 +113,6 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 		zap.String("namespace", pvc.Namespace),
 		zap.String("storageRequest", storageRequest.String()))
 	return nil
-}
-
-// calculateCurrentUsage calculates the current usage of a resource in a namespace
-func (h *PersistentVolumeClaimWebhook) calculateCurrentUsage(ctx context.Context, namespace string,
-	resourceName corev1.ResourceName) (resource.Quantity, error) {
-	switch resourceName {
-	case usage.ResourceRequestsStorage:
-		return h.storageCalculator.CalculateUsage(ctx, namespace, resourceName)
-	case usage.ResourcePersistentVolumeClaims:
-		count, err := h.storageCalculator.CalculatePVCCount(ctx, namespace)
-		if err != nil {
-			return resource.Quantity{}, err
-		}
-		return *resource.NewQuantity(count, resource.DecimalSI), nil
-	default:
-		resourceStr := string(resourceName)
-		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage") {
-			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage")
-			return h.storageCalculator.CalculateStorageClassUsage(ctx, namespace, storageClass)
-		}
-		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims") {
-			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims")
-			count, err := h.storageCalculator.CalculateStorageClassCount(ctx, namespace, storageClass)
-			if err != nil {
-				return resource.Quantity{}, err
-			}
-			return *resource.NewQuantity(count, resource.DecimalSI), nil
-		}
-		return resource.Quantity{}, fmt.Errorf("unsupported resource type: %s", resourceName)
-	}
 }
 
 func getStorageRequest(pvc *corev1.PersistentVolumeClaim) resource.Quantity {

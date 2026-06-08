@@ -1,12 +1,7 @@
 package v1alpha1
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 
 	"github.com/gin-gonic/gin"
 	. "github.com/onsi/ginkgo/v2"
@@ -17,1578 +12,406 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"k8s.io/apimachinery/pkg/types"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
-	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 )
 
+const podWebhookTestNamespace = "pod-ns"
+
+func newPodReview(uid string, pod *corev1.Pod) *admissionv1.AdmissionReview {
+	raw, _ := json.Marshal(pod)
+	return &admissionv1.AdmissionReview{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "AdmissionReview",
+			APIVersion: "admission.k8s.io/v1",
+		},
+		Request: &admissionv1.AdmissionRequest{
+			UID:       types.UID(uid),
+			Namespace: podWebhookTestNamespace,
+			Operation: admissionv1.Create,
+			Kind:      metav1.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"},
+			Resource:  metav1.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"},
+			Object:    runtime.RawExtension{Raw: raw},
+		},
+	}
+}
+
+func makePod(name, cpuReq, memReq, cpuLim, memLim string) *corev1.Pod {
+	requests := corev1.ResourceList{}
+	limits := corev1.ResourceList{}
+	if cpuReq != "" {
+		requests[corev1.ResourceCPU] = resource.MustParse(cpuReq)
+	}
+	if memReq != "" {
+		requests[corev1.ResourceMemory] = resource.MustParse(memReq)
+	}
+	if cpuLim != "" {
+		limits[corev1.ResourceCPU] = resource.MustParse(cpuLim)
+	}
+	if memLim != "" {
+		limits[corev1.ResourceMemory] = resource.MustParse(memLim)
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: podWebhookTestNamespace},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "c",
+					Image: "busybox",
+					Resources: corev1.ResourceRequirements{
+						Requests: requests,
+						Limits:   limits,
+					},
+				},
+			},
+		},
+	}
+}
+
 var _ = Describe("PodWebhook", func() {
+	const (
+		nsName  = podWebhookTestNamespace
+		crqName = "pod-crq"
+	)
 	var (
-		ctx               context.Context
-		webhook           *PodWebhook
-		fakeClient        kubernetes.Interface
-		fakeRuntimeClient client.Client
-		crqClient         *quota.CRQClient
-		logger            *zap.Logger
-		ginEngine         *gin.Engine
-		testNamespace     *corev1.Namespace
+		engine *gin.Engine
+		labels = map[string]string{"team": "alpha"}
 	)
 
 	BeforeEach(func() {
-		testNamespace = &corev1.Namespace{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "test-namespace",
-			},
-		}
-		fakeClient = fake.NewSimpleClientset(testNamespace)
-		scheme := runtime.NewScheme()
-		_ = quotav1alpha1.AddToScheme(scheme)
-		_ = corev1.AddToScheme(scheme)
-		fakeRuntimeClient = ctrlclientfake.NewClientBuilder().WithScheme(scheme).Build()
-		logger = pkglogger.L()
-		crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
-		webhook = NewPodWebhook(fakeClient, crqClient, logger)
 		gin.SetMode(gin.TestMode)
-		ginEngine = gin.New()
-		ginEngine.POST("/webhook", webhook.Handle)
+		engine = gin.New()
 	})
 
-	Describe("Handle", func() {
-		It("should handle valid pod creation request", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("100m"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
-			Expect(response.Response.UID).To(Equal(admissionReview.Request.UID))
+	Describe("NewPodWebhook", func() {
+		It("constructs with all dependencies", func() {
+			client := newTestCRQClient()
+			h := NewPodWebhook(client, zap.NewNop())
+			Expect(h).NotTo(BeNil())
+			Expect(h.crqClient).To(Equal(client))
 		})
 
-		It("should handle valid pod update request (resize subresource)", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("200m"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Update)
-			admissionReview.Request.SubResource = "resize"
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
-			Expect(response.Response.UID).To(Equal(admissionReview.Request.UID))
-		})
-
-		It("should reject DELETE with unsupportedOperationError", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{Name: "test-container"},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Delete)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Code).To(Equal(int32(http.StatusBadRequest)))
-			Expect(response.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported for Pod"))
-		})
-
-		It("should reject request with nil admission review", func() {
-			req, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer([]byte("{}")))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-
-			ginEngine.ServeHTTP(w, req)
-
-			Expect(w.Code).To(Equal(http.StatusBadRequest))
-		})
-
-		It("should reject request with nil admission review request", func() {
-			admissionReview := &admissionv1.AdmissionReview{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "AdmissionReview",
-					APIVersion: "admission.k8s.io/v1",
-				},
-				Request: nil,
-			}
-
-			admissionReviewJSON, err := json.Marshal(admissionReview)
-			Expect(err).NotTo(HaveOccurred())
-			req, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer(admissionReviewJSON))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-
-			ginEngine.ServeHTTP(w, req)
-
-			Expect(w.Code).To(Equal(http.StatusBadRequest))
-		})
-
-		It("should reject request with wrong resource kind", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			admissionReview.Request.Kind = metav1.GroupVersionKind{
-				Group:   "apps",
-				Version: "v1",
-				Kind:    "Deployment",
-			}
-
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Expected Pod resource"))
-		})
-
-		It("should reject request with invalid JSON", func() {
-			req, _ := http.NewRequest("POST", "/webhook", bytes.NewBuffer([]byte("invalid json")))
-			req.Header.Set("Content-Type", "application/json")
-			w := httptest.NewRecorder()
-
-			ginEngine.ServeHTTP(w, req)
-
-			Expect(w.Code).To(Equal(http.StatusBadRequest))
-		})
-
-		It("should handle pod with no containers", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
-		})
-
-		It("should handle pod with init containers", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					InitContainers: []corev1.Container{
-						{
-							Name: "init-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("50m"),
-								},
-							},
-						},
-					},
-					Containers: []corev1.Container{
-						{
-							Name: "main-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("100m"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
-		})
-
-		It("should handle pod with large resource requests", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("1000m"),
-									corev1.ResourceMemory: resource.MustParse("1Gi"),
-								},
-								Limits: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("2000m"),
-									corev1.ResourceMemory: resource.MustParse("2Gi"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
-		})
-
-		It("should handle pod with custom resources", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									"nvidia.com/gpu": resource.MustParse("1"),
-									"hugepages-2Mi":  resource.MustParse("1Gi"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
-		})
-
-		It("should handle pod with no resource requests", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
-		})
-
-		It("should reject request with wrong resource kind", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			admissionReview.Request.Kind = metav1.GroupVersionKind{
-				Group:   "apps",
-				Version: "v1",
-				Kind:    "Deployment",
-			}
-
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("Expected Pod resource"))
+		It("uses a no-op logger when nil is passed", func() {
+			h := NewPodWebhook(nil, nil)
+			Expect(h).NotTo(BeNil())
+			Expect(h.logger).NotTo(BeNil())
 		})
 	})
 
-	Describe("validateCreate", func() {
-		It("should validate pod creation", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
+	Describe("Handle (status-read path)", func() {
+		It("admits a pod when all resources stay under the quota", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU:    quantity("4"),
+					usage.ResourceRequestsMemory: quantity("4Gi"),
+					usage.ResourceLimitsCPU:      quantity("8"),
+					usage.ResourceLimitsMemory:   quantity("8Gi"),
+					usage.ResourcePods:           quantity("10"),
 				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("100m"),
-								},
-							},
-						},
-					},
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU:    quantity("1"),
+					usage.ResourceRequestsMemory: quantity("1Gi"),
+					usage.ResourceLimitsCPU:      quantity("2"),
+					usage.ResourceLimitsMemory:   quantity("2Gi"),
+					usage.ResourcePods:           quantity("2"),
 				},
-			}
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			warnings, err := webhook.validateOperation(ctx, pod, nil, admissionv1.Create)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(BeNil())
-		})
-	})
-
-	Describe("validateUpdate", func() {
-		It("should validate pod update", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("200m"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			warnings, err := webhook.validateOperation(ctx, pod, nil, admissionv1.Update)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(BeNil())
-		})
-	})
-
-	Describe("validateOperation", func() {
-		It("should validate pod operation for creation", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-						},
-					},
-				},
-			}
-
-			warnings, err := webhook.validateOperation(ctx, pod, nil, "creation")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(BeNil())
+			pod := makePod("p1", "1", "1Gi", "2", "2Gi")
+			resp := sendWebhookRequest(engine, newPodReview("1", pod))
+			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 
-		It("should validate pod operation for update", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
+		It("denies when CPU requests would exceed the quota", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("2"),
+					usage.ResourcePods:        quantity("10"),
 				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-						},
-					},
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("2"),
+					usage.ResourcePods:        quantity("0"),
 				},
-			}
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			warnings, err := webhook.validateOperation(ctx, pod, nil, "update")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(BeNil())
+			pod := makePod("p1", "1", "", "", "")
+			resp := sendWebhookRequest(engine, newPodReview("2", pod))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("CPU requests"))
+			Expect(resp.Response.Result.Message).To(ContainSubstring("requests.cpu limit exceeded"))
 		})
 
-		It("should handle nil pod", func() {
-			warnings, err := webhook.validateOperation(ctx, nil, nil, "creation")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(warnings).To(BeNil())
-		})
-	})
-
-	Describe("Edge Cases", func() {
-		It("should handle pod with very long name", func() {
-			longName := "very-long-pod-name-that-exceeds-normal-length-limits-for-testing-purposes"
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      longName,
-					Namespace: "test-namespace",
+		It("denies when memory requests would exceed the quota", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsMemory: quantity("1Gi"),
+					usage.ResourcePods:           quantity("10"),
 				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-						},
-					},
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsMemory: quantity("1Gi"),
+					usage.ResourcePods:           quantity("0"),
 				},
-			}
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
+			pod := makePod("p1", "", "512Mi", "", "")
+			resp := sendWebhookRequest(engine, newPodReview("3", pod))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("memory requests"))
 		})
 
-		It("should handle pod with special characters in name", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-123_456-789",
-					Namespace: "test-namespace",
+		It("denies when CPU limits would exceed the quota", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceLimitsCPU: quantity("2"),
+					usage.ResourcePods:      quantity("10"),
 				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "test-container",
-						},
-					},
+				quotav1alpha1.ResourceList{
+					usage.ResourceLimitsCPU: quantity("2"),
+					usage.ResourcePods:      quantity("0"),
 				},
-			}
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
+			pod := makePod("p1", "", "", "1", "")
+			resp := sendWebhookRequest(engine, newPodReview("4", pod))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("CPU limits"))
 		})
 
-		It("should handle pod with multiple containers", func() {
-			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod",
-					Namespace: "test-namespace",
+		It("denies when memory limits would exceed the quota", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceLimitsMemory: quantity("1Gi"),
+					usage.ResourcePods:         quantity("10"),
 				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "container-1",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("100m"),
-								},
-							},
-						},
-						{
-							Name: "container-2",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("200m"),
-								},
-							},
-						},
-					},
+				quotav1alpha1.ResourceList{
+					usage.ResourceLimitsMemory: quantity("1Gi"),
+					usage.ResourcePods:         quantity("0"),
 				},
-			}
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			admissionReview := createPodAdmissionReview(pod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
-		})
-	})
-
-	Describe("Cross-Namespace Quota Validation", func() {
-		var (
-			crq         *quotav1alpha1.ClusterResourceQuota
-			namespace1  *corev1.Namespace
-			namespace2  *corev1.Namespace
-			namespace3  *corev1.Namespace // For non-matching namespace tests
-			existingPod *corev1.Pod
-		)
-
-		BeforeEach(func() {
-			// Create test namespaces with matching labels
-			namespace1 = &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-ns-1",
-					Labels: map[string]string{
-						"environment": "test",
-						"team":        "platform",
-					},
-				},
-			}
-			namespace2 = &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-ns-2",
-					Labels: map[string]string{
-						"environment": "test",
-						"team":        "platform",
-					},
-				},
-			}
-
-			// Create a namespace that doesn't match the CRQ selector
-			namespace3 = &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-ns-3",
-					Labels: map[string]string{
-						"environment": "production",
-						"team":        "backend",
-					},
-				},
-			}
-
-			// Create a ClusterResourceQuota that selects both test namespaces
-			crq = &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-crq",
-				},
-				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"environment": "test",
-						},
-					},
-					Hard: quotav1alpha1.ResourceList{
-						corev1.ResourceRequestsCPU:    resource.MustParse("300m"),
-						corev1.ResourceRequestsMemory: resource.MustParse("300Mi"),
-					},
-				},
-			}
-
-			// Create an existing pod in namespace1 that consumes resources
-			existingPod = &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "existing-pod",
-					Namespace: "test-ns-1",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "existing-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("200m"),
-									corev1.ResourceMemory: resource.MustParse("200Mi"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			// Update the fake clients with the new resources
-			fakeClient = fake.NewSimpleClientset(testNamespace, namespace1, namespace2, namespace3, existingPod)
-			scheme := runtime.NewScheme()
-			_ = quotav1alpha1.AddToScheme(scheme)
-			_ = corev1.AddToScheme(scheme)
-			fakeRuntimeClient = ctrlclientfake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(crq, namespace1, namespace2, namespace3).
-				Build()
-			crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
-
-			// Recreate webhook with updated clients
-			webhook = NewPodWebhook(fakeClient, crqClient, logger)
-
-			// Re-setup gin engine
-			ginEngine = gin.New()
-			ginEngine.POST("/webhook", webhook.Handle)
+			pod := makePod("p1", "", "", "", "256Mi")
+			resp := sendWebhookRequest(engine, newPodReview("5", pod))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("memory limits"))
 		})
 
-		AfterEach(func() {
-			// Clean up cross-namespace test resources
-			crq = nil
-			namespace1 = nil
-			namespace2 = nil
-			namespace3 = nil
-			existingPod = nil
+		It("denies when the pod count would exceed the quota even with no resource requests", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{usage.ResourcePods: quantity("2")},
+				quotav1alpha1.ResourceList{usage.ResourcePods: quantity("2")},
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			pod := makePod("p1", "", "", "", "")
+			resp := sendWebhookRequest(engine, newPodReview("6", pod))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("pod count"))
+			Expect(resp.Response.Result.Message).To(ContainSubstring("pods limit exceeded"))
 		})
 
-		It("should reject pod that would exceed cross-namespace quota limits", func() {
-			// Try to create a new pod in namespace2 that would exceed the total quota
-			newPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "new-pod",
-					Namespace: "test-ns-2",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "new-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("150m"), // 200m + 150m = 350m > 300m limit
-								},
-							},
-						},
-					},
-				},
-			}
+		It("admits when no CRQ matches the namespace", func() {
+			ns := makeNamespace(nsName, labels)
+			h := NewPodWebhook(newTestCRQClient(ns), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("CPU requests validation failed"))
-			Expect(response.Response.Result.Message).To(ContainSubstring("test-crq"))
-			Expect(response.Response.Result.Message).To(ContainSubstring("limit exceeded"))
+			pod := makePod("p1", "1", "1Gi", "", "")
+			resp := sendWebhookRequest(engine, newPodReview("7", pod))
+			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 
-		It("should allow pod that fits within cross-namespace quota limits", func() {
-			// Try to create a new pod in namespace2 that fits within the total quota
-			newPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "new-pod",
-					Namespace: "test-ns-2",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "new-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU:    resource.MustParse("50m"),  // 200m + 50m = 250m < 300m limit
-									corev1.ResourceMemory: resource.MustParse("50Mi"), // 200Mi + 50Mi = 250Mi < 300Mi limit
-								},
-							},
-						},
-					},
-				},
-			}
+		It("admits when the CRQ client is nil", func() {
+			h := NewPodWebhook(nil, zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
+			pod := makePod("p1", "1", "1Gi", "", "")
+			resp := sendWebhookRequest(engine, newPodReview("8", pod))
+			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 
-		It("should allow pod in namespace not matching CRQ selector", func() {
-			// Try to create a pod in namespace3 (doesn't match CRQ selector) with high resource requests
-			newPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "unmatched-pod",
-					Namespace: "test-ns-3",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("1000m"), // High request, but no CRQ applies
-								},
-							},
-						},
-					},
-				},
-			}
+		It("denies non-Pod GVK", func() {
+			h := NewPodWebhook(newTestCRQClient(), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
+			review := newPodReview("9", makePod("p", "", "", "", ""))
+			review.Request.Kind = metav1.GroupVersionKind{Kind: "Service"}
+			resp := sendWebhookRequest(engine, review)
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("Expected Pod"))
 		})
 
-		It("should handle complex label selectors", func() {
-			// Create a test namespace that matches the complex selector
-			complexNamespace := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "complex-ns",
-					Labels: map[string]string{
-						"team":        "platform",
-						"environment": "staging", // Not production, not test
-					},
-				},
-			}
+		It("rejects DELETE as unsupported", func() {
+			h := NewPodWebhook(newTestCRQClient(), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			// Create a CRQ with complex label selector (MatchExpressions)
-			complexCRQ := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "complex-crq",
-				},
-				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchExpressions: []metav1.LabelSelectorRequirement{
-							{
-								Key:      "team",
-								Operator: metav1.LabelSelectorOpIn,
-								Values:   []string{"platform", "backend"},
-							},
-							{
-								Key:      "environment",
-								Operator: metav1.LabelSelectorOpNotIn,
-								Values:   []string{"production"},
-							},
-						},
-					},
-					Hard: quotav1alpha1.ResourceList{
-						corev1.ResourceRequestsCPU: resource.MustParse("500m"),
-					},
-				},
-			}
-
-			// Update clients with new resources
-			fakeClient = fake.NewSimpleClientset(
-				testNamespace, namespace1, namespace2, namespace3, existingPod, complexNamespace)
-			err := fakeRuntimeClient.Create(ctx, complexCRQ)
-			Expect(err).NotTo(HaveOccurred())
-			err = fakeRuntimeClient.Create(ctx, complexNamespace)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Recreate webhook with updated client
-			webhook = NewPodWebhook(fakeClient, crqClient, logger)
-			ginEngine = gin.New()
-			ginEngine.POST("/webhook", webhook.Handle)
-
-			// Try to create a pod in the complex namespace (should match complex selector)
-			newPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "complex-pod",
-					Namespace: "complex-ns",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("100m"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
+			review := newPodReview("10", makePod("p", "", "", "", ""))
+			review.Request.Operation = admissionv1.Delete
+			resp := sendWebhookRequest(engine, review)
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported"))
 		})
 
-		It("should handle multiple containers across namespaces", func() {
-			// Create a pod with multiple containers that would exceed limits
-			multiContainerPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "multi-container-pod",
-					Namespace: "test-ns-2",
+		It("admits (fail-open) when CRQ status is missing the requested resource", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("2"),
+					usage.ResourcePods:        quantity("10"),
 				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "container-1",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("80m"),
-								},
-							},
-						},
-						{
-							Name: "container-2",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("80m"),
-								},
-							},
-						},
-					},
-				},
-			}
+				// Status only populates pods; cpu is missing.
+				quotav1alpha1.ResourceList{usage.ResourcePods: quantity("0")},
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
 
-			admissionReview := createPodAdmissionReview(multiContainerPod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			// 200m (existing) + 80m + 80m = 360m > 300m limit
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("test-crq"))
-			Expect(response.Response.Result.Message).To(ContainSubstring("limit exceeded"))
-		})
-
-		It("should handle init containers in cross-namespace scenario", func() {
-			// Create a pod with init containers that would exceed limits
-			initContainerPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "init-container-pod",
-					Namespace: "test-ns-2",
-				},
-				Spec: corev1.PodSpec{
-					InitContainers: []corev1.Container{
-						{
-							Name: "init-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("150m"),
-								},
-							},
-						},
-					},
-					Containers: []corev1.Container{
-						{
-							Name: "main-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("100m"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(initContainerPod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			// Should use max(init: 150m, main: 100m) = 150m
-			// 200m (existing) + 150m = 350m > 300m limit
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("test-crq"))
-		})
-
-		It("should validate memory resources across namespaces", func() {
-			// Create a pod that would exceed memory limits
-			memoryPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "memory-pod",
-					Namespace: "test-ns-2",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "memory-container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("150Mi"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(memoryPod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			// 200Mi (existing) + 150Mi = 350Mi > 300Mi limit
-			Expect(response.Response.Allowed).To(BeFalse())
-			Expect(response.Response.Result.Message).To(ContainSubstring("memory requests validation failed"))
-			Expect(response.Response.Result.Message).To(ContainSubstring("test-crq"))
-		})
-
-		It("should handle CRQ with no matching namespaces", func() {
-			// Create a namespace with unique labels for this test
-			isolatedNamespace := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "isolated-ns",
-					Labels: map[string]string{
-						"isolated": "true",
-					},
-				},
-			}
-
-			// Create a CRQ that doesn't match any namespaces
-			noMatchCRQ := &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "no-match-crq",
-				},
-				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"nonexistent": "label",
-						},
-					},
-					Hard: quotav1alpha1.ResourceList{
-						corev1.ResourceRequestsCPU: resource.MustParse("100m"),
-					},
-				},
-			}
-
-			// Update clients with new resources
-			fakeClient = fake.NewSimpleClientset(
-				testNamespace, namespace1, namespace2, namespace3, existingPod, isolatedNamespace)
-			err := fakeRuntimeClient.Create(ctx, noMatchCRQ)
-			Expect(err).NotTo(HaveOccurred())
-			err = fakeRuntimeClient.Create(ctx, isolatedNamespace)
-			Expect(err).NotTo(HaveOccurred())
-
-			// Recreate webhook with updated client
-			webhook = NewPodWebhook(fakeClient, crqClient, logger)
-			ginEngine = gin.New()
-			ginEngine.POST("/webhook", webhook.Handle)
-
-			// Create a pod in the isolated namespace - should be allowed since CRQ doesn't apply
-			newPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "no-match-pod",
-					Namespace: "isolated-ns",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name: "container",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("500m"),
-								},
-							},
-						},
-					},
-				},
-			}
-
-			admissionReview := createPodAdmissionReview(newPod, admissionv1.Create)
-			response := sendWebhookRequest(ginEngine, admissionReview)
-
-			Expect(response.Response.Allowed).To(BeTrue())
-		})
-
-		Describe("calculateCurrentUsage function coverage", func() {
-			It("should handle CPU requests correctly", func() {
-				// Create a pod with CPU requests
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "cpu-test-pod",
-						Namespace: "test-namespace",
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "test-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("500m"),
-									},
-								},
-							},
-						},
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("test-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("requests.cpu"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(usage.MilliValue()).To(Equal(int64(500))) // 500m CPU
-			})
-
-			It("should handle memory requests correctly", func() {
-				// Create a pod with memory requests
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "memory-test-pod",
-						Namespace: "test-namespace",
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "test-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceMemory: resource.MustParse("256Mi"),
-									},
-								},
-							},
-						},
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("test-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("requests.memory"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(usage.Value()).To(Equal(int64(256 * 1024 * 1024))) // 256Mi in bytes
-			})
-
-			It("should handle CPU limits correctly", func() {
-				// Create a pod with CPU limits
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "cpu-limit-test-pod",
-						Namespace: "test-namespace",
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "test-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Limits: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("1"),
-									},
-								},
-							},
-						},
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("test-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("limits.cpu"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(usage.MilliValue()).To(Equal(int64(1000))) // 1 CPU = 1000m
-			})
-
-			It("should handle memory limits correctly", func() {
-				// Create a pod with memory limits
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "memory-limit-test-pod",
-						Namespace: "test-namespace",
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "test-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Limits: corev1.ResourceList{
-										corev1.ResourceMemory: resource.MustParse("512Mi"),
-									},
-								},
-							},
-						},
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("test-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usage, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("limits.memory"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(usage.Value()).To(Equal(int64(512 * 1024 * 1024))) // 512Mi in bytes
-			})
-
-			It("should handle pods in terminal states (Succeeded)", func() {
-				testTerminalPodState(ctx, corev1.PodSucceeded, "succeeded-pod", "terminal-test-namespace",
-					&fakeClient, crqClient, logger)
-			})
-
-			It("should handle pods in terminal states (Failed)", func() {
-				testTerminalPodState(ctx, corev1.PodFailed, "failed-pod", "failed-test-namespace",
-					&fakeClient, crqClient, logger)
-			})
-
-			It("should handle pods with both init and regular containers", func() {
-				// Create a fresh namespace for this test to ensure clean state
-				testNs := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "init-container-test-namespace",
-					},
-				}
-				fakeClient = fake.NewSimpleClientset(testNs)
-				webhook = NewPodWebhook(fakeClient, crqClient, logger)
-
-				// Create a pod with both init and regular containers
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "init-and-regular-pod",
-						Namespace: "init-container-test-namespace",
-					},
-					Spec: corev1.PodSpec{
-						InitContainers: []corev1.Container{
-							{
-								Name:  "init-container",
-								Image: "busybox:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("50m"),
-									},
-								},
-							},
-						},
-						Containers: []corev1.Container{
-							{
-								Name:  "main-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("100m"),
-									},
-								},
-							},
-						},
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("init-container-test-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usage, err := webhook.calculateCurrentUsage(
-					ctx,
-					"init-container-test-namespace",
-					corev1.ResourceName("requests.cpu"),
-				)
-				Expect(err).NotTo(HaveOccurred())
-				// Should use Max(init: 50m, main: 100m) = 100m
-				Expect(usage.MilliValue()).To(Equal(int64(100)))
-			})
-
-			It("should return error for unsupported resource types", func() {
-				_, err := webhook.calculateCurrentUsage(ctx, "test-namespace", corev1.ResourceName("unsupported.resource"))
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("unsupported resource type"))
-			})
-
-			It("should handle pod count calculation", func() {
-				// Create a fresh namespace for this test to ensure clean state
-				testNs := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "pod-count-namespace",
-					},
-				}
-				fakeClient = fake.NewSimpleClientset(testNs)
-				webhook = NewPodWebhook(fakeClient, crqClient, logger)
-
-				// Create multiple pods to test count
-				for i := 0; i < 3; i++ {
-					pod := &corev1.Pod{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      fmt.Sprintf("count-pod-%d", i),
-							Namespace: "pod-count-namespace",
-						},
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{
-									Name:  "test-container",
-									Image: "nginx:latest",
-								},
-							},
-						},
-					}
-					_, err := fakeClient.CoreV1().Pods("pod-count-namespace").Create(ctx, pod, metav1.CreateOptions{})
-					Expect(err).NotTo(HaveOccurred())
-				}
-
-				// Test pod count
-				usage, err := webhook.calculateCurrentUsage(ctx, "pod-count-namespace", corev1.ResourceName("pods"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(usage.Value()).To(Equal(int64(3))) // Should count 3 pods
-			})
-
-			It("should handle non-existent namespace", func() {
-				usage, err := webhook.calculateCurrentUsage(ctx, "non-existent-namespace", corev1.ResourceName("requests.cpu"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(usage.IsZero()).To(BeTrue())
-			})
-
-			It("should handle namespace with no pods", func() {
-				// Create empty namespace
-				emptyNs := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "empty-namespace",
-					},
-				}
-				Expect(fakeRuntimeClient.Create(ctx, emptyNs)).To(Succeed())
-
-				usage, err := webhook.calculateCurrentUsage(ctx, "empty-namespace", corev1.ResourceName("requests.cpu"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(usage.IsZero()).To(BeTrue())
-			})
-
-			It("should handle zero resource requests/limits", func() {
-				// Create a fresh namespace for this test to ensure clean state
-				testNs := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "zero-resource-namespace",
-					},
-				}
-				fakeClient = fake.NewSimpleClientset(testNs)
-				webhook = NewPodWebhook(fakeClient, crqClient, logger)
-
-				// Create a pod with zero resource requests (should contribute 0 to usage)
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "zero-resource-pod",
-						Namespace: "zero-resource-namespace",
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "test-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("0"),
-									},
-								},
-							},
-						},
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("zero-resource-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usage, err := webhook.calculateCurrentUsage(ctx, "zero-resource-namespace", corev1.ResourceName("requests.cpu"))
-				Expect(err).NotTo(HaveOccurred())
-				// Should be 0 since the pod requests 0 CPU
-				Expect(usage.MilliValue()).To(Equal(int64(0)))
-			})
-
-			It("should handle mixed resource types in same pod", func() {
-				// Create a fresh namespace for this test to ensure clean state
-				testNs := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "mixed-resource-namespace",
-					},
-				}
-				fakeClient = fake.NewSimpleClientset(testNs)
-				webhook = NewPodWebhook(fakeClient, crqClient, logger)
-
-				// Create a pod with mixed resource types to test calculator behavior
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "mixed-resource-pod",
-						Namespace: "mixed-resource-namespace",
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "test-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("100m"),
-										corev1.ResourceMemory: resource.MustParse("128Mi"),
-									},
-									Limits: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("200m"),
-										corev1.ResourceMemory: resource.MustParse("256Mi"),
-									},
-								},
-							},
-						},
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("mixed-resource-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				// Test CPU requests
-				cpuUsage, err := webhook.calculateCurrentUsage(ctx, "mixed-resource-namespace", corev1.ResourceName("requests.cpu"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cpuUsage.MilliValue()).To(Equal(int64(100))) // Just this pod: 100m
-
-				// Test memory limits
-				memoryUsage, err := webhook.calculateCurrentUsage(
-					ctx,
-					"mixed-resource-namespace",
-					corev1.ResourceName("limits.memory"),
-				)
-				Expect(err).NotTo(HaveOccurred())
-				expectedMemory := int64(256 * 1024 * 1024) // 256Mi
-				Expect(memoryUsage.Value()).To(Equal(expectedMemory))
-			})
-
-			It("should handle multiple containers with different resource patterns", func() {
-				// Create a fresh namespace for this test to ensure clean state
-				testNs := &corev1.Namespace{
-					ObjectMeta: metav1.ObjectMeta{
-						Name: "multi-pattern-namespace",
-					},
-				}
-				fakeClient = fake.NewSimpleClientset(testNs)
-				webhook = NewPodWebhook(fakeClient, crqClient, logger)
-
-				// Create a pod with multiple containers having different resource configurations
-				pod := &corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "multi-pattern-pod",
-						Namespace: "multi-pattern-namespace",
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Name:  "cpu-only-container",
-								Image: "nginx:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("50m"),
-									},
-								},
-							},
-							{
-								Name:  "memory-only-container",
-								Image: "redis:latest",
-								Resources: corev1.ResourceRequirements{
-									Requests: corev1.ResourceList{
-										corev1.ResourceMemory: resource.MustParse("64Mi"),
-									},
-								},
-							},
-							{
-								Name:  "limits-only-container",
-								Image: "postgres:latest",
-								Resources: corev1.ResourceRequirements{
-									Limits: corev1.ResourceList{
-										corev1.ResourceCPU: resource.MustParse("200m"),
-									},
-								},
-							},
-						},
-					},
-				}
-				_, err := fakeClient.CoreV1().Pods("multi-pattern-namespace").Create(ctx, pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				// Test CPU requests (should only count cpu-only-container)
-				cpuUsage, err := webhook.calculateCurrentUsage(ctx, "multi-pattern-namespace", corev1.ResourceName("requests.cpu"))
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cpuUsage.MilliValue()).To(Equal(int64(50))) // Just this pod: 50m
-
-				// Test memory requests (should only count memory-only-container)
-				memoryUsage, err := webhook.calculateCurrentUsage(
-					ctx,
-					"multi-pattern-namespace",
-					corev1.ResourceName("requests.memory"),
-				)
-				Expect(err).NotTo(HaveOccurred())
-				expectedMemory := int64(64 * 1024 * 1024) // 64Mi
-				Expect(memoryUsage.Value()).To(Equal(expectedMemory))
-
-				// Test CPU limits (should only count limits-only-container)
-				cpuLimitsUsage, err := webhook.calculateCurrentUsage(
-					ctx,
-					"multi-pattern-namespace",
-					corev1.ResourceName("limits.cpu"),
-				)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(cpuLimitsUsage.MilliValue()).To(Equal(int64(200))) // 200m
-			})
+			pod := makePod("p1", "5", "", "", "")
+			resp := sendWebhookRequest(engine, newPodReview("11", pod))
+			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 	})
 
 	Describe("Pod Resize (UPDATE) Quota Validation", func() {
-		var (
-			resizeCRQ       *quotav1alpha1.ClusterResourceQuota
-			resizeNS        *corev1.Namespace
-			existingPodOld  *corev1.Pod
-			runResizeReview func(newRequests corev1.ResourceList, oldRequests corev1.ResourceList) admissionv1.AdmissionResponse
-		)
-
-		BeforeEach(func() {
-			resizeNS = &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "resize-ns",
-					Labels: map[string]string{"resize-test": "true"},
-				},
-			}
-			resizeCRQ = &quotav1alpha1.ClusterResourceQuota{
-				ObjectMeta: metav1.ObjectMeta{Name: "resize-crq"},
-				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"resize-test": "true"},
-					},
-					Hard: quotav1alpha1.ResourceList{
-						corev1.ResourceRequestsCPU: resource.MustParse("200m"),
-						corev1.ResourcePods:        resource.MustParse("1"),
-					},
-				},
-			}
-			// existingPodOld represents the pre-resize pod already present in the
-			// namespace; tests rewrite its CPU requests via the oldRequests arg.
-			existingPodOld = &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "resize-pod",
-					Namespace: "resize-ns",
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{Name: "main", Resources: corev1.ResourceRequirements{}},
-					},
-				},
-			}
-
-			runResizeReview = func(newRequests, oldRequests corev1.ResourceList) admissionv1.AdmissionResponse {
-				oldPod := existingPodOld.DeepCopy()
-				oldPod.Spec.Containers[0].Resources.Requests = oldRequests
-				newPod := existingPodOld.DeepCopy()
-				newPod.Spec.Containers[0].Resources.Requests = newRequests
-
-				// The pod currently in the namespace must reflect the pre-resize
-				// state so calculateCurrentUsage returns the old usage.
-				fakeClient = fake.NewSimpleClientset(testNamespace, resizeNS, oldPod)
-				scheme := runtime.NewScheme()
-				_ = quotav1alpha1.AddToScheme(scheme)
-				_ = corev1.AddToScheme(scheme)
-				fakeRuntimeClient = ctrlclientfake.NewClientBuilder().
-					WithScheme(scheme).
-					WithObjects(resizeCRQ, resizeNS).
-					Build()
-				crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
-				webhook = NewPodWebhook(fakeClient, crqClient, logger)
-				ginEngine = gin.New()
-				ginEngine.POST("/webhook", webhook.Handle)
-
-				review := createPodResizeAdmissionReview(newPod, oldPod)
-				return *sendWebhookRequest(ginEngine, review).Response
-			}
-		})
+		// resizeReview builds a review matching what the apiserver sends for the
+		// pods/resize subresource: Operation=UPDATE, SubResource="resize", and
+		// OldObject populated with the pre-resize pod.
+		resizeReview := func(uid string, newPod, oldPod *corev1.Pod) *admissionv1.AdmissionReview {
+			r := newPodReview(uid, newPod)
+			r.Request.Operation = admissionv1.Update
+			r.Request.SubResource = "resize"
+			oldRaw, _ := json.Marshal(oldPod)
+			r.Request.OldObject = runtime.RawExtension{Raw: oldRaw}
+			return r
+		}
 
 		It("allows a resize up when the delta fits in remaining quota", func() {
-			// quota=200m, oldUsage=50m, newUsage=100m, delta=50m -> 50+50=100 <= 200.
-			resp := runResizeReview(
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m")},
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("1"),
+					usage.ResourcePods:        quantity("10"),
+				},
+				// Existing pod uses 50m; remaining = 950m.
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("50m"),
+					usage.ResourcePods:        quantity("1"),
+				},
 			)
-			Expect(resp.Allowed).To(BeTrue())
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			oldPod := makePod("p1", "50m", "", "", "")
+			newPod := makePod("p1", "60m", "", "", "")
+			resp := sendWebhookRequest(engine, resizeReview("r1", newPod, oldPod))
+			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 
 		It("rejects a resize up when the delta exceeds remaining quota", func() {
-			// quota=200m, oldUsage=100m, newUsage=250m, delta=150m -> 100+150=250 > 200.
-			resp := runResizeReview(
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("250m")},
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("100m"),
+					usage.ResourcePods:        quantity("10"),
+				},
+				// Quota fully consumed by the existing pod.
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("100m"),
+					usage.ResourcePods:        quantity("1"),
+				},
 			)
-			Expect(resp.Allowed).To(BeFalse())
-			Expect(resp.Result.Message).To(ContainSubstring("CPU requests validation failed"))
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			oldPod := makePod("p1", "100m", "", "", "")
+			newPod := makePod("p1", "200m", "", "", "")
+			resp := sendWebhookRequest(engine, resizeReview("r2", newPod, oldPod))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("requests.cpu limit exceeded"))
 		})
 
 		It("allows a resize up that would fail without delta accounting", func() {
-			// quota=200m, oldUsage=180m, newUsage=200m, delta=20m -> 180+20=200 OK.
-			// Naive (non-delta) check would compute 180+200=380m and reject.
-			resp := runResizeReview(
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m")},
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("180m")},
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("1"),
+					usage.ResourcePods:        quantity("10"),
+				},
+				// 900m already used; without delta accounting, charging the full
+				// new 200m would exceed (900m + 200m = 1100m > 1).
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("900m"),
+					usage.ResourcePods:        quantity("1"),
+				},
 			)
-			Expect(resp.Allowed).To(BeTrue())
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			oldPod := makePod("p1", "100m", "", "", "")
+			newPod := makePod("p1", "200m", "", "", "")
+			// Delta is 100m; 900m + 100m = 1 (fits exactly).
+			resp := sendWebhookRequest(engine, resizeReview("r3", newPod, oldPod))
+			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 
 		It("allows a resize down even when quota is fully consumed", func() {
-			// quota=200m, oldUsage=200m, newUsage=50m, delta<=0 -> early-continue.
-			resp := runResizeReview(
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m")},
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m")},
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("100m"),
+					usage.ResourcePods:        quantity("10"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("100m"),
+					usage.ResourcePods:        quantity("1"),
+				},
 			)
-			Expect(resp.Allowed).To(BeTrue())
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			oldPod := makePod("p1", "100m", "", "", "")
+			newPod := makePod("p1", "50m", "", "", "")
+			resp := sendWebhookRequest(engine, resizeReview("r4", newPod, oldPod))
+			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 
 		It("does not charge +1 pod count on UPDATE (resize fits with pod count at limit)", func() {
-			// pods quota=1 and one pod already exists. A resize must not be
-			// rejected by the +1 pod-count charge that we only apply on CREATE.
-			resp := runResizeReview(
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("60m")},
-				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m")},
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("1"),
+					usage.ResourcePods:        quantity("1"),
+				},
+				// Pod count already at the hard limit; an UPDATE must not be
+				// rejected by a +1 pod-count charge (only CREATE charges count).
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsCPU: quantity("50m"),
+					usage.ResourcePods:        quantity("1"),
+				},
 			)
-			Expect(resp.Allowed).To(BeTrue())
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			oldPod := makePod("p1", "50m", "", "", "")
+			newPod := makePod("p1", "60m", "", "", "")
+			resp := sendWebhookRequest(engine, resizeReview("r5", newPod, oldPod))
+			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 	})
 })
-
-// Helper functions for testing
-
-func createPodAdmissionReview(pod *corev1.Pod, operation admissionv1.Operation) *admissionv1.AdmissionReview {
-	raw, _ := json.Marshal(pod)
-	return &admissionv1.AdmissionReview{
-		Request: &admissionv1.AdmissionRequest{
-			UID: "test-uid",
-			Kind: metav1.GroupVersionKind{
-				Group:   "",
-				Version: "v1",
-				Kind:    "Pod",
-			},
-			Resource: metav1.GroupVersionResource{
-				Group:    "",
-				Version:  "v1",
-				Resource: "pods",
-			},
-			Operation: operation,
-			Namespace: pod.Namespace,
-			Object: runtime.RawExtension{
-				Raw: raw,
-			},
-		},
-	}
-}
-
-// createPodResizeAdmissionReview builds an admission review that matches what
-// the apiserver sends for the pods/resize subresource: Operation=UPDATE,
-// SubResource="resize", and OldObject populated with the pre-resize pod.
-func createPodResizeAdmissionReview(newPod, oldPod *corev1.Pod) *admissionv1.AdmissionReview {
-	review := createPodAdmissionReview(newPod, admissionv1.Update)
-	review.Request.SubResource = "resize"
-	oldRaw, _ := json.Marshal(oldPod)
-	review.Request.OldObject = runtime.RawExtension{Raw: oldRaw}
-	return review
-}
-
-// testTerminalPodState is a helper function to test pods in terminal states (Succeeded/Failed)
-func testTerminalPodState(ctx context.Context, phase corev1.PodPhase, podName, namespaceName string,
-	fakeClient *kubernetes.Interface, crqClient *quota.CRQClient, logger *zap.Logger) {
-	// Create a fresh namespace for this test to ensure clean state
-	testNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: namespaceName,
-		},
-	}
-	*fakeClient = fake.NewSimpleClientset(testNs)
-	webhook := NewPodWebhook(*fakeClient, crqClient, logger)
-
-	// Create a pod in the specified terminal state (should not count towards usage)
-	cpuRequest := "100m"
-	if phase == corev1.PodFailed {
-		cpuRequest = "200m"
-	}
-
-	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      podName,
-			Namespace: namespaceName,
-		},
-		Spec: corev1.PodSpec{
-			Containers: []corev1.Container{
-				{
-					Name:  "test-container",
-					Image: "nginx:latest",
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU: resource.MustParse(cpuRequest),
-						},
-					},
-				},
-			},
-		},
-		Status: corev1.PodStatus{
-			Phase: phase,
-		},
-	}
-	_, err := (*fakeClient).CoreV1().Pods(namespaceName).Create(ctx, pod, metav1.CreateOptions{})
-	Expect(err).NotTo(HaveOccurred())
-
-	usage, err := webhook.calculateCurrentUsage(ctx, namespaceName, "requests.cpu")
-	Expect(err).NotTo(HaveOccurred())
-	// Should not include the terminal pod's resources
-	Expect(usage.Value()).To(Equal(int64(0)))
-}
