@@ -88,18 +88,10 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 			_, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, "first-pvc", "1.5Gi", nil)
 			Expect(err).ToNot(HaveOccurred())
 
-			// Wait for the controller to update the status
-			Eventually(func() bool {
-				reconciledCRQ := &quotav1alpha1.ClusterResourceQuota{}
-				if err := k8sClient.Get(ctx, types.NamespacedName{Name: crq.Name}, reconciledCRQ); err != nil {
-					return false
-				}
-				// Check if usage has been updated
-				if used, exists := reconciledCRQ.Status.Total.Used[corev1.ResourceRequestsStorage]; exists {
-					return !used.IsZero()
-				}
-				return false
-			}, timeout, interval).Should(BeTrue())
+			// Wait for the controller to publish the new aggregated usage so the webhook can read it.
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourceRequestsStorage, resource.MustParse("1.5Gi"),
+			)).To(Succeed())
 
 			// Now try to create another PVC that would exceed the quota
 			_, err = testutils.CreatePVC(ctx, k8sClient, ns.Name, "second-pvc-blocked", "1Gi", nil)
@@ -142,6 +134,11 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 				}, pvc1)
 			}, timeout, interval).Should(Succeed())
 
+			// Wait for controller to publish aggregated usage so the webhook reads up-to-date data.
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourceRequestsStorage, resource.MustParse("500Mi"),
+			)).To(Succeed())
+
 			// Try to create another PVC that would exceed the 2Gi quota (500Mi + 2Gi = 2.5Gi > 2Gi)
 			pvc2, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, "test-pvc-large", "2Gi", nil)
 			Expect(err).To(HaveOccurred())
@@ -180,6 +177,11 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 			// Create second PVC - should allow
 			_, err = testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-2"), "1Gi", nil)
 			Expect(err).NotTo(HaveOccurred())
+
+			// Wait until the controller reports 2 PVCs used so the webhook sees the fresh value.
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourcePersistentVolumeClaims, resource.MustParse("2"),
+			)).To(Succeed())
 
 			// Create third PVC - should fail
 			_, err = testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-3"), "1Gi", nil)

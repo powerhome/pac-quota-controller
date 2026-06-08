@@ -95,6 +95,10 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 				err := k8sClient.Create(ctx, cm)
 				Expect(err).ToNot(HaveOccurred(), "ConfigMap creation up to quota should be allowed")
 			}
+			// Wait until the controller reports usage == quota so the webhook can see it.
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "configmaps", resource.MustParse("3"),
+			)).To(Succeed())
 			// Attempt to create one more, should fail
 			cmName := testutils.GenerateResourceName("cm-over-quota-" + testSuffix + "-extra")
 			cm := &corev1.ConfigMap{
@@ -130,6 +134,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			}
 			err := k8sClient.Create(ctx, secret)
 			Expect(err).ToNot(HaveOccurred(), "Secret creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "secrets", resource.MustParse("1"),
+			)).To(Succeed())
 			// Attempt to create one more, should fail
 			secretNameExtra := testutils.GenerateResourceName("secret-over-quota-" + testSuffix + "-extra")
 			secretExtra := &corev1.Secret{
@@ -153,6 +160,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			rc := testutils.NewReplicationController(rcName, testNamespace, 1)
 			err := k8sClient.Create(ctx, rc)
 			Expect(err).ToNot(HaveOccurred(), "ReplicationController creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "replicationcontrollers", resource.MustParse("1"),
+			)).To(Succeed())
 			rcNameExtra := testutils.GenerateResourceName("rc-over-quota-" + testSuffix + "-extra")
 			rcExtra := testutils.NewReplicationController(rcNameExtra, testNamespace, 1)
 			err = k8sClient.Create(ctx, rcExtra)
@@ -169,6 +179,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			dep := testutils.NewDeployment(depName, testNamespace, 1)
 			err := k8sClient.Create(ctx, dep)
 			Expect(err).ToNot(HaveOccurred(), "Deployment creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "deployments.apps", resource.MustParse("1"),
+			)).To(Succeed())
 			depNameExtra := testutils.GenerateResourceName("dep-over-quota-" + testSuffix + "-extra")
 			depExtra := testutils.NewDeployment(depNameExtra, testNamespace, 1)
 			err = k8sClient.Create(ctx, depExtra)
@@ -185,6 +198,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			ss := testutils.NewStatefulSet(ssName, testNamespace, 1)
 			err := k8sClient.Create(ctx, ss)
 			Expect(err).ToNot(HaveOccurred(), "StatefulSet creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "statefulsets.apps", resource.MustParse("1"),
+			)).To(Succeed())
 			ssNameExtra := testutils.GenerateResourceName("ss-over-quota-" + testSuffix + "-extra")
 			ssExtra := testutils.NewStatefulSet(ssNameExtra, testNamespace, 1)
 			err = k8sClient.Create(ctx, ssExtra)
@@ -201,6 +217,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			ds := testutils.NewDaemonSet(dsName, testNamespace)
 			err := k8sClient.Create(ctx, ds)
 			Expect(err).ToNot(HaveOccurred(), "DaemonSet creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "daemonsets.apps", resource.MustParse("1"),
+			)).To(Succeed())
 			dsNameExtra := testutils.GenerateResourceName("ds-over-quota-" + testSuffix + "-extra")
 			dsExtra := testutils.NewDaemonSet(dsNameExtra, testNamespace)
 			err = k8sClient.Create(ctx, dsExtra)
@@ -221,6 +240,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			limits := corev1.ResourceList{}
 			_, err := testutils.CreateJob(ctx, k8sClient, testNamespace, jobName, command, requests, limits)
 			Expect(err).ToNot(HaveOccurred(), "Job creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "jobs.batch", resource.MustParse("1"),
+			)).To(Succeed())
 			jobNameExtra := testutils.GenerateResourceName("job-over-quota-" + testSuffix + "-extra")
 			_, err = testutils.CreateJob(ctx, k8sClient, testNamespace, jobNameExtra, command, requests, limits)
 			Expect(err).To(HaveOccurred(), "Job creation over quota should be denied")
@@ -236,6 +258,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			cj := testutils.NewCronJob(cjName, testNamespace)
 			err := k8sClient.Create(ctx, cj)
 			Expect(err).ToNot(HaveOccurred(), "CronJob creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "cronjobs.batch", resource.MustParse("1"),
+			)).To(Succeed())
 			cjNameExtra := testutils.GenerateResourceName("cj-over-quota-" + testSuffix + "-extra")
 			cjExtra := testutils.NewCronJob(cjNameExtra, testNamespace)
 			err = k8sClient.Create(ctx, cjExtra)
@@ -252,6 +277,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			hpa := testutils.NewHPA(hpaName, testNamespace)
 			err := k8sClient.Create(ctx, hpa)
 			Expect(err).ToNot(HaveOccurred(), "HPA creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "horizontalpodautoscalers.autoscaling", resource.MustParse("1"),
+			)).To(Succeed())
 			hpaNameExtra := testutils.GenerateResourceName("hpa-over-quota-" + testSuffix + "-extra")
 			hpaExtra := testutils.NewHPA(hpaNameExtra, testNamespace)
 			err = k8sClient.Create(ctx, hpaExtra)
@@ -268,6 +296,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			ing := testutils.NewIngress(ingName, testNamespace)
 			err := k8sClient.Create(ctx, ing)
 			Expect(err).ToNot(HaveOccurred(), "Ingress creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "ingresses.networking.k8s.io", resource.MustParse("1"),
+			)).To(Succeed())
 			ingNameExtra := testutils.GenerateResourceName("ing-over-quota-" + testSuffix + "-extra")
 			ingExtra := testutils.NewIngress(ingNameExtra, testNamespace)
 			err = k8sClient.Create(ctx, ingExtra)
@@ -374,6 +405,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 				err := k8sClient.Create(ctx, cm)
 				Expect(err).ToNot(HaveOccurred(), "ConfigMap creation up to quota should be allowed")
 			}
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "configmaps", resource.MustParse("3"),
+			)).To(Succeed())
 			cmExtra := &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testutils.GenerateResourceName("cm-mixed-over-" + testSuffix + "-extra"),
@@ -390,6 +424,9 @@ var _ = Describe("ClusterResourceQuota Object Count Webhook E2E", func() {
 			}
 			err = k8sClient.Create(ctx, secret)
 			Expect(err).ToNot(HaveOccurred(), "Secret creation up to quota should be allowed")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "secrets", resource.MustParse("1"),
+			)).To(Succeed())
 			secretExtra := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testutils.GenerateResourceName("secret-mixed-over-" + testSuffix + "-extra"),

@@ -83,6 +83,9 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 		})
 
 		It("should deny pod creation when it would exceed CPU limits", func() {
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourceRequestsCPU, resource.MustParse("0"),
+			)).To(Succeed())
 			_, err := testutils.CreatePod(
 				ctx,
 				k8sClient,
@@ -126,6 +129,9 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 		})
 
 		It("should deny pod creation with init containers exceeding limits", func() {
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourceRequestsCPU, resource.MustParse("0"),
+			)).To(Succeed())
 			_, err := testutils.CreatePodWithContainers(
 				ctx, k8sClient, testNamespace, "test-pod-init-container-"+testSuffix,
 				[]corev1.Container{
@@ -526,6 +532,9 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 					},
 				}, nil)
 			Expect(err).NotTo(HaveOccurred())
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourcePods, resource.MustParse("2"),
+			)).To(Succeed())
 			// Create third pod - should fail
 			_, err = testutils.CreatePodWithContainers(
 				ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-3"),

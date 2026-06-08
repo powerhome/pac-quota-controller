@@ -118,6 +118,9 @@ var _ = Describe("Service Quota Webhook", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, service)).To(Succeed())
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "services.nodeports", resource.MustParse("1"),
+			)).To(Succeed())
 			// Second NodePort service should be denied
 			service2 := &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -161,6 +164,9 @@ var _ = Describe("Service Quota Webhook", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, service)).To(Succeed())
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "services.loadbalancers", resource.MustParse("1"),
+			)).To(Succeed())
 			// Second LoadBalancer service should be denied
 			service2 := &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -264,6 +270,9 @@ var _ = Describe("Service Quota Webhook", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, lbService)).To(Succeed())
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "services.loadbalancers", resource.MustParse("1"),
+			)).To(Succeed())
 			// Try to update the ClusterIP service to LoadBalancer (should fail)
 			var fetched corev1.Service
 			Expect(
