@@ -131,15 +131,21 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 // decodeAdmissionObject decodes raw bytes into obj, returning a 400-coded
 // statusError on failure.
 func decodeAdmissionObject(raw []byte, into runtime.Object, kind string) error {
-	if err := runtime.DecodeInto(
-		serializer.NewCodecFactory(runtime.NewScheme()).UniversalDeserializer(),
-		raw,
-		into,
-	); err != nil {
+	if err := runtime.DecodeInto(webhookDecoder, raw, into); err != nil {
 		return newStatusErrorf(http.StatusBadRequest, "Unable to decode %s object: %v", kind, err)
 	}
 	return nil
 }
+
+// Shared scheme + decoder for admission decoding. The universal deserializer
+// does not require types to be registered, so a single empty scheme is safe
+// to share across all webhooks and avoids per-request allocations.
+var (
+	webhookScheme  = runtime.NewScheme()
+	webhookDecoder = serializer.NewCodecFactory(webhookScheme).UniversalDeserializer()
+
+	oneQuantity = *resource.NewQuantity(1, resource.DecimalSI)
+)
 
 // unsupportedOperationError builds the standard 400 error for webhooks that only accept CREATE/UPDATE.
 func unsupportedOperationError(op admissionv1.Operation, resourceType string) error {

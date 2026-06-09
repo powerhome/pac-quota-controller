@@ -8,7 +8,6 @@ import (
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
@@ -73,7 +72,6 @@ func (h *ServiceWebhook) validateOperation(
 	}
 
 	correlationID := quota.GetCorrelationID(ctx)
-	one := *resource.NewQuantity(1, resource.DecimalSI)
 
 	resourceNames := []corev1.ResourceName{usage.ResourceServices}
 	switch svc.Spec.Type {
@@ -84,7 +82,7 @@ func (h *ServiceWebhook) validateOperation(
 	}
 
 	for _, rn := range resourceNames {
-		if err := validateCRQStatusUsage(crq, rn, one, h.logger, correlationID); err != nil {
+		if err := validateCRQStatusUsage(crq, rn, oneQuantity, h.logger, correlationID); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota service count validation failed for %s: %w", rn, err)
 		}
 	}

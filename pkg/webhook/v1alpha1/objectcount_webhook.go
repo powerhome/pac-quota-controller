@@ -7,7 +7,6 @@ import (
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
@@ -76,7 +75,7 @@ func (h *ObjectCountWebhook) validateOperation(
 	}
 	if err := validateAgainstCRQ(
 		ctx, h.crqClient, h.logger,
-		namespace, resourceName, resource.MustParse("1"),
+		namespace, resourceName, oneQuantity,
 	); err != nil {
 		return nil, err
 	}

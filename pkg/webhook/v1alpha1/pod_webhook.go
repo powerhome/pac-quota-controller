@@ -8,7 +8,6 @@ import (
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
@@ -120,7 +119,7 @@ func (h *PodWebhook) validateOperation(
 	}
 
 	if op == admissionv1.Create {
-		if err := validateCRQStatusUsage(crq, usage.ResourcePods, resource.MustParse("1"), h.logger, correlationID); err != nil {
+		if err := validateCRQStatusUsage(crq, usage.ResourcePods, oneQuantity, h.logger, correlationID); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota pod count validation failed: %w", err)
 		}
 	}
