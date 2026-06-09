@@ -45,6 +45,9 @@ func (h *PersistentVolumeClaimWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
+// TODO: the []string return is a future-proofing placeholder for admission
+// warnings. Once any validator actually emits warnings, plumb them through
+// runWebhook into AdmissionResponse.Warnings.
 func (h *PersistentVolumeClaimWebhook) validate(
 	ctx context.Context,
 	req *admissionv1.AdmissionRequest,
@@ -60,12 +63,22 @@ func (h *PersistentVolumeClaimWebhook) validate(
 		return nil, err
 	}
 
-	return nil, h.validateOperation(ctx, &pvc)
+	var oldPVC *corev1.PersistentVolumeClaim
+	if req.Operation == admissionv1.Update && len(req.OldObject.Raw) > 0 {
+		var p corev1.PersistentVolumeClaim
+		if err := decodeAdmissionObject(req.OldObject.Raw, &p, "PersistentVolumeClaim"); err != nil {
+			return nil, err
+		}
+		oldPVC = &p
+	}
+
+	return nil, h.validateOperation(ctx, &pvc, oldPVC)
 }
 
 func (h *PersistentVolumeClaimWebhook) validateOperation(
 	ctx context.Context,
 	pvc *corev1.PersistentVolumeClaim,
+	oldPVC *corev1.PersistentVolumeClaim,
 ) error {
 	crq := resolveCRQForNamespace(ctx, h.crqClient, h.logger, pvc.Namespace)
 	if crq == nil {
@@ -73,8 +86,10 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 	}
 
 	correlationID := quota.GetCorrelationID(ctx)
-	storageRequest := getStorageRequest(pvc)
-	pvcCount := *resource.NewQuantity(1, resource.DecimalSI)
+	storageDelta := getStorageRequest(pvc)
+	if oldPVC != nil {
+		storageDelta.Sub(getStorageRequest(oldPVC))
+	}
 
 	type check struct {
 		resource corev1.ResourceName
@@ -82,27 +97,39 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 		errFmt   string
 	}
 	checks := []check{
-		{usage.ResourceRequestsStorage, storageRequest, "ClusterResourceQuota storage validation failed: %w"},
-		{usage.ResourcePersistentVolumeClaims, pvcCount, "ClusterResourceQuota PVC count validation failed: %w"},
+		{usage.ResourceRequestsStorage, storageDelta, "ClusterResourceQuota storage validation failed: %w"},
 	}
-
 	if pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName != "" {
 		storageClass := *pvc.Spec.StorageClassName
-		checks = append(checks,
-			check{
-				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/requests.storage", storageClass)),
-				storageRequest,
-				fmt.Sprintf("ClusterResourceQuota storage class '%s' storage validation failed: %%w", storageClass),
-			},
-			check{
+		checks = append(checks, check{
+			corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/requests.storage", storageClass)),
+			storageDelta,
+			fmt.Sprintf("ClusterResourceQuota storage class '%s' storage validation failed: %%w", storageClass),
+		})
+	}
+	// Count checks only apply on Create; Update never adds or removes a PVC.
+	if oldPVC == nil {
+		checks = append(checks, check{
+			usage.ResourcePersistentVolumeClaims, oneQuantity,
+			"ClusterResourceQuota PVC count validation failed: %w",
+		})
+		if pvc.Spec.StorageClassName != nil && *pvc.Spec.StorageClassName != "" {
+			storageClass := *pvc.Spec.StorageClassName
+			checks = append(checks, check{
 				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClass)),
-				pvcCount,
+				oneQuantity,
 				fmt.Sprintf("ClusterResourceQuota storage class '%s' PVC count validation failed: %%w", storageClass),
-			},
-		)
+			})
+		}
 	}
 
 	for _, c := range checks {
+		// Weird edge-case where an admission request for PVC downsizing passes from the API
+		// This should not happen, but helps the tests, as we can't assume answers from the API
+		// Potentially dead code
+		if c.quantity.Sign() <= 0 {
+			continue
+		}
 		if err := validateCRQStatusUsage(crq, c.resource, c.quantity, h.logger, correlationID); err != nil {
 			return fmt.Errorf(c.errFmt, err)
 		}
@@ -111,7 +138,7 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 	h.logger.Debug("PVC CRQ validation passed",
 		zap.String("pvc", pvc.Name),
 		zap.String("namespace", pvc.Namespace),
-		zap.String("storageRequest", storageRequest.String()))
+		zap.String("storageDelta", storageDelta.String()))
 	return nil
 }
 

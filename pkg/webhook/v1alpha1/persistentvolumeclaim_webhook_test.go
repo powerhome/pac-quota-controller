@@ -210,5 +210,78 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 			Expect(resp.Response.Allowed).To(BeFalse())
 			Expect(resp.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported"))
 		})
+
+		It("admits an Update when storage grows within quota (resize)", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsStorage:        quantity("10Gi"),
+					usage.ResourcePersistentVolumeClaims: quantity("10"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsStorage:        quantity("5Gi"),
+					usage.ResourcePersistentVolumeClaims: quantity("1"),
+				},
+			)
+			h := NewPersistentVolumeClaimWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			review := newPVCReview("8", makePVC("p1", "6Gi", ""))
+			oldRaw, _ := json.Marshal(makePVC("p1", "5Gi", ""))
+			review.Request.OldObject = runtime.RawExtension{Raw: oldRaw}
+			review.Request.Operation = admissionv1.Update
+
+			resp := sendWebhookRequest(engine, review)
+			Expect(resp.Response.Allowed).To(BeTrue())
+		})
+
+		It("denies an Update when storage growth would exceed quota", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsStorage:        quantity("8Gi"),
+					usage.ResourcePersistentVolumeClaims: quantity("10"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsStorage:        quantity("5Gi"),
+					usage.ResourcePersistentVolumeClaims: quantity("1"),
+				},
+			)
+			h := NewPersistentVolumeClaimWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			review := newPVCReview("9", makePVC("p1", "10Gi", ""))
+			oldRaw, _ := json.Marshal(makePVC("p1", "5Gi", ""))
+			review.Request.OldObject = runtime.RawExtension{Raw: oldRaw}
+			review.Request.Operation = admissionv1.Update
+
+			resp := sendWebhookRequest(engine, review)
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("requests.storage limit exceeded"))
+		})
+
+		It("admits an Update that does not change storage (no-op for quota)", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsStorage:        quantity("5Gi"),
+					usage.ResourcePersistentVolumeClaims: quantity("1"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsStorage:        quantity("5Gi"),
+					usage.ResourcePersistentVolumeClaims: quantity("1"),
+				},
+			)
+			h := NewPersistentVolumeClaimWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			review := newPVCReview("10", makePVC("p1", "5Gi", ""))
+			oldRaw, _ := json.Marshal(makePVC("p1", "5Gi", ""))
+			review.Request.OldObject = runtime.RawExtension{Raw: oldRaw}
+			review.Request.Operation = admissionv1.Update
+
+			resp := sendWebhookRequest(engine, review)
+			Expect(resp.Response.Allowed).To(BeTrue())
+		})
 	})
 })
