@@ -18,7 +18,6 @@ jobs:
         uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6
         with:
           go-version-file: go.mod
-
       - name: Install the latest version of kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
@@ -29,7 +28,7 @@ jobs:
         run: kind version
 
       - name: Create kind cluster
-        run: kind create cluster
+        run: kind create cluster --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
 
       - name: Prepare pac-quota-controller
         run: |

@@ -86,7 +86,7 @@ var _ = Describe("PodWebhook", func() {
 			Expect(response.Response.UID).To(Equal(admissionReview.Request.UID))
 		})
 
-		It("should handle valid pod update request", func() {
+		It("should handle valid pod update request (resize subresource)", func() {
 			pod := &corev1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-pod",
@@ -107,10 +107,32 @@ var _ = Describe("PodWebhook", func() {
 			}
 
 			admissionReview := createPodAdmissionReview(pod, admissionv1.Update)
+			admissionReview.Request.SubResource = "resize"
 			response := sendWebhookRequest(ginEngine, admissionReview)
 
 			Expect(response.Response.Allowed).To(BeTrue())
 			Expect(response.Response.UID).To(Equal(admissionReview.Request.UID))
+		})
+
+		It("should reject DELETE with unsupportedOperationError", func() {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pod",
+					Namespace: "test-namespace",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "test-container"},
+					},
+				},
+			}
+
+			admissionReview := createPodAdmissionReview(pod, admissionv1.Delete)
+			response := sendWebhookRequest(ginEngine, admissionReview)
+
+			Expect(response.Response.Allowed).To(BeFalse())
+			Expect(response.Response.Result.Code).To(Equal(int32(http.StatusBadRequest)))
+			Expect(response.Response.Result.Message).To(ContainSubstring("Operation DELETE is not supported for Pod"))
 		})
 
 		It("should reject request with nil admission review", func() {
@@ -349,7 +371,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateOperation(ctx, pod, admissionv1.Create)
+			warnings, err := webhook.validateOperation(ctx, pod, nil, admissionv1.Create)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -376,7 +398,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateOperation(ctx, pod, admissionv1.Update)
+			warnings, err := webhook.validateOperation(ctx, pod, nil, admissionv1.Update)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -398,7 +420,7 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateOperation(ctx, pod, "creation")
+			warnings, err := webhook.validateOperation(ctx, pod, nil, "creation")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -418,13 +440,13 @@ var _ = Describe("PodWebhook", func() {
 				},
 			}
 
-			warnings, err := webhook.validateOperation(ctx, pod, "update")
+			warnings, err := webhook.validateOperation(ctx, pod, nil, "update")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
 
 		It("should handle nil pod", func() {
-			warnings, err := webhook.validateOperation(ctx, nil, "creation")
+			warnings, err := webhook.validateOperation(ctx, nil, nil, "creation")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(warnings).To(BeNil())
 		})
@@ -1367,6 +1389,122 @@ var _ = Describe("PodWebhook", func() {
 			})
 		})
 	})
+
+	Describe("Pod Resize (UPDATE) Quota Validation", func() {
+		var (
+			resizeCRQ       *quotav1alpha1.ClusterResourceQuota
+			resizeNS        *corev1.Namespace
+			existingPodOld  *corev1.Pod
+			runResizeReview func(newRequests corev1.ResourceList, oldRequests corev1.ResourceList) admissionv1.AdmissionResponse
+		)
+
+		BeforeEach(func() {
+			resizeNS = &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "resize-ns",
+					Labels: map[string]string{"resize-test": "true"},
+				},
+			}
+			resizeCRQ = &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "resize-crq"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"resize-test": "true"},
+					},
+					Hard: quotav1alpha1.ResourceList{
+						corev1.ResourceRequestsCPU: resource.MustParse("200m"),
+						corev1.ResourcePods:        resource.MustParse("1"),
+					},
+				},
+			}
+			// existingPodOld represents the pre-resize pod already present in the
+			// namespace; tests rewrite its CPU requests via the oldRequests arg.
+			existingPodOld = &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "resize-pod",
+					Namespace: "resize-ns",
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "main", Resources: corev1.ResourceRequirements{}},
+					},
+				},
+			}
+
+			runResizeReview = func(newRequests, oldRequests corev1.ResourceList) admissionv1.AdmissionResponse {
+				oldPod := existingPodOld.DeepCopy()
+				oldPod.Spec.Containers[0].Resources.Requests = oldRequests
+				newPod := existingPodOld.DeepCopy()
+				newPod.Spec.Containers[0].Resources.Requests = newRequests
+
+				// The pod currently in the namespace must reflect the pre-resize
+				// state so calculateCurrentUsage returns the old usage.
+				fakeClient = fake.NewSimpleClientset(testNamespace, resizeNS, oldPod)
+				scheme := runtime.NewScheme()
+				_ = quotav1alpha1.AddToScheme(scheme)
+				_ = corev1.AddToScheme(scheme)
+				fakeRuntimeClient = ctrlclientfake.NewClientBuilder().
+					WithScheme(scheme).
+					WithObjects(resizeCRQ, resizeNS).
+					Build()
+				crqClient = quota.NewCRQClient(fakeRuntimeClient, logger)
+				webhook = NewPodWebhook(fakeClient, crqClient, logger)
+				ginEngine = gin.New()
+				ginEngine.POST("/webhook", webhook.Handle)
+
+				review := createPodResizeAdmissionReview(newPod, oldPod)
+				return *sendWebhookRequest(ginEngine, review).Response
+			}
+		})
+
+		It("allows a resize up when the delta fits in remaining quota", func() {
+			// quota=200m, oldUsage=50m, newUsage=100m, delta=50m -> 50+50=100 <= 200.
+			resp := runResizeReview(
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m")},
+			)
+			Expect(resp.Allowed).To(BeTrue())
+		})
+
+		It("rejects a resize up when the delta exceeds remaining quota", func() {
+			// quota=200m, oldUsage=100m, newUsage=250m, delta=150m -> 100+150=250 > 200.
+			resp := runResizeReview(
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("250m")},
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+			)
+			Expect(resp.Allowed).To(BeFalse())
+			Expect(resp.Result.Message).To(ContainSubstring("CPU requests validation failed"))
+		})
+
+		It("allows a resize up that would fail without delta accounting", func() {
+			// quota=200m, oldUsage=180m, newUsage=200m, delta=20m -> 180+20=200 OK.
+			// Naive (non-delta) check would compute 180+200=380m and reject.
+			resp := runResizeReview(
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m")},
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("180m")},
+			)
+			Expect(resp.Allowed).To(BeTrue())
+		})
+
+		It("allows a resize down even when quota is fully consumed", func() {
+			// quota=200m, oldUsage=200m, newUsage=50m, delta<=0 -> early-continue.
+			resp := runResizeReview(
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m")},
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("200m")},
+			)
+			Expect(resp.Allowed).To(BeTrue())
+		})
+
+		It("does not charge +1 pod count on UPDATE (resize fits with pod count at limit)", func() {
+			// pods quota=1 and one pod already exists. A resize must not be
+			// rejected by the +1 pod-count charge that we only apply on CREATE.
+			resp := runResizeReview(
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("60m")},
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("50m")},
+			)
+			Expect(resp.Allowed).To(BeTrue())
+		})
+	})
 })
 
 // Helper functions for testing
@@ -1393,6 +1531,17 @@ func createPodAdmissionReview(pod *corev1.Pod, operation admissionv1.Operation) 
 			},
 		},
 	}
+}
+
+// createPodResizeAdmissionReview builds an admission review that matches what
+// the apiserver sends for the pods/resize subresource: Operation=UPDATE,
+// SubResource="resize", and OldObject populated with the pre-resize pod.
+func createPodResizeAdmissionReview(newPod, oldPod *corev1.Pod) *admissionv1.AdmissionReview {
+	review := createPodAdmissionReview(newPod, admissionv1.Update)
+	review.Request.SubResource = "resize"
+	oldRaw, _ := json.Marshal(oldPod)
+	review.Request.OldObject = runtime.RawExtension{Raw: oldRaw}
+	return review
 }
 
 // testTerminalPodState is a helper function to test pods in terminal states (Succeeded/Failed)

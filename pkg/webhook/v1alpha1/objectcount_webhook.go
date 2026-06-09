@@ -57,18 +57,20 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 // warnings. Once any validator actually emits warnings, plumb them through
 // runWebhook into AdmissionResponse.Warnings.
 func (h *ObjectCountWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
+	// Chart only subscribes vobjectcount to CREATE since object counts cannot
+	// change on UPDATE; this guard is a defensive seatbelt in case the chart
+	// drifts and the apiserver forwards an unexpected verb.
+	if req.Operation != admissionv1.Create {
+		return nil, unsupportedOperationError(req.Operation, "ObjectCount")
+	}
+
 	crqKey := req.Resource.Resource
 	if req.Resource.Group != "" {
 		crqKey = crqKey + "." + req.Resource.Group
 	}
 	resourceName := corev1.ResourceName(crqKey)
 
-	switch req.Operation {
-	case admissionv1.Create, admissionv1.Update:
-		return h.validateOperation(ctx, req.Namespace, resourceName, req.Operation)
-	default:
-		return nil, unsupportedOperationError(req.Operation, "ObjectCount")
-	}
+	return h.validateOperation(ctx, req.Namespace, resourceName, req.Operation)
 }
 
 // validateOperation is shared between create and update validation.
