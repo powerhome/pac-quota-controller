@@ -57,13 +57,24 @@ func (h *ServiceWebhook) validate(ctx context.Context, req *admissionv1.Admissio
 		return nil, err
 	}
 
-	return h.validateOperation(ctx, &svc, req.Operation)
+	var oldSvc *corev1.Service
+	if req.Operation == admissionv1.Update && len(req.OldObject.Raw) > 0 {
+		var s corev1.Service
+		if err := decodeAdmissionObject(req.OldObject.Raw, &s, "Service"); err != nil {
+			return nil, err
+		}
+		oldSvc = &s
+	}
+
+	return h.validateOperation(ctx, &svc, oldSvc, req.Operation)
 }
 
-// validateOperation is shared between create and update validation.
+// validateOperation runs per-resource count checks. On Update, charges +1
+// only for resources the new service belongs to that the old service did not.
 func (h *ServiceWebhook) validateOperation(
 	ctx context.Context,
 	svc *corev1.Service,
+	oldSvc *corev1.Service,
 	op admissionv1.Operation,
 ) ([]string, error) {
 	crq := resolveCRQForNamespace(ctx, h.crqClient, h.logger, svc.Namespace)
@@ -73,17 +84,19 @@ func (h *ServiceWebhook) validateOperation(
 
 	correlationID := quota.GetCorrelationID(ctx)
 
-	resourceNames := []corev1.ResourceName{usage.ResourceServices}
-	switch svc.Spec.Type {
-	case corev1.ServiceTypeLoadBalancer:
-		resourceNames = append(resourceNames, usage.ResourceServicesLoadBalancers)
-	case corev1.ServiceTypeNodePort:
-		resourceNames = append(resourceNames, usage.ResourceServicesNodePorts)
+	already := map[corev1.ResourceName]bool{}
+	if oldSvc != nil {
+		for _, r := range serviceQuotaResources(oldSvc) {
+			already[r] = true
+		}
 	}
 
-	for _, rn := range resourceNames {
-		if err := validateCRQStatusUsage(crq, rn, oneQuantity, h.logger, correlationID); err != nil {
-			return nil, fmt.Errorf("ClusterResourceQuota service count validation failed for %s: %w", rn, err)
+	for _, r := range serviceQuotaResources(svc) {
+		if already[r] {
+			continue
+		}
+		if err := validateCRQStatusUsage(crq, r, oneQuantity, h.logger, correlationID); err != nil {
+			return nil, fmt.Errorf("ClusterResourceQuota service count validation failed for %s: %w", r, err)
 		}
 	}
 
@@ -92,4 +105,15 @@ func (h *ServiceWebhook) validateOperation(
 		zap.String("namespace", svc.Namespace),
 		zap.String("operation", string(op)))
 	return nil, nil
+}
+
+func serviceQuotaResources(svc *corev1.Service) []corev1.ResourceName {
+	out := []corev1.ResourceName{usage.ResourceServices}
+	switch svc.Spec.Type {
+	case corev1.ServiceTypeLoadBalancer:
+		out = append(out, usage.ResourceServicesLoadBalancers)
+	case corev1.ServiceTypeNodePort:
+		out = append(out, usage.ResourceServicesNodePorts)
+	}
+	return out
 }

@@ -207,4 +207,117 @@ var _ = Describe("ServiceWebhook", func() {
 			Expect(resp.Response.Result.Message).To(ContainSubstring("Expected Service"))
 		})
 	})
+
+	Describe("Handle UPDATE", func() {
+		updateReview := func(uid string, newSvc, oldSvc *corev1.Service) *admissionv1.AdmissionReview {
+			r := newServiceReview(uid, newSvc)
+			r.Request.Operation = admissionv1.Update
+			oldRaw, _ := json.Marshal(oldSvc)
+			r.Request.OldObject = runtime.RawExtension{Raw: oldRaw}
+			return r
+		}
+
+		It("allows updating a service when services count is at the limit", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{usage.ResourceServices: quantity("2")},
+				quotav1alpha1.ResourceList{usage.ResourceServices: quantity("2")},
+			)
+			h := NewServiceWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			old := makeService(corev1.ServiceTypeClusterIP)
+			new := makeService(corev1.ServiceTypeClusterIP)
+			resp := sendWebhookRequest(engine, updateReview("u1", new, old))
+			Expect(resp.Response.Allowed).To(BeTrue())
+		})
+
+		It("allows updating a LoadBalancer when LB quota is at the limit and type is unchanged", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceServices:              quantity("10"),
+					usage.ResourceServicesLoadBalancers: quantity("1"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceServices:              quantity("1"),
+					usage.ResourceServicesLoadBalancers: quantity("1"),
+				},
+			)
+			h := NewServiceWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			old := makeService(corev1.ServiceTypeLoadBalancer)
+			new := makeService(corev1.ServiceTypeLoadBalancer)
+			resp := sendWebhookRequest(engine, updateReview("u2", new, old))
+			Expect(resp.Response.Allowed).To(BeTrue())
+		})
+
+		It("denies a ClusterIP -> LoadBalancer transition when LB quota is full", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceServices:              quantity("10"),
+					usage.ResourceServicesLoadBalancers: quantity("1"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceServices:              quantity("1"),
+					usage.ResourceServicesLoadBalancers: quantity("1"),
+				},
+			)
+			h := NewServiceWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			old := makeService(corev1.ServiceTypeClusterIP)
+			new := makeService(corev1.ServiceTypeLoadBalancer)
+			resp := sendWebhookRequest(engine, updateReview("u3", new, old))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("services.loadbalancers limit exceeded"))
+		})
+
+		It("allows a LoadBalancer -> ClusterIP transition even when LB quota is full", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceServices:              quantity("10"),
+					usage.ResourceServicesLoadBalancers: quantity("1"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceServices:              quantity("1"),
+					usage.ResourceServicesLoadBalancers: quantity("1"),
+				},
+			)
+			h := NewServiceWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			old := makeService(corev1.ServiceTypeLoadBalancer)
+			new := makeService(corev1.ServiceTypeClusterIP)
+			resp := sendWebhookRequest(engine, updateReview("u4", new, old))
+			Expect(resp.Response.Allowed).To(BeTrue())
+		})
+
+		It("denies a NodePort -> LoadBalancer transition when LB quota is full", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceServices:              quantity("10"),
+					usage.ResourceServicesLoadBalancers: quantity("1"),
+					usage.ResourceServicesNodePorts:     quantity("5"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceServices:              quantity("1"),
+					usage.ResourceServicesLoadBalancers: quantity("1"),
+					usage.ResourceServicesNodePorts:     quantity("0"),
+				},
+			)
+			h := NewServiceWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			old := makeService(corev1.ServiceTypeNodePort)
+			new := makeService(corev1.ServiceTypeLoadBalancer)
+			resp := sendWebhookRequest(engine, updateReview("u5", new, old))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("services.loadbalancers limit exceeded"))
+		})
+	})
 })

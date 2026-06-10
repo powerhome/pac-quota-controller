@@ -251,7 +251,7 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 				if fresh.Labels == nil {
 					fresh.Labels = map[string]string{}
 				}
-				fresh.Labels["updated"] = "true"
+				fresh.Labels["updated"] = "yes"
 				return k8sClient.Update(ctx, &fresh)
 			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 		})
