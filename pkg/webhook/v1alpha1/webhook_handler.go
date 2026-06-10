@@ -14,18 +14,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/client-go/kubernetes"
-
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
-	"github.com/powerhome/pac-quota-controller/pkg/metrics"
+	"k8s.io/apimachinery/pkg/types"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/namespace"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 )
 
-// statusError carries an HTTP status code alongside an error message so callbacks
-// can signal client errors (e.g. decode failures, unsupported operations) vs
-// quota-violation denials, which use http.StatusForbidden by default.
+// statusError carries an HTTP status code so callbacks can distinguish client
+// errors (decode, unsupported op) from quota denials (default 403).
 type statusError struct {
 	code int
 	msg  string
@@ -48,15 +45,11 @@ type webhookConfig struct {
 	requireNamespace bool
 }
 
-// validateFn is the per-request callback invoked by runWebhook after all
-// structural checks pass. It is responsible for decoding the request body and
-// running the actual quota validation.
+// validateFn is the per-request callback invoked by runWebhook after structural checks.
 type validateFn func(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error)
 
-// runWebhook is the single entry point used by every admission webhook handler.
-// It handles JSON binding, request shape validation, metrics, GVK checks and
-// response writing so that each concrete webhook only needs to provide a
-// validate callback.
+// runWebhook is the shared entry point for every admission handler: JSON
+// binding, request validation, metrics, GVK check, and response writing.
 func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate validateFn) {
 	var review admissionv1.AdmissionReview
 	if err := c.ShouldBindJSON(&review); err != nil {
@@ -135,40 +128,40 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 	c.JSON(http.StatusOK, review)
 }
 
-// decodeAdmissionObject decodes raw bytes into the supplied object using the
-// universal deserializer, returning a 400-coded statusError on failure so
-// runWebhook surfaces the expected client-error response.
+// decodeAdmissionObject decodes raw bytes into obj, returning a 400-coded
+// statusError on failure.
 func decodeAdmissionObject(raw []byte, into runtime.Object, kind string) error {
-	if err := runtime.DecodeInto(
-		serializer.NewCodecFactory(runtime.NewScheme()).UniversalDeserializer(),
-		raw,
-		into,
-	); err != nil {
+	if err := runtime.DecodeInto(webhookDecoder, raw, into); err != nil {
 		return newStatusErrorf(http.StatusBadRequest, "Unable to decode %s object: %v", kind, err)
 	}
 	return nil
 }
 
-// unsupportedOperationError builds the standard "operation not supported" error
-// for webhooks that only accept CREATE/UPDATE.
+// Shared scheme + decoder for admission decoding. The universal deserializer
+// does not require types to be registered, so a single empty scheme is safe
+// to share across all webhooks and avoids per-request allocations.
+var (
+	webhookScheme  = runtime.NewScheme()
+	webhookDecoder = serializer.NewCodecFactory(webhookScheme).UniversalDeserializer()
+
+	oneQuantity = *resource.NewQuantity(1, resource.DecimalSI)
+)
+
+// unsupportedOperationError builds the standard 400 error for webhooks that only accept CREATE/UPDATE.
 func unsupportedOperationError(op admissionv1.Operation, resourceType string) error {
 	return newStatusErrorf(http.StatusBadRequest, "Operation %s is not supported for %s", op, resourceType)
 }
 
-// validateAgainstCRQ is the shared "fetch namespace + delegate to the CRQ
-// validator" wrapper used by every namespaced webhook. It looks up the target
-// namespace, finds the CRQ that applies (if any), and verifies that adding
-// requested to the current cross-namespace usage stays within the configured
-// hard limit.
+// validateAgainstCRQ checks whether admitting `requested` of `resourceName` in
+// `namespaceName` would exceed the matching CRQ hard limit. It fails open
+// (admits + emits a metric) on any lookup or status-population miss.
 func validateAgainstCRQ(
 	ctx context.Context,
-	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
 	logger *zap.Logger,
 	namespaceName string,
 	resourceName corev1.ResourceName,
 	requested resource.Quantity,
-	calculateCurrentUsage func(context.Context, string, corev1.ResourceName) (resource.Quantity, error),
 ) error {
 	correlationID := quota.GetCorrelationID(ctx)
 
@@ -178,12 +171,19 @@ func validateAgainstCRQ(
 			zap.String("namespace", namespaceName),
 			zap.String("resource", string(resourceName)),
 			zap.String("requested_quantity", requested.String()))
+		metrics.WebhookCRQLookup.WithLabelValues("no_client").Inc()
 		return nil
 	}
 
-	ns, err := k8sClient.CoreV1().Namespaces().Get(ctx, namespaceName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get namespace %s: %w", namespaceName, err)
+	ns := &corev1.Namespace{}
+	if err := crqClient.Client.Get(ctx, types.NamespacedName{Name: namespaceName}, ns); err != nil {
+		// Fail-open: transient cache miss must not block unrelated workloads.
+		logger.Error("Failed to get namespace - allowing operation",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", namespaceName),
+			zap.Error(err))
+		metrics.WebhookCRQLookup.WithLabelValues("namespace_error").Inc()
+		return nil
 	}
 
 	logger.Debug("Starting CRQ validation",
@@ -195,13 +195,12 @@ func validateAgainstCRQ(
 
 	crq, err := crqClient.GetCRQByNamespace(ctx, ns)
 	if err != nil {
-		// TODO: currently fail-open on CRQ-lookup errors (log + admit) to
-		// avoid blocking unrelated workloads during transient API/informer issues.
-		// Revisit once we are confident the CRQ informer is reliably available;
+		// Fail-open on CRQ lookup errors; revisit when the CRQ informer is proven reliable.
 		logger.Error("Failed to get CRQ for namespace",
 			zap.String("correlation_id", correlationID),
 			zap.String("namespace", ns.Name),
 			zap.Error(err))
+		metrics.WebhookCRQLookup.WithLabelValues("crq_error").Inc()
 		return nil
 	}
 
@@ -210,27 +209,42 @@ func validateAgainstCRQ(
 			zap.String("correlation_id", correlationID),
 			zap.String("namespace", ns.Name),
 			zap.String("resource", string(resourceName)))
+		metrics.WebhookCRQLookup.WithLabelValues("not_found").Inc()
 		return nil
 	}
 
+	metrics.WebhookCRQLookup.WithLabelValues("found").Inc()
+	return validateCRQStatusUsage(crq, resourceName, requested, logger, correlationID)
+}
+
+// validateCRQStatusUsage compares an in-memory CRQ status against a request.
+// Split from validateAgainstCRQ so multi-resource handlers can resolve the
+// CRQ once. crq must be non-nil.
+func validateCRQStatusUsage(
+	crq *quotav1alpha1.ClusterResourceQuota,
+	resourceName corev1.ResourceName,
+	requested resource.Quantity,
+	logger *zap.Logger,
+	correlationID string,
+) error {
 	quotaLimit, exists := crq.Spec.Hard[resourceName]
 	if !exists {
 		logger.Debug("No quota limit defined for resource, allowing operation",
 			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
 			zap.String("resource", string(resourceName)),
 			zap.String("crq_name", crq.Name))
 		return nil
 	}
 
-	currentUsage, err := calculateCRQCurrentUsage(ctx, k8sClient, crq, resourceName, calculateCurrentUsage, logger)
-	if err != nil {
-		logger.Error("Failed to calculate current usage across CRQ namespaces",
+	currentUsage, ok := crq.Status.Total.Used[resourceName]
+	if !ok {
+		// Fail-open: controller has not aggregated this resource yet (cold start / new key).
+		logger.Info("CRQ status missing usage for resource - allowing operation",
 			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
 			zap.String("resource", string(resourceName)),
-			zap.Error(err))
-		return fmt.Errorf("failed to calculate current usage: %w", err)
+			zap.String("crq_name", crq.Name))
+		metrics.WebhookStatusMissing.WithLabelValues(crq.Name, string(resourceName)).Inc()
+		return nil
 	}
 
 	totalUsage := currentUsage.DeepCopy()
@@ -238,17 +252,16 @@ func validateAgainstCRQ(
 
 	logger.Debug("Quota validation check",
 		zap.String("correlation_id", correlationID),
-		zap.String("namespace", ns.Name),
 		zap.String("resource", string(resourceName)),
 		zap.String("current_usage", currentUsage.String()),
 		zap.String("requested_quantity", requested.String()),
 		zap.String("total_usage", totalUsage.String()),
-		zap.String("quota_limit", quotaLimit.String()))
+		zap.String("quota_limit", quotaLimit.String()),
+		zap.String("crq_name", crq.Name))
 
 	if totalUsage.Cmp(quotaLimit) > 0 {
 		logger.Info("Resource quota would be exceeded",
 			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
 			zap.String("resource", string(resourceName)),
 			zap.String("current_usage", currentUsage.String()),
 			zap.String("requested_quantity", requested.String()),
@@ -265,57 +278,52 @@ func validateAgainstCRQ(
 
 	logger.Debug("CRQ validation passed",
 		zap.String("correlation_id", correlationID),
-		zap.String("namespace", ns.Name),
 		zap.String("resource", string(resourceName)),
 		zap.String("requested_quantity", requested.String()),
 		zap.String("crq_name", crq.Name))
 	return nil
 }
 
-// calculateCRQCurrentUsage sums the per-resource usage across every namespace
-// that matches the CRQ selector. It's the cross-namespace half of
-// validateAgainstCRQ.
-func calculateCRQCurrentUsage(
+// resolveCRQForNamespace returns the matching CRQ from the cache or nil on
+// any miss/error (fail-open). Lookup outcomes are tracked via WebhookCRQLookup.
+func resolveCRQForNamespace(
 	ctx context.Context,
-	kubernetesClient kubernetes.Interface,
-	crq *quotav1alpha1.ClusterResourceQuota,
-	resourceName corev1.ResourceName,
-	calculateCurrentUsage func(context.Context, string, corev1.ResourceName) (resource.Quantity, error),
+	crqClient *quota.CRQClient,
 	logger *zap.Logger,
-) (resource.Quantity, error) {
-	namespaceNames, err := namespace.GetSelectedNamespaces(ctx, kubernetesClient, crq)
-	if err != nil {
-		return resource.Quantity{}, fmt.Errorf("failed to get namespaces matching CRQ selector: %w", err)
+	namespaceName string,
+) *quotav1alpha1.ClusterResourceQuota {
+	correlationID := quota.GetCorrelationID(ctx)
+
+	if crqClient == nil {
+		metrics.WebhookCRQLookup.WithLabelValues("no_client").Inc()
+		return nil
 	}
 
-	logger.Debug("Calculating usage across CRQ namespaces",
-		zap.String("crq", crq.Name),
-		zap.String("resource", string(resourceName)),
-		zap.Strings("namespaces", namespaceNames))
-
-	totalUsage := resource.NewQuantity(0, resource.DecimalSI)
-	for _, namespaceName := range namespaceNames {
-		nsUsage, err := calculateCurrentUsage(ctx, namespaceName, resourceName)
-		if err != nil {
-			logger.Error("Failed to calculate usage for namespace",
-				zap.String("namespace", namespaceName),
-				zap.String("resource", string(resourceName)),
-				zap.Error(err))
-			return resource.Quantity{}, fmt.Errorf("failed to calculate usage for namespace %s: %w", namespaceName, err)
-		}
-		totalUsage.Add(nsUsage)
-
-		logger.Debug("Namespace usage calculated",
+	ns := &corev1.Namespace{}
+	if err := crqClient.Client.Get(ctx, types.NamespacedName{Name: namespaceName}, ns); err != nil {
+		logger.Error("Failed to get namespace - allowing operation",
+			zap.String("correlation_id", correlationID),
 			zap.String("namespace", namespaceName),
-			zap.String("resource", string(resourceName)),
-			zap.String("usage", nsUsage.String()))
+			zap.Error(err))
+		metrics.WebhookCRQLookup.WithLabelValues("namespace_error").Inc()
+		return nil
 	}
 
-	logger.Debug("Total CRQ usage calculated",
-		zap.String("crq", crq.Name),
-		zap.String("resource", string(resourceName)),
-		zap.String("total_usage", totalUsage.String()),
-		zap.Strings("namespaces", namespaceNames))
+	crq, err := crqClient.GetCRQByNamespace(ctx, ns)
+	if err != nil {
+		logger.Error("Failed to get CRQ for namespace - allowing operation",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", ns.Name),
+			zap.Error(err))
+		metrics.WebhookCRQLookup.WithLabelValues("crq_error").Inc()
+		return nil
+	}
 
-	return *totalUsage, nil
+	if crq == nil {
+		metrics.WebhookCRQLookup.WithLabelValues("not_found").Inc()
+		return nil
+	}
+
+	metrics.WebhookCRQLookup.WithLabelValues("found").Inc()
+	return crq
 }

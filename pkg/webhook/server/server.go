@@ -164,22 +164,22 @@ func (s *GinWebhookServer) setupRoutes() {
 
 	s.logger.Info("Setting up pod webhook")
 
-	s.podHandler = v1alpha1.NewPodWebhook(s.k8sClient, crqClient, s.logger)
+	s.podHandler = v1alpha1.NewPodWebhook(crqClient, s.logger)
 	s.engine.POST("/validate--v1-pod", s.podHandler.Handle)
 
 	s.logger.Info("Setting up service webhook")
 
-	s.serviceHandler = v1alpha1.NewServiceWebhook(s.k8sClient, crqClient, s.logger)
+	s.serviceHandler = v1alpha1.NewServiceWebhook(crqClient, s.logger)
 	s.engine.POST("/validate--v1-service", s.serviceHandler.Handle)
 
 	s.logger.Info("Setting up PVC webhook")
 
-	s.pvcHandler = v1alpha1.NewPersistentVolumeClaimWebhook(s.k8sClient, crqClient, s.logger)
+	s.pvcHandler = v1alpha1.NewPersistentVolumeClaimWebhook(crqClient, s.logger)
 	s.engine.POST("/validate--v1-persistentvolumeclaim", s.pvcHandler.Handle)
 
 	s.logger.Info("Setting up objectcount webhook")
 
-	s.objectCountHandler = v1alpha1.NewObjectCountWebhook(s.k8sClient, crqClient, s.logger)
+	s.objectCountHandler = v1alpha1.NewObjectCountWebhook(crqClient, s.logger)
 	s.engine.POST("/validate-objectcount-v1", s.objectCountHandler.Handle)
 
 	s.logger.Info("All webhook handlers configured with CRQ client support")

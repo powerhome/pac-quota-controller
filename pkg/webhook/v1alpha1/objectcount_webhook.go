@@ -7,25 +7,19 @@ import (
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/client-go/kubernetes"
 
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/objectcount"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 )
 
 // ObjectCountWebhook handles webhook requests for Object count resources.
 // It enforces object count quotas for objects and subtypes.
 type ObjectCountWebhook struct {
-	client                kubernetes.Interface
-	objectCountCalculator *objectcount.ObjectCountCalculator
-	crqClient             *quota.CRQClient
-	logger                *zap.Logger
+	crqClient *quota.CRQClient
+	logger    *zap.Logger
 }
 
 // NewObjectCountWebhook creates a new ObjectCountWebhook
 func NewObjectCountWebhook(
-	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
 	logger *zap.Logger,
 ) *ObjectCountWebhook {
@@ -34,10 +28,8 @@ func NewObjectCountWebhook(
 	}
 	logger = logger.Named("objectcount-webhook")
 	return &ObjectCountWebhook{
-		client:                k8sClient,
-		objectCountCalculator: objectcount.NewObjectCountCalculator(k8sClient, logger),
-		crqClient:             crqClient,
-		logger:                logger,
+		crqClient: crqClient,
+		logger:    logger,
 	}
 }
 
@@ -53,9 +45,6 @@ func (h *ObjectCountWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
-// TODO: the []string return is a future-proofing placeholder for admission
-// warnings. Once any validator actually emits warnings, plumb them through
-// runWebhook into AdmissionResponse.Warnings.
 func (h *ObjectCountWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
 	// Chart only subscribes vobjectcount to CREATE since object counts cannot
 	// change on UPDATE; this guard is a defensive seatbelt in case the chart
@@ -85,8 +74,8 @@ func (h *ObjectCountWebhook) validateOperation(
 		return nil, nil
 	}
 	if err := validateAgainstCRQ(
-		ctx, h.client, h.crqClient, h.logger,
-		namespace, resourceName, resource.MustParse("1"), h.objectCountCalculator.CalculateUsage,
+		ctx, h.crqClient, h.logger,
+		namespace, resourceName, oneQuantity,
 	); err != nil {
 		return nil, err
 	}

@@ -8,9 +8,7 @@ import (
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
@@ -19,15 +17,12 @@ import (
 
 // PodWebhook handles webhook requests for Pod resources
 type PodWebhook struct {
-	client        kubernetes.Interface
-	podCalculator pod.PodResourceCalculator
-	crqClient     *quota.CRQClient
-	logger        *zap.Logger
+	crqClient *quota.CRQClient
+	logger    *zap.Logger
 }
 
 // NewPodWebhook creates a new PodWebhook
 func NewPodWebhook(
-	k8sClient kubernetes.Interface,
 	crqClient *quota.CRQClient,
 	logger *zap.Logger,
 ) *PodWebhook {
@@ -36,10 +31,8 @@ func NewPodWebhook(
 	}
 	logger = logger.Named("pod-webhook")
 	return &PodWebhook{
-		client:        k8sClient,
-		podCalculator: *pod.NewPodResourceCalculator(k8sClient, logger),
-		crqClient:     crqClient,
-		logger:        logger,
+		crqClient: crqClient,
+		logger:    logger,
 	}
 }
 
@@ -56,9 +49,6 @@ func (h *PodWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
-// TODO: the []string return is a future-proofing placeholder for admission
-// warnings. Once any validator actually emits warnings, plumb them through
-// runWebhook into AdmissionResponse.Warnings.
 func (h *PodWebhook) validate(ctx context.Context, req *admissionv1.AdmissionRequest) ([]string, error) {
 	switch req.Operation {
 	case admissionv1.Create, admissionv1.Update:
@@ -98,6 +88,13 @@ func (h *PodWebhook) validateOperation(
 		return nil, nil
 	}
 
+	crq := resolveCRQForNamespace(ctx, h.crqClient, h.logger, podObj.Namespace)
+	if crq == nil {
+		return nil, nil
+	}
+
+	correlationID := quota.GetCorrelationID(ctx)
+
 	computeResources := []struct {
 		resource corev1.ResourceName
 		label    string
@@ -111,26 +108,18 @@ func (h *PodWebhook) validateOperation(
 	for _, c := range computeResources {
 		delta := pod.CalculatePodUsage(podObj, c.resource)
 		if oldPod != nil {
-			oldUsage := pod.CalculatePodUsage(oldPod, c.resource)
-			delta.Sub(oldUsage)
+			delta.Sub(pod.CalculatePodUsage(oldPod, c.resource))
 		}
 		if delta.Sign() <= 0 {
 			continue
 		}
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, c.resource, delta, h.calculateCurrentUsage,
-		); err != nil {
+		if err := validateCRQStatusUsage(crq, c.resource, delta, h.logger, correlationID); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota %s validation failed: %w", c.label, err)
 		}
 	}
 
 	if op == admissionv1.Create {
-		podCount := resource.NewQuantity(1, resource.DecimalSI)
-		if err := validateAgainstCRQ(
-			ctx, h.client, h.crqClient, h.logger,
-			podObj.Namespace, usage.ResourcePods, *podCount, h.calculateCurrentUsage,
-		); err != nil {
+		if err := validateCRQStatusUsage(crq, usage.ResourcePods, oneQuantity, h.logger, correlationID); err != nil {
 			return nil, fmt.Errorf("ClusterResourceQuota pod count validation failed: %w", err)
 		}
 	}
@@ -141,21 +130,4 @@ func (h *PodWebhook) validateOperation(
 		zap.String("operation", string(op)),
 	)
 	return nil, nil
-}
-
-// calculateCurrentUsage calculates the current usage of a resource in a namespace
-func (h *PodWebhook) calculateCurrentUsage(ctx context.Context, namespace string,
-	resourceName corev1.ResourceName) (resource.Quantity, error) {
-	switch resourceName {
-	case usage.ResourceRequestsCPU, usage.ResourceRequestsMemory, usage.ResourceLimitsCPU, usage.ResourceLimitsMemory:
-		return h.podCalculator.CalculateUsage(ctx, namespace, resourceName)
-	case usage.ResourcePods:
-		count, err := h.podCalculator.CalculatePodCount(ctx, namespace)
-		if err != nil {
-			return resource.Quantity{}, err
-		}
-		return *resource.NewQuantity(count, resource.DecimalSI), nil
-	default:
-		return resource.Quantity{}, fmt.Errorf("unsupported resource type: %s", resourceName)
-	}
 }

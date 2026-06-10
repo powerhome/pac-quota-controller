@@ -43,6 +43,24 @@ var (
 		},
 		[]string{"webhook", "operation", "decision", "namespace"},
 	)
+	// WebhookCRQLookup counts CRQ resolution outcomes during admission.
+	// Result values: found, not_found, namespace_error, crq_error, no_client.
+	WebhookCRQLookup = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pac_quota_controller_webhook_crq_lookup_total",
+			Help: "Outcome of CRQ resolution attempts during webhook admission.",
+		},
+		[]string{"result"},
+	)
+	// WebhookStatusMissing counts admissions allowed because the CRQ status had
+	// no usage recorded yet for the requested resource (cold start / new key).
+	WebhookStatusMissing = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pac_quota_controller_webhook_status_missing_total",
+			Help: "Number of webhook admissions admitted because the CRQ status had no usage value for the resource.",
+		},
+		[]string{"crq_name", "resource"},
+	)
 
 	// New metrics for controller reconciliation
 	QuotaReconcileTotal = prometheus.NewCounterVec(
@@ -86,6 +104,8 @@ func RegisterWebhookMetrics() {
 			WebhookValidationCount,
 			WebhookValidationDuration,
 			WebhookAdmissionDecision,
+			WebhookCRQLookup,
+			WebhookStatusMissing,
 			QuotaReconcileTotal,
 			QuotaReconcileErrors,
 			QuotaAggregationDuration,

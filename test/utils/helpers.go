@@ -297,6 +297,36 @@ func GetCRQStatusUsage(crq *quotav1alpha1.ClusterResourceQuota) quotav1alpha1.Re
 	return crq.Status.Total.Used
 }
 
+// WaitForCRQResourceUsage polls until crq.Status.Total.Used[resourceName] equals expected.
+// Use this between "fill quota" operations and a subsequent "should be denied" assertion to
+// ensure the controller has aggregated the latest usage that the admission webhook will read.
+func WaitForCRQResourceUsage(
+	ctx context.Context,
+	k8sClient client.Client,
+	crqName string,
+	resourceName corev1.ResourceName,
+	expected resource.Quantity,
+) error {
+	const (
+		timeout  = 30 * time.Second
+		interval = 250 * time.Millisecond
+	)
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return wait.PollUntilContextTimeout(ctxWithTimeout, interval, timeout, true,
+		func(ctx context.Context) (bool, error) {
+			crq := &quotav1alpha1.ClusterResourceQuota{}
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: crqName}, crq); err != nil {
+				return false, err
+			}
+			used, ok := crq.Status.Total.Used[resourceName]
+			if !ok {
+				return false, nil
+			}
+			return used.Cmp(expected) == 0, nil
+		})
+}
+
 // WaitForCRQStatus waits for the CRQ status to be updated with the expected namespaces.
 func WaitForCRQStatus(ctx context.Context, k8sClient client.Client, crqName string,
 	expectedNamespaces []string, timeout, interval time.Duration) error {

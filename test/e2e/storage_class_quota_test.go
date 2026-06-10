@@ -136,6 +136,13 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			pvc2 := createTestPVC("fast-pvc-2", testNamespace, storageClassFast, "2Gi")
 			Expect(k8sClient.Create(ctx, pvc2)).To(Succeed(), "Should allow second fast SSD PVC within limits")
 
+			By("Waiting for controller to publish fast storage usage")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, crqName,
+				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/requests.storage", storageClassFast)),
+				resource.MustParse("4Gi"),
+			)).To(Succeed())
+
 			By("Trying to create fast SSD PVC that exceeds storage quota (should fail)")
 			pvc3 := createTestPVC("fast-pvc-3", testNamespace, storageClassFast, "2Gi") // Total would be 6Gi > 5Gi limit
 			err := k8sClient.Create(ctx, pvc3)
@@ -148,6 +155,13 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			By("Creating third fast SSD PVC within both storage and count limits")
 			pvc4 := createTestPVC("fast-pvc-4", testNamespace, storageClassFast, "500Mi") // Within storage but count would be 3
 			Expect(k8sClient.Create(ctx, pvc4)).To(Succeed(), "Should allow third fast SSD PVC within both limits")
+
+			By("Waiting for controller to publish fast PVC count usage")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, crqName,
+				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassFast)),
+				resource.MustParse("3"),
+			)).To(Succeed())
 
 			By("Trying to create fast SSD PVC that exceeds count quota (should fail)")
 			pvc5 := createTestPVC("fast-pvc-5", testNamespace, storageClassFast, "100Mi") // Count would be 4 > 3 limit
@@ -165,6 +179,13 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			By("Creating second slow HDD PVC within limits")
 			slowPVC2 := createTestPVC("slow-pvc-2", testNamespace, storageClassSlow, "1Gi")
 			Expect(k8sClient.Create(ctx, slowPVC2)).To(Succeed(), "Should allow second slow HDD PVC within limits")
+
+			By("Waiting for controller to publish slow PVC count usage")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, crqName,
+				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassSlow)),
+				resource.MustParse("2"),
+			)).To(Succeed())
 
 			By("Trying to create slow HDD PVC that exceeds count quota (should fail)")
 			slowPVC3 := createTestPVC("slow-pvc-3", testNamespace, storageClassSlow, "500Mi") // Count would be 3 > 2 limit
@@ -241,6 +262,13 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			fastPVC3 := createTestPVC("fast-mixed-3", testNamespace, storageClassFast, "100Mi")
 			Expect(k8sClient.Create(ctx, fastPVC3)).To(Succeed(), "Should allow fast SSD PVC #3 within storage quota")
 
+			By("Waiting for controller to publish fast storage usage")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, crqName,
+				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/requests.storage", storageClassFast)),
+				resource.MustParse("2148Mi"),
+			)).To(Succeed())
+
 			By("Trying to create fast SSD PVC #4 that exceeds storage quota (should fail)")
 			fastPVC4 := createTestPVC("fast-mixed-4", testNamespace, storageClassFast, "1Gi")
 			err := k8sClient.Create(ctx, fastPVC4)
@@ -258,6 +286,13 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			slowPVC2 := createTestPVC("slow-mixed-2", testNamespace, storageClassSlow, "200Gi")
 			Expect(k8sClient.Create(ctx, slowPVC2)).To(Succeed(), "Should allow slow HDD PVC #2 within count quota")
 
+			By("Waiting for controller to publish slow PVC count usage")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, crqName,
+				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassSlow)),
+				resource.MustParse("2"),
+			)).To(Succeed())
+
 			By("Trying to create slow HDD PVC #3 that exceeds count quota (should fail)")
 			slowPVC3 := createTestPVC("slow-mixed-3", testNamespace, storageClassSlow, "1Mi")
 			err = k8sClient.Create(ctx, slowPVC3)
@@ -270,6 +305,13 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			By("Creating custom storage class PVC #1 (both quotas apply)")
 			customPVC1 := createTestPVC("custom-mixed-1", testNamespace, storageClassCustom, "1Gi")
 			Expect(k8sClient.Create(ctx, customPVC1)).To(Succeed(), "Should allow custom storage class PVC #1 within quotas")
+
+			By("Waiting for controller to publish custom PVC count usage")
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, crqName,
+				corev1.ResourceName(fmt.Sprintf("%s.storageclass.storage.k8s.io/persistentvolumeclaims", storageClassCustom)),
+				resource.MustParse("1"),
+			)).To(Succeed())
 
 			By("Trying to create custom storage class PVC #2 that exceeds count quota (should fail)")
 			customPVC2 := createTestPVC("custom-mixed-2", testNamespace, storageClassCustom, "500Mi")

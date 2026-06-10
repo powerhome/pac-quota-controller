@@ -118,6 +118,9 @@ var _ = Describe("Service Quota Webhook", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, service)).To(Succeed())
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "services.nodeports", resource.MustParse("1"),
+			)).To(Succeed())
 			// Second NodePort service should be denied
 			service2 := &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -161,6 +164,9 @@ var _ = Describe("Service Quota Webhook", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, service)).To(Succeed())
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "services.loadbalancers", resource.MustParse("1"),
+			)).To(Succeed())
 			// Second LoadBalancer service should be denied
 			service2 := &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -264,6 +270,9 @@ var _ = Describe("Service Quota Webhook", func() {
 				},
 			}
 			Expect(k8sClient.Create(ctx, lbService)).To(Succeed())
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "services.loadbalancers", resource.MustParse("1"),
+			)).To(Succeed())
 			// Try to update the ClusterIP service to LoadBalancer (should fail)
 			var fetched corev1.Service
 			Expect(
@@ -279,6 +288,34 @@ var _ = Describe("Service Quota Webhook", func() {
 			fetched.Spec.Type = corev1.ServiceTypeLoadBalancer
 			err := k8sClient.Update(ctx, &fetched)
 			Expect(err).To(HaveOccurred())
+		})
+
+		It("should allow metadata updates to an existing LB service when LB quota is at the limit", func() {
+			lbService := &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-lb-meta-update-" + testSuffix,
+					Namespace: testNamespace,
+				},
+				Spec: corev1.ServiceSpec{
+					Type:  corev1.ServiceTypeLoadBalancer,
+					Ports: []corev1.ServicePort{{Port: 80}},
+				},
+			}
+			Expect(k8sClient.Create(ctx, lbService)).To(Succeed())
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, "services.loadbalancers", resource.MustParse("1"),
+			)).To(Succeed())
+
+			var fetched corev1.Service
+			Expect(k8sClient.Get(ctx, ctrlclient.ObjectKey{
+				Name:      lbService.Name,
+				Namespace: testNamespace,
+			}, &fetched)).To(Succeed())
+			if fetched.Labels == nil {
+				fetched.Labels = map[string]string{}
+			}
+			fetched.Labels["updated"] = "yes"
+			Expect(k8sClient.Update(ctx, &fetched)).To(Succeed())
 		})
 	})
 })

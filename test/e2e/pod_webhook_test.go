@@ -83,6 +83,9 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 		})
 
 		It("should deny pod creation when it would exceed CPU limits", func() {
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourceRequestsCPU, resource.MustParse("0"),
+			)).To(Succeed())
 			_, err := testutils.CreatePod(
 				ctx,
 				k8sClient,
@@ -126,6 +129,9 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 		})
 
 		It("should deny pod creation with init containers exceeding limits", func() {
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourceRequestsCPU, resource.MustParse("0"),
+			)).To(Succeed())
 			_, err := testutils.CreatePodWithContainers(
 				ctx, k8sClient, testNamespace, "test-pod-init-container-"+testSuffix,
 				[]corev1.Container{
@@ -218,76 +224,36 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 	})
 
 	Context("Pod Update Webhook", func() {
-		It("should deny pod updates that would exceed limits", func() {
-			pod, err := testutils.CreatePod(
-				ctx,
-				k8sClient,
-				testNamespace,
-				"test-pod-"+testSuffix,
-				corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("10m"),
-				}, nil)
+		It("should allow metadata updates when pod count quota is at the limit", func() {
+			// Fill pod count quota (2).
+			pod1, err := testutils.CreatePod(
+				ctx, k8sClient, testNamespace, "test-pod-update-1-"+testSuffix,
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")}, nil)
 			Expect(err).NotTo(HaveOccurred())
-			DeferCleanup(func() {
-				_ = k8sClient.Delete(ctx, pod)
-			})
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod1) })
 
-			pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("200m") // Exceeds limit
-			Expect(k8sClient.Update(ctx, pod)).ToNot(Succeed())
-		})
-
-		It("should deny updates to pods with multiple containers exceeding limits", func() {
-			pod, err := testutils.CreatePod(
-				ctx,
-				k8sClient,
-				testNamespace,
-				"test-pod-update-multi-container-"+testSuffix,
-				corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("10m"),
-				},
-				corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("10m"),
-				})
+			pod2, err := testutils.CreatePod(
+				ctx, k8sClient, testNamespace, "test-pod-update-2-"+testSuffix,
+				corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("10m")}, nil)
 			Expect(err).NotTo(HaveOccurred())
-			DeferCleanup(func() {
-				_ = k8sClient.Delete(ctx, pod)
-			})
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod2) })
 
-			pod.Spec.Containers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("200m") // Exceeds limit
-			Expect(k8sClient.Update(ctx, pod)).ToNot(Succeed())
-		})
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourcePods, resource.MustParse("2"),
+			)).To(Succeed())
 
-		It("should deny updates to pods with init containers exceeding limits", func() {
-			pod, err := testutils.CreatePodWithContainers(
-				ctx, k8sClient, testNamespace, "test-pod-update-init-container-"+testSuffix,
-				[]corev1.Container{
-					{
-						Name:  "main-container",
-						Image: "nginx:latest",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU: resource.MustParse("30m"),
-							},
-						},
-					},
-				}, []corev1.Container{
-					{
-						Name:  "init-container",
-						Image: "nginx:latest",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU: resource.MustParse("50m"),
-							},
-						},
-					},
-				})
-			Expect(err).NotTo(HaveOccurred())
-			DeferCleanup(func() {
-				_ = k8sClient.Delete(ctx, pod)
-			})
-
-			pod.Spec.InitContainers[0].Resources.Requests[corev1.ResourceCPU] = resource.MustParse("300m") // Exceeds limit
-			Expect(k8sClient.Update(ctx, pod)).ToNot(Succeed())
+			// Re-fetch and retry on conflict; kubelet keeps updating pod status concurrently.
+			Eventually(func() error {
+				var fresh corev1.Pod
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: pod1.Name, Namespace: pod1.Namespace}, &fresh); err != nil {
+					return err
+				}
+				if fresh.Labels == nil {
+					fresh.Labels = map[string]string{}
+				}
+				fresh.Labels["updated"] = "yes"
+				return k8sClient.Update(ctx, &fresh)
+			}, 30*time.Second, 500*time.Millisecond).Should(Succeed())
 		})
 	})
 
@@ -526,6 +492,9 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 					},
 				}, nil)
 			Expect(err).NotTo(HaveOccurred())
+			Expect(testutils.WaitForCRQResourceUsage(
+				ctx, k8sClient, testCRQName, corev1.ResourcePods, resource.MustParse("2"),
+			)).To(Succeed())
 			// Create third pod - should fail
 			_, err = testutils.CreatePodWithContainers(
 				ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-3"),
