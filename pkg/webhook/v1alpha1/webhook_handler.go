@@ -248,6 +248,11 @@ func resolveCRQForNamespace(
 	correlationID := quota.GetCorrelationID(ctx)
 
 	if crqClient == nil {
+		// Fail-open path: every admission silently passes. Log Warn so an
+		// operator sees the misconfiguration even when only metrics are scraped.
+		logger.Warn("crqClient is nil - admitting request without quota enforcement; check webhook server wiring",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", namespaceName))
 		metrics.WebhookCRQLookup.WithLabelValues("no_client").Inc()
 		return nil
 	}

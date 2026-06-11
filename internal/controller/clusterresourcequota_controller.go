@@ -597,7 +597,11 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(
 		}
 		return objectCount, nil
 	default:
-		r.logger.Info("Unsupported object count resource for calculateObjectCount",
+		// CRQ tracks a resource we have no calculator for (typo or unsupported kind).
+		// Return zero to keep the rest of the reconcile working, but emit a Warn +
+		// metric so operators can detect the silent admit.
+		metrics.QuotaUnsupportedResource.WithLabelValues(string(resourceName)).Inc()
+		r.logger.Warn("Unsupported resource in CRQ; reporting zero usage",
 			zap.Stringer("resource", resourceName),
 			zap.String("namespace", ns),
 		)
@@ -763,6 +767,21 @@ func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.R
 	return false
 }
 
+// runViolationCleanupLoop periodically clears expired entries from the violation cache.
+// Exits when ctx is cancelled (manager shutdown).
+func (r *ClusterResourceQuotaReconciler) runViolationCleanupLoop(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			r.EventRecorder.CleanupExpiredViolations()
+		}
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, cfg *config.Config, mgr ctrl.Manager) error {
 	// Initialize logger
@@ -831,15 +850,8 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, c
 		cleanupManager.Start(ctx)
 	}()
 
-	// Start periodic violation cache cleanup
-	go func() {
-		ticker := time.NewTicker(15 * time.Minute)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			r.EventRecorder.CleanupExpiredViolations()
-		}
-	}()
+	// Start periodic violation cache cleanup; honours ctx so it exits on manager shutdown.
+	go r.runViolationCleanupLoop(ctx, 15*time.Minute)
 
 	r.logger.Info("Setting up ClusterResourceQuota controller")
 
