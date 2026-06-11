@@ -47,6 +47,26 @@ func TestLoadEventCleanupConfig(t *testing.T) {
 			envInterval: "invalid",
 			expectError: true,
 		},
+		{
+			name:        "negative TTL rejected",
+			envTTL:      "-1h",
+			expectError: true,
+		},
+		{
+			name:        "zero TTL rejected",
+			envTTL:      "0s",
+			expectError: true,
+		},
+		{
+			name:        "negative interval rejected",
+			envInterval: "-30m",
+			expectError: true,
+		},
+		{
+			name:        "zero interval rejected (would tight-loop ticker)",
+			envInterval: "0s",
+			expectError: true,
+		},
 	}
 
 	for _, tt := range tests {

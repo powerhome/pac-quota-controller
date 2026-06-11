@@ -59,6 +59,9 @@ func LoadEventCleanupConfig(
 				if err != nil {
 					return config, fmt.Errorf("invalid TTL duration in config file: %w", err)
 				}
+				if ttl <= 0 {
+					return config, fmt.Errorf("TTL in config file must be positive, got %s", ttl)
+				}
 				config.MaxAge = ttl
 			}
 
@@ -71,6 +74,9 @@ func LoadEventCleanupConfig(
 				if err != nil {
 					return config, fmt.Errorf("invalid cleanup interval duration in config file: %w", err)
 				}
+				if interval <= 0 {
+					return config, fmt.Errorf("cleanup interval in config file must be positive, got %s", interval)
+				}
 				config.CleanupInterval = interval
 			}
 		}
@@ -81,6 +87,9 @@ func LoadEventCleanupConfig(
 		ttl, err := time.ParseDuration(envTTL)
 		if err != nil {
 			return config, fmt.Errorf("invalid TTL duration from environment: %w", err)
+		}
+		if ttl <= 0 {
+			return config, fmt.Errorf("TTL from environment must be positive, got %s", ttl)
 		}
 		config.MaxAge = ttl
 	}
@@ -93,6 +102,9 @@ func LoadEventCleanupConfig(
 		interval, err := time.ParseDuration(envInterval)
 		if err != nil {
 			return config, fmt.Errorf("invalid cleanup interval duration from environment: %w", err)
+		}
+		if interval <= 0 {
+			return config, fmt.Errorf("cleanup interval from environment must be positive, got %s", interval)
 		}
 		config.CleanupInterval = interval
 	}
