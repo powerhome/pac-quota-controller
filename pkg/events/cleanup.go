@@ -8,6 +8,8 @@ import (
 	"go.uber.org/zap"
 	eventsv1 "k8s.io/api/events/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 )
 
 // eventTime returns the most recent observation time for an Event, falling
@@ -192,13 +194,18 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 			m.logger.Error("Failed to delete event",
 				zap.Error(err),
 				zap.String("event", event.Name),
-				zap.String("crq", crqName),
+				zap.String("crq_name", crqName),
 				zap.String("reason", event.Reason))
 		} else {
 			deletedCount++
+			source := event.Labels[LabelEventSource]
+			if source == "" {
+				source = "unknown"
+			}
+			metrics.EventsCleanedTotal.WithLabelValues(source).Inc()
 			m.logger.Debug("Deleted old event",
 				zap.String("event", event.Name),
-				zap.String("crq", crqName),
+				zap.String("crq_name", crqName),
 				zap.String("reason", event.Reason),
 				zap.Duration("age", time.Since(eventTime(&event))))
 		}
@@ -206,7 +213,7 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 
 	if deletedCount > 0 {
 		m.logger.Debug("Cleaned up events for CRQ",
-			zap.String("crq", crqName),
+			zap.String("crq_name", crqName),
 			zap.Int("deletedCount", deletedCount),
 			zap.Int("remainingCount", len(events)-deletedCount))
 	}

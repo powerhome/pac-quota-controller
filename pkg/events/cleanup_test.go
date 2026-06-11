@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"go.uber.org/zap"
 	eventsv1 "k8s.io/api/events/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -13,6 +14,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 )
 
 func newCleanupTestScheme() *runtime.Scheme {
@@ -67,6 +70,9 @@ var _ = Describe("EventCleanupManager.cleanup", func() {
 			Enabled:         true,
 		}, logger)
 
+		preCtrl := promtestutil.ToFloat64(metrics.EventsCleanedTotal.WithLabelValues("controller"))
+		preWebhook := promtestutil.ToFloat64(metrics.EventsCleanedTotal.WithLabelValues("webhook"))
+
 		Expect(mgr.cleanup(ctx)).To(Succeed())
 
 		assertGone := func(name string) {
@@ -76,5 +82,10 @@ var _ = Describe("EventCleanupManager.cleanup", func() {
 		}
 		assertGone("evt-ctrl")
 		assertGone("evt-webhook")
+
+		Expect(promtestutil.ToFloat64(metrics.EventsCleanedTotal.WithLabelValues("controller"))-preCtrl).
+			To(Equal(float64(1)), "controller events cleanup should be counted")
+		Expect(promtestutil.ToFloat64(metrics.EventsCleanedTotal.WithLabelValues("webhook"))-preWebhook).
+			To(Equal(float64(1)), "webhook events cleanup should be counted")
 	})
 })

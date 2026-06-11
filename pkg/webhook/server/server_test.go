@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
@@ -163,10 +164,68 @@ var _ = Describe("GinWebhookServer", func() {
 			Expect(hitReadyz(s)).To(Equal(http.StatusServiceUnavailable))
 		})
 
-		It("passes (200) after MarkReady when runtimeClient is set", func() {
+		It("passes (200) after MarkReady when runtimeClient is set and cache is marked synced", func() {
 			s := NewGinWebhookServer(cfg, fakeClient, fakeRuntimeClient, logger)
 			s.MarkReady()
+			s.MarkCacheSynced()
 			Expect(hitReadyz(s)).To(Equal(http.StatusOK))
+		})
+
+		It("drains in-flight requests when the parent ctx is cancelled before shutdown", func() {
+			// Property: even though the parent ctx is cancelled the moment shutdown
+			// starts, requests already accepted should finish (the 30s drain budget
+			// lives on a fresh context). A naive shutdown(ctx) returns immediately
+			// with context.Canceled and the slow handler would get cut off.
+			cfg.WebhookPort = 19446
+			s := NewGinWebhookServer(cfg, fakeClient, fakeRuntimeClient, logger)
+
+			slowDone := make(chan struct{})
+			s.engine.GET("/drain-probe", func(c *gin.Context) {
+				time.Sleep(300 * time.Millisecond)
+				close(slowDone)
+				c.JSON(http.StatusOK, gin.H{"ok": true})
+			})
+
+			startCtx, cancel := context.WithCancel(context.Background())
+			serverDone := make(chan error, 1)
+			go func() {
+				defer GinkgoRecover()
+				serverDone <- s.Start(startCtx)
+			}()
+
+			// Wait until the listener accepts. Quick poll is fine because the
+			// server binds synchronously in startServerInBackground.
+			Eventually(func() error {
+				resp, err := http.Get("http://127.0.0.1:19446/healthz")
+				if err == nil {
+					_ = resp.Body.Close()
+				}
+				return err
+			}, 2*time.Second, 20*time.Millisecond).Should(Succeed())
+
+			probeStarted := make(chan struct{})
+			go func() {
+				defer GinkgoRecover()
+				close(probeStarted)
+				resp, err := http.Get("http://127.0.0.1:19446/drain-probe")
+				Expect(err).NotTo(HaveOccurred())
+				_ = resp.Body.Close()
+			}()
+
+			<-probeStarted
+			time.Sleep(50 * time.Millisecond) // ensure the handler is past the accept
+			cancel()                          // trigger shutdown while the handler is sleeping
+
+			Eventually(slowDone, 2*time.Second).Should(BeClosed(), "in-flight handler should finish, not be cut off")
+			Eventually(serverDone, 5*time.Second).Should(Receive())
+		})
+
+		It("fails (503) when the runtime client is set but the cache has not yet synced", func() {
+			s := NewGinWebhookServer(cfg, fakeClient, fakeRuntimeClient, logger)
+			s.MarkReady()
+			// MarkCacheSynced intentionally NOT called — simulates the apiserver
+			// routing traffic to a webhook whose informer cache is still cold.
+			Expect(hitReadyz(s)).To(Equal(http.StatusServiceUnavailable))
 		})
 	})
 

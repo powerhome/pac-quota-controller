@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -46,6 +47,12 @@ type GinWebhookServer struct {
 
 	k8sClient     kubernetes.Interface
 	runtimeClient client.Client
+
+	// cacheSynced flips to true once the manager's informer cache has finished
+	// initial sync. /readyz gates on this so the apiserver doesn't route
+	// admission traffic to a webhook whose CRQ lookups would silently fail-open
+	// against a cold cache.
+	cacheSynced atomic.Bool
 }
 
 // NewGinWebhookServer creates a new Gin-based webhook server
@@ -136,6 +143,10 @@ func (s *GinWebhookServer) setupRoutes() {
 	// Surface the "no runtime client → no CRQ enforcement" degraded state via
 	// /readyz so the orchestrator can pull traffic instead of silently fail-open.
 	s.readyManager.AddChecker(&crqClientReadinessChecker{server: s})
+	// Block /readyz until the manager's informer cache has reported initial
+	// sync. Without this the apiserver can route admission traffic to a webhook
+	// whose CRQ list is empty, producing silent fail-open.
+	s.readyManager.AddChecker(&cacheSyncReadinessChecker{server: s})
 
 	s.engine.GET("/healthz", s.healthManager.HealthHandler())
 	s.engine.GET("/readyz", s.readyManager.ReadyHandler())
@@ -352,6 +363,15 @@ func (s *GinWebhookServer) MarkReady() {
 	}
 }
 
+// MarkCacheSynced flips the cache-sync readiness gate. Callers should invoke
+// this only after the manager reports its informer cache has completed initial
+// sync (e.g. mgr.GetCache().WaitForCacheSync(ctx) returned true).
+func (s *GinWebhookServer) MarkCacheSynced() {
+	if !s.cacheSynced.Swap(true) {
+		s.logger.Info("Webhook informer cache reported synced; /readyz will now pass")
+	}
+}
+
 // crqClientReadinessChecker reports the webhook as not-ready while the runtime
 // (CRQ) client is unset. Without it the webhook silently fail-opens on every
 // admission; /readyz failing pulls the pod out of the Service so the
@@ -376,6 +396,31 @@ func (c *crqClientReadinessChecker) GetReadinessStatus() ready.ReadinessStatus {
 		Ready:   false,
 		Status:  "not ready: CRQ client missing - quota enforcement is disabled",
 		Details: map[string]any{"name": "crq-client"},
+	}
+}
+
+// cacheSyncReadinessChecker reports not-ready until the manager's informer
+// cache has had a chance to populate. See server.MarkCacheSynced.
+type cacheSyncReadinessChecker struct {
+	server *GinWebhookServer
+}
+
+func (c *cacheSyncReadinessChecker) IsReady() bool {
+	return c.server != nil && c.server.cacheSynced.Load()
+}
+
+func (c *cacheSyncReadinessChecker) GetReadinessStatus() ready.ReadinessStatus {
+	if c.IsReady() {
+		return ready.ReadinessStatus{
+			Ready:   true,
+			Status:  "ready",
+			Details: map[string]any{"name": "cache-sync"},
+		}
+	}
+	return ready.ReadinessStatus{
+		Ready:   false,
+		Status:  "not ready: informer cache has not finished initial sync",
+		Details: map[string]any{"name": "cache-sync"},
 	}
 }
 
