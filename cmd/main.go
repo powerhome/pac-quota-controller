@@ -95,6 +95,18 @@ func main() {
 				}()
 			}
 
+			// Flip the webhook's cache-sync readiness gate once the manager's
+			// informer cache has finished initial sync. Until then /readyz
+			// returns 503 so the apiserver does not route admission traffic to
+			// a webhook whose CRQ lookups would hit a cold cache.
+			go func() {
+				if mgr.GetCache().WaitForCacheSync(ctx) {
+					webhookServer.MarkCacheSynced()
+				} else {
+					logger.Error("informer cache failed to sync; webhook /readyz will stay 503")
+				}
+			}()
+
 			// Log when manager is elected as leader
 			go func() {
 				<-mgr.Elected()
