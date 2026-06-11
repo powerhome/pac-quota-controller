@@ -91,6 +91,17 @@ var (
 		},
 		[]string{"crq_name", "step"},
 	)
+	// QuotaUnsupportedResource counts attempts to aggregate a resource the
+	// controller has no calculator for (typo in CRQ spec or an unsupported
+	// resource kind). Each hit reports usage=0 and admits requests; the
+	// counter is the operator-visible signal that quota is silently passing.
+	QuotaUnsupportedResource = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pac_quota_controller_unsupported_resource_total",
+			Help: "Number of reconcile attempts that encountered a CRQ resource with no calculator.",
+		},
+		[]string{"resource"},
+	)
 
 	// Use controller-runtime's global registry
 	registerOnce sync.Once
@@ -110,6 +121,7 @@ func RegisterWebhookMetrics() {
 			QuotaReconcileErrors,
 			QuotaAggregationDuration,
 			QuotaAggregationStepDuration,
+			QuotaUnsupportedResource,
 		)
 	})
 }

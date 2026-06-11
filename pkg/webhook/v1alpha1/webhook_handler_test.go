@@ -11,6 +11,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -258,6 +260,20 @@ var _ = Describe("resolveCRQForNamespace", func() {
 	It("returns nil when client is nil", func() {
 		crq := resolveCRQForNamespace(ctx, nil, logger, nsName)
 		Expect(crq).To(BeNil())
+	})
+
+	It("emits a Warn log on every nil-client hit so the silent fail-open is operator-visible", func() {
+		core, recorded := observer.New(zapcore.WarnLevel)
+		testLogger := zap.New(core)
+
+		Expect(resolveCRQForNamespace(ctx, nil, testLogger, "ns-1")).To(BeNil())
+		Expect(resolveCRQForNamespace(ctx, nil, testLogger, "ns-2")).To(BeNil())
+
+		entries := recorded.FilterMessageSnippet("crqClient").All()
+		Expect(entries).To(HaveLen(2))
+		for _, e := range entries {
+			Expect(e.Level).To(Equal(zapcore.WarnLevel))
+		}
 	})
 
 	It("returns nil (fail-open) when namespace cannot be fetched", func() {

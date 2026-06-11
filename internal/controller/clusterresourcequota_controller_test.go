@@ -10,11 +10,14 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/events"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 	"github.com/powerhome/pac-quota-controller/pkg/mocks"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -1633,5 +1636,78 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			requests := reconciler.findQuotasForObject(timeoutCtx, testNamespace)
 			Expect(requests).To(BeEmpty())
 		})
+	})
+})
+
+var _ = Describe("calculateObjectCount with unsupported resource", func() {
+	var (
+		logger     *zap.Logger
+		reconciler *ClusterResourceQuotaReconciler
+	)
+
+	BeforeEach(func() {
+		logger, _ = zap.NewDevelopment()
+		reconciler = &ClusterResourceQuotaReconciler{logger: logger}
+	})
+
+	It("returns zero with no error and increments the unsupported-resource counter", func() {
+		const typo = "congigmaps"
+		pre := promtestutil.ToFloat64(metrics.QuotaUnsupportedResource.WithLabelValues(typo))
+
+		got, err := reconciler.calculateObjectCount(context.Background(), "any-ns", corev1.ResourceName(typo))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got.Value()).To(Equal(int64(0)))
+
+		post := promtestutil.ToFloat64(metrics.QuotaUnsupportedResource.WithLabelValues(typo))
+		Expect(post - pre).To(Equal(float64(1)))
+	})
+})
+
+var _ = Describe("runViolationCleanupLoop", func() {
+	var logger *zap.Logger
+
+	BeforeEach(func() {
+		logger, _ = zap.NewDevelopment()
+	})
+
+	It("returns promptly when the context is cancelled", func() {
+		reconciler := &ClusterResourceQuotaReconciler{
+			logger:        logger,
+			EventRecorder: events.NewEventRecorder(nil, "test-ns", logger),
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+
+		go func() {
+			defer GinkgoRecover()
+			reconciler.runViolationCleanupLoop(ctx, 1*time.Hour)
+			close(done)
+		}()
+
+		cancel()
+		Eventually(done, 500*time.Millisecond, 10*time.Millisecond).Should(BeClosed())
+	})
+
+	It("invokes CleanupExpiredViolations on each tick", func() {
+		reconciler := &ClusterResourceQuotaReconciler{
+			logger:        logger,
+			EventRecorder: events.NewEventRecorder(nil, "test-ns", logger),
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		done := make(chan struct{})
+		go func() {
+			defer GinkgoRecover()
+			reconciler.runViolationCleanupLoop(ctx, 5*time.Millisecond)
+			close(done)
+		}()
+
+		// Let a few ticks happen, then cancel; loop must exit.
+		time.Sleep(30 * time.Millisecond)
+		cancel()
+		Eventually(done, 500*time.Millisecond, 10*time.Millisecond).Should(BeClosed())
 	})
 })
