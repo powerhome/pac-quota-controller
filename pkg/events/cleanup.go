@@ -99,19 +99,16 @@ func (m *EventCleanupManager) Start(ctx context.Context) {
 
 // cleanup performs the actual event cleanup
 func (m *EventCleanupManager) cleanup(ctx context.Context) error {
-	// Find all PAC quota events from controller
-	controllerEvents, err := m.getPACEvents(ctx)
+	controllerEvents, err := m.getPACEvents(ctx, "controller")
 	if err != nil {
 		return err
 	}
 
-	// Find all PAC quota events from webhook
-	webhookEvents, err := m.getPACEvents(ctx)
+	webhookEvents, err := m.getPACEvents(ctx, "webhook")
 	if err != nil {
 		return err
 	}
 
-	// Combine all events
 	allEvents := append(controllerEvents.Items, webhookEvents.Items...)
 
 	if len(allEvents) == 0 {
@@ -146,11 +143,12 @@ func (m *EventCleanupManager) cleanup(ctx context.Context) error {
 	return nil
 }
 
-// getPACEvents retrieves PAC quota events by source
-func (m *EventCleanupManager) getPACEvents(ctx context.Context) (*eventsv1.EventList, error) {
+// getPACEvents retrieves PAC quota events emitted from the given source
+// ("controller" or "webhook").
+func (m *EventCleanupManager) getPACEvents(ctx context.Context, source string) (*eventsv1.EventList, error) {
 	events := &eventsv1.EventList{}
 	listOpts := []client.ListOption{
-		client.MatchingLabels{LabelEventSource: "controller"},
+		client.MatchingLabels{LabelEventSource: source},
 	}
 
 	if err := m.client.List(ctx, events, listOpts...); err != nil {
@@ -220,15 +218,13 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 func (m *EventCleanupManager) GetCleanupStats(ctx context.Context) (map[string]int, error) {
 	stats := make(map[string]int)
 
-	// Count controller events
-	controllerEvents, err := m.getPACEvents(ctx)
+	controllerEvents, err := m.getPACEvents(ctx, "controller")
 	if err != nil {
 		return nil, err
 	}
 	stats["controller_events"] = len(controllerEvents.Items)
 
-	// Count webhook events
-	webhookEvents, err := m.getPACEvents(ctx)
+	webhookEvents, err := m.getPACEvents(ctx, "webhook")
 	if err != nil {
 		return nil, err
 	}
