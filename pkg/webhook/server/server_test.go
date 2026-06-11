@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -142,6 +144,29 @@ var _ = Describe("GinWebhookServer", func() {
 		It("should have webhook routes configured", func() {
 			// Test that webhook routes are registered
 			Expect(server.engine).NotTo(BeNil())
+		})
+	})
+
+	Describe("/readyz with nil runtime client", func() {
+		// hitReadyz drives the gin engine in-process so we can assert the status code
+		// without binding a TCP port.
+		hitReadyz := func(s *GinWebhookServer) int {
+			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+			w := httptest.NewRecorder()
+			s.engine.ServeHTTP(w, req)
+			return w.Code
+		}
+
+		It("fails (503) even after MarkReady when runtimeClient is nil — quota enforcement is degraded", func() {
+			s := NewGinWebhookServer(cfg, fakeClient, nil, logger)
+			s.MarkReady()
+			Expect(hitReadyz(s)).To(Equal(http.StatusServiceUnavailable))
+		})
+
+		It("passes (200) after MarkReady when runtimeClient is set", func() {
+			s := NewGinWebhookServer(cfg, fakeClient, fakeRuntimeClient, logger)
+			s.MarkReady()
+			Expect(hitReadyz(s)).To(Equal(http.StatusOK))
 		})
 	})
 
