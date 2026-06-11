@@ -129,6 +129,25 @@ var _ = Describe("runWebhook", func() {
 	})
 })
 
+var _ = Describe("logValidationPassed", func() {
+	It("emits a Debug entry with the standard fields and any extras", func() {
+		core, recorded := observer.New(zapcore.DebugLevel)
+		l := zap.New(core)
+
+		logValidationPassed(l, "Pod", "team-alpha", admissionv1.Create, zap.String("pod", "nginx"))
+
+		entries := recorded.All()
+		Expect(entries).To(HaveLen(1))
+		Expect(entries[0].Level).To(Equal(zapcore.DebugLevel))
+		Expect(entries[0].Message).To(Equal("Pod CRQ validation passed"))
+
+		fields := entries[0].ContextMap()
+		Expect(fields).To(HaveKeyWithValue("namespace", "team-alpha"))
+		Expect(fields).To(HaveKeyWithValue("operation", string(admissionv1.Create)))
+		Expect(fields).To(HaveKeyWithValue("pod", "nginx"))
+	})
+})
+
 var _ = Describe("decodeAdmissionObject", func() {
 	It("returns a 400-coded statusError on bad bytes", func() {
 		var pod corev1.Pod

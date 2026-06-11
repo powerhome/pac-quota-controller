@@ -1,134 +1,9 @@
 package storage
 
 import (
-	"context"
-	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
-	"go.uber.org/zap"
 )
-
-// StorageResourceCalculator provides methods for calculating storage resource usage
-// from PersistentVolumeClaims only. Ephemeral storage calculation is handled by the pod package.
-type StorageResourceCalculator struct {
-	usage.BaseResourceCalculator
-	logger *zap.Logger
-}
-
-// NewStorageResourceCalculator creates a new instance of StorageResourceCalculator.
-func NewStorageResourceCalculator(c client.Client, logger *zap.Logger) *StorageResourceCalculator {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-	return &StorageResourceCalculator{
-		BaseResourceCalculator: *usage.NewBaseResourceCalculator(c),
-		logger:                 logger.Named("storage-calculator"),
-	}
-}
-
-// CalculateStorageUsage calculates the total storage usage for a given namespace.
-// It lists all PersistentVolumeClaims in the namespace and sums their storage requests.
-// This implements the same logic as Kubernetes ResourceQuota for storage resources.
-func (c *StorageResourceCalculator) CalculateStorageUsage(
-	ctx context.Context, namespace string,
-) (resource.Quantity, error) {
-
-	pvcList := &corev1.PersistentVolumeClaimList{}
-	if err := c.Client.List(ctx, pvcList, client.InNamespace(namespace)); err != nil {
-		return resource.Quantity{}, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
-	}
-
-	totalUsage := CalculateStorageUsageFromPVCs(pvcList.Items, usage.ResourceRequestsStorage)
-
-	correlationID := quota.GetCorrelationID(ctx)
-
-	c.logger.Debug("Calculated storage usage",
-		zap.String("correlation_id", correlationID),
-		zap.String("namespace", namespace),
-		zap.String("total_usage", totalUsage.String()),
-		zap.Int("pvc_count", len(pvcList.Items)))
-
-	return totalUsage, nil
-}
-
-// CalculateUsage calculates the total usage for a specific resource in a namespace
-func (c *StorageResourceCalculator) CalculateUsage(
-	ctx context.Context, namespace string, resourceName corev1.ResourceName,
-) (resource.Quantity, error) {
-	// For storage resources, we only handle storage-related resources
-	switch resourceName {
-	case usage.ResourceRequestsStorage, usage.ResourceStorage:
-		pvcList := &corev1.PersistentVolumeClaimList{}
-		if err := c.Client.List(ctx, pvcList, client.InNamespace(namespace)); err != nil {
-			return resource.Quantity{}, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
-		}
-		return CalculateStorageUsageFromPVCs(pvcList.Items, usage.ResourceRequestsStorage), nil
-	case usage.ResourcePersistentVolumeClaims:
-		pvcList := &corev1.PersistentVolumeClaimList{}
-		if err := c.Client.List(ctx, pvcList, client.InNamespace(namespace)); err != nil {
-			return resource.Quantity{}, err
-		}
-		return CalculatePVCCountUsageFromPVCs(pvcList.Items), nil
-	default:
-		// Return zero for non-storage resources
-		return resource.Quantity{}, nil
-	}
-}
-
-// CalculatePVCCount calculates the number of PersistentVolumeClaims in a namespace
-func (c *StorageResourceCalculator) CalculatePVCCount(ctx context.Context, namespace string) (int64, error) {
-
-	pvcList := &corev1.PersistentVolumeClaimList{}
-	if err := c.Client.List(ctx, pvcList, client.InNamespace(namespace)); err != nil {
-		return 0, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
-	}
-
-	correlationID := quota.GetCorrelationID(ctx)
-	countQty := CalculatePVCCountUsageFromPVCs(pvcList.Items)
-	count := countQty.Value()
-
-	c.logger.Debug("Calculated PVC count",
-		zap.String("correlation_id", correlationID),
-		zap.String("namespace", namespace),
-		zap.Int64("pvc_count", count))
-
-	return count, nil
-}
-
-// CalculateStorageClassUsage calculates storage usage for a specific storage class in a namespace.
-// This implements Kubernetes ResourceQuota storage class specific quotas:
-// <storage-class-name>.storageclass.storage.k8s.io/requests.storage
-func (c *StorageResourceCalculator) CalculateStorageClassUsage(
-	ctx context.Context, namespace, storageClass string,
-) (resource.Quantity, error) {
-
-	pvcList := &corev1.PersistentVolumeClaimList{}
-	if err := c.Client.List(ctx, pvcList, client.InNamespace(namespace)); err != nil {
-		return resource.Quantity{}, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
-	}
-
-	return CalculateStorageClassUsageFromPVCs(pvcList.Items, storageClass), nil
-}
-
-// CalculateStorageClassCount calculates the count of PVCs for a specific storage class in a namespace.
-// This implements Kubernetes ResourceQuota storage class specific quotas:
-// <storage-class-name>.storageclass.storage.k8s.io/persistentvolumeclaims
-func (c *StorageResourceCalculator) CalculateStorageClassCount(
-	ctx context.Context, namespace, storageClass string,
-) (int64, error) {
-
-	pvcList := &corev1.PersistentVolumeClaimList{}
-	if err := c.Client.List(ctx, pvcList, client.InNamespace(namespace)); err != nil {
-		return 0, fmt.Errorf("failed to list PVCs in namespace %s: %w", namespace, err)
-	}
-
-	return CalculateStorageClassCountFromPVCs(pvcList.Items, storageClass), nil
-}
 
 // CalculateStorageUsageFromPVCs calculates requests.storage usage from an already loaded pvc list.
 func CalculateStorageUsageFromPVCs(
@@ -189,6 +64,22 @@ func PVCMatchesStorageClass(pvc *corev1.PersistentVolumeClaim, storageClass stri
 		return false
 	}
 	return pvc.Annotations["volume.beta.kubernetes.io/storage-class"] == storageClass
+}
+
+// PVCStorageClass returns the storage class of the PVC, preferring
+// spec.storageClassName and falling back to the legacy annotation. Returns
+// "" when neither is set.
+func PVCStorageClass(pvc *corev1.PersistentVolumeClaim) string {
+	if pvc == nil {
+		return ""
+	}
+	if pvc.Spec.StorageClassName != nil {
+		return *pvc.Spec.StorageClassName
+	}
+	if pvc.Annotations != nil {
+		return pvc.Annotations["volume.beta.kubernetes.io/storage-class"]
+	}
+	return ""
 }
 
 // GetPVCStorageRequest extracts the storage request from a PersistentVolumeClaim.

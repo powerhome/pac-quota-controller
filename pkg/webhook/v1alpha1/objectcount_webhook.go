@@ -79,9 +79,6 @@ func (h *ObjectCountWebhook) validateOperation(
 	); err != nil {
 		return nil, err
 	}
-	h.logger.Debug("Object CRQ validation passed",
-		zap.String("object", resourceName.String()),
-		zap.String("namespace", namespace),
-		zap.String("operation", string(op)))
+	logValidationPassed(h.logger, "Object", namespace, op, zap.String("object", resourceName.String()))
 	return nil, nil
 }

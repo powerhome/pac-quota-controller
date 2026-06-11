@@ -152,6 +152,18 @@ func unsupportedOperationError(op admissionv1.Operation, resourceType string) er
 	return newStatusErrorf(http.StatusBadRequest, "Operation %s is not supported for %s", op, resourceType)
 }
 
+// logValidationPassed emits the standard "CRQ validation passed" debug log
+// shared by every webhook. namespace and op are always included; extras carry
+// the kind-specific fields (resource name, deltas, etc.).
+func logValidationPassed(logger *zap.Logger, kind, namespace string, op admissionv1.Operation, extras ...zap.Field) {
+	fields := append(make([]zap.Field, 0, 2+len(extras)),
+		zap.String("namespace", namespace),
+		zap.String("operation", string(op)),
+	)
+	fields = append(fields, extras...)
+	logger.Debug(kind+" CRQ validation passed", fields...)
+}
+
 // validateAgainstCRQ checks whether admitting `requested` of `resourceName` in
 // `namespaceName` would exceed the matching CRQ hard limit. It fails open
 // (admits + emits a metric) on any lookup or status-population miss.
