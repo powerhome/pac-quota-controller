@@ -6,7 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ResourceCalculatorInterface defines the common interface for resource usage calculations
@@ -15,13 +15,14 @@ type ResourceCalculatorInterface interface {
 	CalculateUsage(ctx context.Context, namespace string, resourceName corev1.ResourceName) (resource.Quantity, error)
 }
 
-// BaseResourceCalculator provides common functionality for resource calculators
+// BaseResourceCalculator provides common functionality for resource calculators.
+// Client is a controller-runtime client so List/Get calls hit the shared informer cache.
 type BaseResourceCalculator struct {
-	Client kubernetes.Interface
+	Client client.Client
 }
 
 // NewBaseResourceCalculator creates a new base resource calculator
-func NewBaseResourceCalculator(c kubernetes.Interface) *BaseResourceCalculator {
+func NewBaseResourceCalculator(c client.Client) *BaseResourceCalculator {
 	return &BaseResourceCalculator{
 		Client: c,
 	}

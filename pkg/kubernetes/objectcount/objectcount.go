@@ -4,27 +4,29 @@ package objectcount
 import (
 	"context"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"go.uber.org/zap"
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ObjectCountCalculator implements usage.ResourceCalculatorInterface for generic object count resources.
 type ObjectCountCalculator struct {
-	Client kubernetes.Interface
+	Client client.Client
 	logger *zap.Logger
 }
 
-func NewObjectCountCalculator(client kubernetes.Interface, logger *zap.Logger) *ObjectCountCalculator {
+func NewObjectCountCalculator(c client.Client, logger *zap.Logger) *ObjectCountCalculator {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 	return &ObjectCountCalculator{
-		Client: client,
+		Client: c,
 		logger: logger.Named("object-count-calculator"),
 	}
 }
@@ -38,38 +40,49 @@ func (c *ObjectCountCalculator) CalculateUsage(
 	var count int64
 	var err error
 
+	opts := []client.ListOption{client.InNamespace(namespace)}
 	switch resourceName {
 	// There is always a kube-root-ca.crt configmap in each namespace
 	case "configmaps":
-		list, e := c.Client.CoreV1().ConfigMaps(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &corev1.ConfigMapList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	case "secrets":
-		list, e := c.Client.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &corev1.SecretList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	case "replicationcontrollers":
-		list, e := c.Client.CoreV1().ReplicationControllers(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &corev1.ReplicationControllerList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	case "deployments.apps":
-		list, e := c.Client.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &appsv1.DeploymentList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	case "statefulsets.apps":
-		list, e := c.Client.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &appsv1.StatefulSetList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	case "daemonsets.apps":
-		list, e := c.Client.AppsV1().DaemonSets(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &appsv1.DaemonSetList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	case "jobs.batch":
-		list, e := c.Client.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &batchv1.JobList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	case "cronjobs.batch":
-		list, e := c.Client.BatchV1().CronJobs(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &batchv1.CronJobList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	case "horizontalpodautoscalers.autoscaling":
-		list, e := c.Client.AutoscalingV1().HorizontalPodAutoscalers(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &autoscalingv1.HorizontalPodAutoscalerList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	case "ingresses.networking.k8s.io":
-		list, e := c.Client.NetworkingV1().Ingresses(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
+		list := &networkingv1.IngressList{}
+		err = c.Client.List(ctx, list, opts...)
+		count = int64(len(list.Items))
 	default:
 		return resource.Quantity{}, nil
 	}

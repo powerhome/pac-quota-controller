@@ -32,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -132,7 +131,6 @@ func containerTerminated(oldStatuses, newStatuses []corev1.ContainerStatus) bool
 type ClusterResourceQuotaReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
-	KubeClient               kubernetes.Interface
 	crqClient                quota.CRQClientInterface
 	ComputeCalculator        *pod.PodResourceCalculator
 	StorageCalculator        *storage.StorageResourceCalculator
@@ -352,7 +350,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 				var currentUsage resource.Quantity
 				stepStart := time.Now()
 				if snapshot, ok := resourceSnapshots[nsName]; ok {
-					currentUsage = calculateStorageClassUsageFromPVCs(snapshot.PVCs, storageClass)
+					currentUsage = storage.CalculateStorageClassUsageFromPVCs(snapshot.PVCs, storageClass)
 				} else if r.StorageCalculator != nil {
 					storageUsage, err := r.StorageCalculator.CalculateStorageClassUsage(ctx, nsName, storageClass)
 					if err != nil {
@@ -385,7 +383,7 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 				var currentCount int64
 				stepStart := time.Now()
 				if snapshot, ok := resourceSnapshots[nsName]; ok {
-					currentCount = calculateStorageClassCountFromPVCs(snapshot.PVCs, storageClass)
+					currentCount = storage.CalculateStorageClassCountFromPVCs(snapshot.PVCs, storageClass)
 				} else if r.StorageCalculator != nil {
 					count, err := r.StorageCalculator.CalculateStorageClassCount(ctx, nsName, storageClass)
 					if err != nil {
@@ -465,29 +463,29 @@ func (r *ClusterResourceQuotaReconciler) resolveNamespaceResourceUsage(
 		corev1.ResourceLimitsMemory,
 		corev1.ResourcePods:
 		if hasSnapshot {
-			return calculateComputeUsageFromPods(snapshot.Pods, resourceName), nil
+			return pod.CalculateUsageFromPods(snapshot.Pods, resourceName), nil
 		}
 		return r.calculateComputeResources(ctx, nsName, resourceName)
 	case corev1.ResourceRequestsStorage:
 		if hasSnapshot {
-			return calculateStorageUsageFromPVCs(snapshot.PVCs, resourceName), nil
+			return storage.CalculateStorageUsageFromPVCs(snapshot.PVCs, resourceName), nil
 		}
 		return r.calculateStorageResources(ctx, nsName, resourceName)
 	case usage.ResourcePersistentVolumeClaims:
 		if hasSnapshot {
-			return calculatePVCCountUsageFromPVCs(snapshot.PVCs), nil
+			return storage.CalculatePVCCountUsageFromPVCs(snapshot.PVCs), nil
 		}
 		return r.calculateStorageResources(ctx, nsName, resourceName)
 	case usage.ResourceServices, usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
 		if hasSnapshot {
-			return calculateServiceUsageFromServices(snapshot.Services, resourceName), nil
+			return services.CalculateUsageFromServices(snapshot.Services, resourceName), nil
 		}
 		return r.calculateServiceResources(ctx, nsName, resourceName)
 	default:
 		// Handle extended resources (hugepages, GPUs, etc.) via compute calculator.
 		if r.isComputeResource(resourceName) {
 			if hasSnapshot {
-				return calculateComputeUsageFromPods(snapshot.Pods, resourceName), nil
+				return pod.CalculateUsageFromPods(snapshot.Pods, resourceName), nil
 			}
 			return r.calculateComputeResources(ctx, nsName, resourceName)
 		}
@@ -521,34 +519,6 @@ func shouldPrefetchNamespaceResources(hard quotav1alpha1.ResourceList) bool {
 	return false
 }
 
-func calculateComputeUsageFromPods(pods []corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
-	return pod.CalculateUsageFromPods(pods, resourceName)
-}
-
-func calculateServiceUsageFromServices(svcs []corev1.Service, resourceName corev1.ResourceName) resource.Quantity {
-	return services.CalculateUsageFromServices(svcs, resourceName)
-}
-
-func calculateStorageUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim, resourceName corev1.ResourceName) resource.Quantity {
-	return storage.CalculateStorageUsageFromPVCs(pvcs, resourceName)
-}
-
-func calculatePVCCountUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim) resource.Quantity {
-	return storage.CalculatePVCCountUsageFromPVCs(pvcs)
-}
-
-func calculateStorageClassUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) resource.Quantity {
-	return storage.CalculateStorageClassUsageFromPVCs(pvcs, storageClass)
-}
-
-func calculateStorageClassCountFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) int64 {
-	return storage.CalculateStorageClassCountFromPVCs(pvcs, storageClass)
-}
-
-func pvcMatchesStorageClass(pvc *corev1.PersistentVolumeClaim, storageClass string) bool {
-	return storage.PVCMatchesStorageClass(pvc, storageClass)
-}
-
 type namespaceResourceSnapshot struct {
 	Pods     []corev1.Pod
 	Services []corev1.Service
@@ -559,28 +529,24 @@ func (r *ClusterResourceQuotaReconciler) prefetchNamespaceResources(
 	ctx context.Context,
 	namespaces []string,
 ) (map[string]namespaceResourceSnapshot, error) {
-	if r.KubeClient == nil {
-		return nil, fmt.Errorf("kube client is nil")
-	}
-
 	snapshots := make(map[string]namespaceResourceSnapshot, len(namespaces))
 	for _, nsName := range namespaces {
 		if nsName == "" {
 			continue
 		}
 
-		pods, err := r.KubeClient.CoreV1().Pods(nsName).List(ctx, metav1.ListOptions{})
-		if err != nil {
+		pods := &corev1.PodList{}
+		if err := r.List(ctx, pods, client.InNamespace(nsName)); err != nil {
 			return nil, fmt.Errorf("failed to prefetch pods in namespace %s: %w", nsName, err)
 		}
 
-		svcs, err := r.KubeClient.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{})
-		if err != nil {
+		svcs := &corev1.ServiceList{}
+		if err := r.List(ctx, svcs, client.InNamespace(nsName)); err != nil {
 			return nil, fmt.Errorf("failed to prefetch services in namespace %s: %w", nsName, err)
 		}
 
-		pvcs, err := r.KubeClient.CoreV1().PersistentVolumeClaims(nsName).List(ctx, metav1.ListOptions{})
-		if err != nil {
+		pvcs := &corev1.PersistentVolumeClaimList{}
+		if err := r.List(ctx, pvcs, client.InNamespace(nsName)); err != nil {
 			return nil, fmt.Errorf("failed to prefetch pvcs in namespace %s: %w", nsName, err)
 		}
 
@@ -804,31 +770,21 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, c
 		r.logger = zap.L().Named("clusterresourcequota-controller")
 	}
 
-	// Initialize the KubeClient using the manager's config if not already set
-	if r.KubeClient == nil {
-		cfg := mgr.GetConfig()
-		r.KubeClient = kubernetes.NewForConfigOrDie(cfg)
-	}
-	k8sConfig := mgr.GetConfig()
-	clientset, err := kubernetes.NewForConfig(k8sConfig)
-	if err != nil {
-		return fmt.Errorf("unable to create kubernetes clientset: %w", err)
-	}
 	if r.crqClient == nil {
 		r.crqClient = quota.NewCRQClient(r.Client, r.logger)
 	}
 
 	if r.StorageCalculator == nil {
-		r.StorageCalculator = storage.NewStorageResourceCalculator(clientset, r.logger)
+		r.StorageCalculator = storage.NewStorageResourceCalculator(r.Client, r.logger)
 	}
 	if r.ComputeCalculator == nil {
-		r.ComputeCalculator = pod.NewPodResourceCalculator(clientset, r.logger)
+		r.ComputeCalculator = pod.NewPodResourceCalculator(r.Client, r.logger)
 	}
 	if r.ServiceCalculator == nil {
-		r.ServiceCalculator = services.NewServiceResourceCalculator(clientset, r.logger)
+		r.ServiceCalculator = services.NewServiceResourceCalculator(r.Client, r.logger)
 	}
 	if r.ObjectCountCalculator == nil {
-		r.ObjectCountCalculator = objectcount.NewObjectCountCalculator(clientset, r.logger)
+		r.ObjectCountCalculator = objectcount.NewObjectCountCalculator(r.Client, r.logger)
 	}
 
 	// Initialize EventRecorder
@@ -849,6 +805,7 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, c
 	var cleanupConfig events.CleanupConfig
 
 	if r.Config != nil && r.Config.EventsEnable {
+		var err error
 		cleanupConfig, err = events.LoadEventCleanupConfig(
 			r.Config.EventsConfigPath,
 			r.Config.EventsTTL,

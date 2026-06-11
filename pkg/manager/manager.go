@@ -8,13 +8,11 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	"github.com/powerhome/pac-quota-controller/internal/controller"
 	"github.com/powerhome/pac-quota-controller/pkg/config"
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	pkglogger "github.com/powerhome/pac-quota-controller/pkg/logger"
 	"go.uber.org/zap"
 
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -69,20 +67,10 @@ func SetupControllers(ctx context.Context, mgr ctrl.Manager, cfg *config.Config,
 	if loggerInstance != nil {
 		logger = loggerInstance.Named("setup")
 	}
-	// Initialize compute resource calculator
-	// Convert controller-runtime client to kubernetes clientset
-	k8sConfig := mgr.GetConfig()
-	clientset, err := kubernetes.NewForConfig(k8sConfig)
-	if err != nil {
-		logger.Error("unable to create kubernetes clientset", zap.Error(err))
-		return err
-	}
-	computeCalculator := pod.NewPodResourceCalculator(clientset, logger)
 
 	if err := (&controller.ClusterResourceQuotaReconciler{
 		Client:                   mgr.GetClient(),
 		Scheme:                   mgr.GetScheme(),
-		ComputeCalculator:        computeCalculator,
 		Config:                   cfg,
 		ExcludeNamespaceLabelKey: cfg.ExcludeNamespaceLabelKey,
 		ExcludedNamespaces:       cfg.ExcludedNamespaces,

@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 )
 
@@ -86,9 +87,9 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 	}
 
 	correlationID := quota.GetCorrelationID(ctx)
-	storageDelta := getStorageRequest(pvc)
+	storageDelta := storage.GetPVCStorageRequest(pvc)
 	if oldPVC != nil {
-		storageDelta.Sub(getStorageRequest(oldPVC))
+		storageDelta.Sub(storage.GetPVCStorageRequest(oldPVC))
 	}
 
 	type check struct {
@@ -140,13 +141,4 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 		zap.String("namespace", pvc.Namespace),
 		zap.String("storageDelta", storageDelta.String()))
 	return nil
-}
-
-func getStorageRequest(pvc *corev1.PersistentVolumeClaim) resource.Quantity {
-	if pvc.Spec.Resources.Requests != nil {
-		if storageRequest, exists := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; exists {
-			return storageRequest
-		}
-	}
-	return resource.Quantity{}
 }

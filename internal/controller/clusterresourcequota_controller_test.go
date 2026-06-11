@@ -22,10 +22,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	k8sfake "k8s.io/client-go/kubernetes/fake"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
@@ -1022,14 +1022,14 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 	Context("Namespace Resource Prefetch", func() {
 		It("should prefetch pods, services, and pvcs by namespace", func() {
-			kubeClient := k8sfake.NewSimpleClientset(
+			c := fake.NewClientBuilder().WithObjects(
 				&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "ns-a"}},
 				&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-b", Namespace: "ns-b"}},
 				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "svc-a", Namespace: "ns-a"}},
 				&corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Name: "pvc-a", Namespace: "ns-a"}},
-			)
+			).Build()
 
-			reconciler := &ClusterResourceQuotaReconciler{KubeClient: kubeClient}
+			reconciler := &ClusterResourceQuotaReconciler{Client: c}
 
 			snapshots, err := reconciler.prefetchNamespaceResources(ctx, []string{"ns-a", "ns-b"})
 			Expect(err).NotTo(HaveOccurred())
@@ -1045,21 +1045,14 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 		})
 
 		It("should skip empty namespace entries", func() {
-			kubeClient := k8sfake.NewSimpleClientset()
-			reconciler := &ClusterResourceQuotaReconciler{KubeClient: kubeClient}
+			c := fake.NewClientBuilder().Build()
+			reconciler := &ClusterResourceQuotaReconciler{Client: c}
 
 			snapshots, err := reconciler.prefetchNamespaceResources(ctx, []string{"ns-a", ""})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(snapshots).To(HaveLen(1))
 			_, hasEmpty := snapshots[""]
 			Expect(hasEmpty).To(BeFalse())
-		})
-
-		It("should return error when kube client is nil", func() {
-			reconciler := &ClusterResourceQuotaReconciler{}
-			snapshots, err := reconciler.prefetchNamespaceResources(ctx, []string{"ns-a"})
-			Expect(err).To(HaveOccurred())
-			Expect(snapshots).To(BeNil())
 		})
 	})
 
@@ -1095,8 +1088,8 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				},
 			}
 
-			requestsCPU := calculateComputeUsageFromPods(pods, corev1.ResourceRequestsCPU)
-			limitsCPU := calculateComputeUsageFromPods(pods, corev1.ResourceLimitsCPU)
+			requestsCPU := pod.CalculateUsageFromPods(pods, corev1.ResourceRequestsCPU)
+			limitsCPU := pod.CalculateUsageFromPods(pods, corev1.ResourceLimitsCPU)
 
 			Expect(requestsCPU.String()).To(Equal("750m"))
 			Expect(limitsCPU.String()).To(Equal("1500m"))
@@ -1109,7 +1102,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				{Status: corev1.PodStatus{Phase: corev1.PodFailed}},
 			}
 
-			podCount := calculateComputeUsageFromPods(pods, corev1.ResourcePods)
+			podCount := pod.CalculateUsageFromPods(pods, corev1.ResourcePods)
 			Expect(podCount.String()).To(Equal("2"))
 		})
 
@@ -1185,35 +1178,35 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 	Context("Service Usage From Prefetched Services", func() {
 		It("should count total services", func() {
-			services := []corev1.Service{
+			svcs := []corev1.Service{
 				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
 				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}},
 				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort}},
 			}
 
-			total := calculateServiceUsageFromServices(services, usage.ResourceServices)
+			total := services.CalculateUsageFromServices(svcs, usage.ResourceServices)
 			Expect(total.String()).To(Equal("3"))
 		})
 
 		It("should count only load balancer services", func() {
-			services := []corev1.Service{
+			svcs := []corev1.Service{
 				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
 				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}},
 				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeLoadBalancer}},
 			}
 
-			lbCount := calculateServiceUsageFromServices(services, usage.ResourceServicesLoadBalancers)
+			lbCount := services.CalculateUsageFromServices(svcs, usage.ResourceServicesLoadBalancers)
 			Expect(lbCount.String()).To(Equal("2"))
 		})
 
 		It("should count only node port services", func() {
-			services := []corev1.Service{
+			svcs := []corev1.Service{
 				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort}},
 				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP}},
 				{Spec: corev1.ServiceSpec{Type: corev1.ServiceTypeNodePort}},
 			}
 
-			npCount := calculateServiceUsageFromServices(services, usage.ResourceServicesNodePorts)
+			npCount := services.CalculateUsageFromServices(svcs, usage.ResourceServicesNodePorts)
 			Expect(npCount.String()).To(Equal("2"))
 		})
 	})
@@ -1260,12 +1253,12 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				},
 			}
 
-			usage := calculateStorageUsageFromPVCs(pvcs, corev1.ResourceRequestsStorage)
+			usage := storage.CalculateStorageUsageFromPVCs(pvcs, corev1.ResourceRequestsStorage)
 			Expect(usage.String()).To(Equal("1536Mi"))
 		})
 
 		It("should return zero for non-storage resources", func() {
-			usage := calculateStorageUsageFromPVCs(nil, usage.ResourceServices)
+			usage := storage.CalculateStorageUsageFromPVCs(nil, usage.ResourceServices)
 			Expect(usage.IsZero()).To(BeTrue())
 		})
 
@@ -1299,7 +1292,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				},
 			}
 
-			usage := calculateStorageClassUsageFromPVCs(pvcs, fastStorageClass)
+			usage := storage.CalculateStorageClassUsageFromPVCs(pvcs, fastStorageClass)
 			Expect(usage.String()).To(Equal("3Gi"))
 		})
 
@@ -1312,7 +1305,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				{Spec: corev1.PersistentVolumeClaimSpec{StorageClassName: &slow}},
 			}
 
-			count := calculateStorageClassCountFromPVCs(pvcs, fastStorageClass)
+			count := storage.CalculateStorageClassCountFromPVCs(pvcs, fastStorageClass)
 			Expect(count).To(Equal(int64(2)))
 		})
 
@@ -1323,20 +1316,20 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				},
 			}
 
-			Expect(pvcMatchesStorageClass(&pvc, fastStorageClass)).To(BeTrue())
-			Expect(pvcMatchesStorageClass(&pvc, slowStorageClass)).To(BeFalse())
+			Expect(storage.PVCMatchesStorageClass(&pvc, fastStorageClass)).To(BeTrue())
+			Expect(storage.PVCMatchesStorageClass(&pvc, slowStorageClass)).To(BeFalse())
 		})
 
 		It("should count pvc objects", func() {
 			pvcs := []corev1.PersistentVolumeClaim{{}, {}, {}}
-			count := calculatePVCCountUsageFromPVCs(pvcs)
+			count := storage.CalculatePVCCountUsageFromPVCs(pvcs)
 			Expect(count.String()).To(Equal("3"))
 		})
 	})
 
 	Context("Shared Aggregation Semantics", func() {
 		It("should return identical usage for prefetched and fallback paths", func() {
-			fakeKubeClient := k8sfake.NewSimpleClientset(
+			fakeClient := fake.NewClientBuilder().WithObjects(
 				&corev1.Pod{
 					ObjectMeta: metav1.ObjectMeta{Name: "pod-running", Namespace: "ns-a"},
 					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
@@ -1374,13 +1367,13 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 					ObjectMeta: metav1.ObjectMeta{Name: "pvc-2", Namespace: "ns-a"},
 					Spec:       corev1.PersistentVolumeClaimSpec{Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("512Mi")}}},
 				},
-			)
+			).Build()
 
 			reconciler := &ClusterResourceQuotaReconciler{
-				KubeClient:            fakeKubeClient,
-				ComputeCalculator:     pod.NewPodResourceCalculator(fakeKubeClient, zap.NewNop()),
-				ServiceCalculator:     services.NewServiceResourceCalculator(fakeKubeClient, zap.NewNop()),
-				StorageCalculator:     storage.NewStorageResourceCalculator(fakeKubeClient, zap.NewNop()),
+				Client:                fakeClient,
+				ComputeCalculator:     pod.NewPodResourceCalculator(fakeClient, zap.NewNop()),
+				ServiceCalculator:     services.NewServiceResourceCalculator(fakeClient, zap.NewNop()),
+				StorageCalculator:     storage.NewStorageResourceCalculator(fakeClient, zap.NewNop()),
 				ObjectCountCalculator: nil,
 				logger:                zap.NewNop(),
 			}
@@ -1425,7 +1418,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			fastClass := fastStorageClass
 			slowClass := slowStorageClass
 
-			fakeKubeClient := k8sfake.NewSimpleClientset(
+			fakeClient := fake.NewClientBuilder().WithObjects(
 				&corev1.PersistentVolumeClaim{
 					ObjectMeta: metav1.ObjectMeta{Name: "pvc-spec", Namespace: "ns-a"},
 					Spec: corev1.PersistentVolumeClaimSpec{
@@ -1450,16 +1443,21 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 						Resources:        corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{corev1.ResourceStorage: resource.MustParse("8Gi")}},
 					},
 				},
-			)
+			).Build()
 
-			storageCalculator := storage.NewStorageResourceCalculator(fakeKubeClient, zap.NewNop())
+			storageCalculator := storage.NewStorageResourceCalculator(fakeClient, zap.NewNop())
 			prefetchedReconciler := &ClusterResourceQuotaReconciler{
-				KubeClient:        fakeKubeClient,
+				Client:            fakeClient,
 				StorageCalculator: storageCalculator,
 				logger:            zap.NewNop(),
 			}
+			fallbackClient := interceptor.NewClient(fakeClient, interceptor.Funcs{
+				List: func(_ context.Context, _ client.WithWatch, list client.ObjectList, _ ...client.ListOption) error {
+					return fmt.Errorf("forced prefetch failure for %T", list)
+				},
+			})
 			fallbackReconciler := &ClusterResourceQuotaReconciler{
-				KubeClient:        nil,
+				Client:            fallbackClient,
 				StorageCalculator: storageCalculator,
 				logger:            zap.NewNop(),
 			}

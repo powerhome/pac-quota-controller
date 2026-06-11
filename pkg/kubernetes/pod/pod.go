@@ -8,8 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
@@ -22,7 +21,7 @@ type PodResourceCalculator struct {
 }
 
 // NewPodResourceCalculator creates a new PodResourceCalculator
-func NewPodResourceCalculator(c kubernetes.Interface, logger *zap.Logger) *PodResourceCalculator {
+func NewPodResourceCalculator(c client.Client, logger *zap.Logger) *PodResourceCalculator {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -184,8 +183,8 @@ func (c *PodResourceCalculator) CalculateUsage(
 ) (resource.Quantity, error) {
 	correlationID := quota.GetCorrelationID(ctx)
 
-	podList, err := c.Client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
+	podList := &corev1.PodList{}
+	if err := c.Client.List(ctx, podList, client.InNamespace(namespace)); err != nil {
 		c.logger.Error("Failed to list pods",
 			zap.String("correlation_id", correlationID),
 			zap.String("namespace", namespace),
@@ -208,8 +207,8 @@ func (c *PodResourceCalculator) CalculateUsage(
 func (c *PodResourceCalculator) CalculatePodCount(ctx context.Context, namespace string) (int64, error) {
 	correlationID := quota.GetCorrelationID(ctx)
 
-	podList, err := c.Client.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
+	podList := &corev1.PodList{}
+	if err := c.Client.List(ctx, podList, client.InNamespace(namespace)); err != nil {
 		c.logger.Error("Failed to list pods",
 			zap.String("correlation_id", correlationID),
 			zap.String("namespace", namespace),
