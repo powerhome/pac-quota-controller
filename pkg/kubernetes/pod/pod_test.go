@@ -532,7 +532,7 @@ var _ = Describe("Pod", func() {
 				Expect(usageResult.Value()).To(Equal(int64(1)))
 			})
 
-			It("should handle podcast count errors when resource is pods", func() {
+			It("should handle pod count errors when resource is pods", func() {
 				buildCalculatorWithListError(fmt.Errorf("pod count error"))
 
 				_, err := calculator.CalculateUsage(ctx, "test", usage.ResourcePods)
