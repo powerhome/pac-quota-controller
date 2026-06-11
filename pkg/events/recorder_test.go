@@ -65,7 +65,7 @@ var _ = Describe("EventRecorder", func() {
 		It("should create a valid EventRecorder", func() {
 			Expect(eventRecorder).ToNot(BeNil())
 			Expect(eventRecorder.recorder).To(Equal(fakeRecorder))
-			Expect(eventRecorder.logger).To(Equal(logger))
+			Expect(eventRecorder.logger).ToNot(BeNil())
 		})
 	})
 

@@ -70,7 +70,10 @@ controllerManager:
     runAsNonRoot: true
     seccompProfile:
       type: RuntimeDefault
-  terminationGracePeriodSeconds: 15
+  # The webhook server's graceful shutdown gives in-flight admissions up to 30s
+  # to drain (see pkg/webhook/server/server.go:shutdown). Setting the grace
+  # period below that would SIGKILL the pod mid-drain.
+  terminationGracePeriodSeconds: 35
   serviceAccount:
     name: pac-quota-controller-manager
     annotations: {}
@@ -123,6 +126,20 @@ prometheus:
         enable: true
         threshold: 5
         for: 10m
+      # Spike in webhook admission denials labelled reason=bad_request — this
+      # is a webhook implementation bug signal, distinct from working-as-intended
+      # reason=quota_exceeded denials.
+      webhookBadRequest:
+        enable: true
+        threshold: 0.1
+        for: 10m
+      # Fires when the events cleanup loop hasn't deleted anything in `window`.
+      # Disabled by default because some clusters legitimately have nothing to
+      # clean; enable on clusters where events are emitted continuously.
+      eventsCleanupStalled:
+        enable: false
+        window: 6h
+        for: 30m
 
 certmanager:
   # If true, the chart will create Certificate resources for cert-manager to issue certificates for webhooks and metrics.

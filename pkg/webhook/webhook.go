@@ -81,8 +81,8 @@ func isValidCertificatePair(certFile, keyFile string, log *zap.Logger) bool {
 	if err != nil {
 		if log != nil {
 			log.Debug("Failed to load certificate pair",
-				zap.String("certFile", certFile),
-				zap.String("keyFile", keyFile),
+				zap.String("cert_file", certFile),
+				zap.String("key_file", keyFile),
 				zap.Error(err))
 		}
 		return false

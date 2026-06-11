@@ -138,6 +138,6 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 
 	logValidationPassed(h.logger, "PVC", pvc.Namespace, op,
 		zap.String("pvc", pvc.Name),
-		zap.String("storageDelta", storageDelta.String()))
+		zap.String("storage_delta", storageDelta.String()))
 	return nil
 }

@@ -42,9 +42,12 @@ func NewEventRecorder(
 	recorder events.EventRecorder,
 	namespace string,
 	logger *zap.Logger) *EventRecorder {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &EventRecorder{
 		recorder:  recorder,
-		logger:    logger,
+		logger:    logger.Named("event-recorder"),
 		namespace: namespace,
 		podName:   getPodName(),
 	}

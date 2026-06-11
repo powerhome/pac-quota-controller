@@ -59,10 +59,13 @@ type EventCleanupManager struct {
 
 // NewEventCleanupManager creates a new cleanup manager
 func NewEventCleanupManager(k8sClient client.Client, config CleanupConfig, logger *zap.Logger) *EventCleanupManager {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &EventCleanupManager{
 		client: k8sClient,
 		config: config,
-		logger: logger,
+		logger: logger.Named("event-cleanup"),
 	}
 }
 
@@ -75,8 +78,8 @@ func (m *EventCleanupManager) Start(ctx context.Context) {
 
 	m.logger.Info("Starting event cleanup manager",
 		zap.Duration("interval", m.config.CleanupInterval),
-		zap.Duration("maxAge", m.config.MaxAge),
-		zap.Int("maxEventsPerCRQ", m.config.MaxEventsPerCRQ))
+		zap.Duration("max_age", m.config.MaxAge),
+		zap.Int("max_events_per_crq", m.config.MaxEventsPerCRQ))
 
 	ticker := time.NewTicker(m.config.CleanupInterval)
 	defer ticker.Stop()
@@ -214,8 +217,8 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 	if deletedCount > 0 {
 		m.logger.Debug("Cleaned up events for CRQ",
 			zap.String("crq_name", crqName),
-			zap.Int("deletedCount", deletedCount),
-			zap.Int("remainingCount", len(events)-deletedCount))
+			zap.Int("deleted_count", deletedCount),
+			zap.Int("remaining_count", len(events)-deletedCount))
 	}
 
 	return deletedCount
