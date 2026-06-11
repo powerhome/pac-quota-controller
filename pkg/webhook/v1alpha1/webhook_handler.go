@@ -163,58 +163,11 @@ func validateAgainstCRQ(
 	resourceName corev1.ResourceName,
 	requested resource.Quantity,
 ) error {
-	correlationID := quota.GetCorrelationID(ctx)
-
-	if crqClient == nil {
-		logger.Info("Skipping CRQ validation - no CRQ client available",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", namespaceName),
-			zap.String("resource", string(resourceName)),
-			zap.String("requested_quantity", requested.String()))
-		metrics.WebhookCRQLookup.WithLabelValues("no_client").Inc()
-		return nil
-	}
-
-	ns := &corev1.Namespace{}
-	if err := crqClient.Client.Get(ctx, types.NamespacedName{Name: namespaceName}, ns); err != nil {
-		// Fail-open: transient cache miss must not block unrelated workloads.
-		logger.Error("Failed to get namespace - allowing operation",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", namespaceName),
-			zap.Error(err))
-		metrics.WebhookCRQLookup.WithLabelValues("namespace_error").Inc()
-		return nil
-	}
-
-	logger.Debug("Starting CRQ validation",
-		zap.String("correlation_id", correlationID),
-		zap.String("namespace", ns.Name),
-		zap.String("resource", string(resourceName)),
-		zap.String("requested_quantity", requested.String()),
-		zap.Any("namespace_labels", ns.Labels))
-
-	crq, err := crqClient.GetCRQByNamespace(ctx, ns)
-	if err != nil {
-		// Fail-open on CRQ lookup errors; revisit when the CRQ informer is proven reliable.
-		logger.Error("Failed to get CRQ for namespace",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.Error(err))
-		metrics.WebhookCRQLookup.WithLabelValues("crq_error").Inc()
-		return nil
-	}
-
+	crq := resolveCRQForNamespace(ctx, crqClient, logger, namespaceName)
 	if crq == nil {
-		logger.Debug("No CRQ applies to namespace, allowing operation",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.String("resource", string(resourceName)))
-		metrics.WebhookCRQLookup.WithLabelValues("not_found").Inc()
 		return nil
 	}
-
-	metrics.WebhookCRQLookup.WithLabelValues("found").Inc()
-	return validateCRQStatusUsage(crq, resourceName, requested, logger, correlationID)
+	return validateCRQStatusUsage(crq, resourceName, requested, logger, quota.GetCorrelationID(ctx))
 }
 
 // validateCRQStatusUsage compares an in-memory CRQ status against a request.

@@ -7,13 +7,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
 const testStorageClass = "fast-ssd"
+
+func newStorageFakeClient() ctrlclient.Client {
+	s := runtime.NewScheme()
+	_ = corev1.AddToScheme(s)
+	return ctrlclientfake.NewClientBuilder().WithScheme(s).Build()
+}
 
 var _ = Describe("StorageResourceCalculator", func() {
 	var (
@@ -27,7 +35,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 
-	Describe("getPVCStorageRequest", func() {
+	Describe("GetPVCStorageRequest", func() {
 		It("should extract storage request from PVC", func() {
 			pvc := &corev1.PersistentVolumeClaim{
 				Spec: corev1.PersistentVolumeClaimSpec{
@@ -39,7 +47,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			expected := resource.MustParse("10Gi")
 			Expect(storageRequest.Equal(expected)).To(BeTrue())
 		})
@@ -53,7 +61,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			Expect(storageRequest.Value()).To(Equal(int64(0)))
 		})
 
@@ -68,7 +76,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			expected := resource.MustParse("1Ti")
 			Expect(storageRequest.Equal(expected)).To(BeTrue())
 		})
@@ -84,13 +92,13 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			expected := resource.MustParse("1Mi")
 			Expect(storageRequest.Equal(expected)).To(BeTrue())
 		})
 
 		It("should handle nil PVC", func() {
-			storageRequest := getPVCStorageRequest(nil)
+			storageRequest := GetPVCStorageRequest(nil)
 			Expect(storageRequest.Value()).To(Equal(int64(0)))
 		})
 
@@ -99,59 +107,8 @@ var _ = Describe("StorageResourceCalculator", func() {
 				Spec: corev1.PersistentVolumeClaimSpec{},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			Expect(storageRequest.Value()).To(Equal(int64(0)))
-		})
-	})
-
-	Describe("getPVCStorageClass", func() {
-		It("should extract storage class from PVC", func() {
-			storageClassName := testStorageClass
-			pvc := &corev1.PersistentVolumeClaim{
-				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: &storageClassName,
-				},
-			}
-
-			sc := getPVCStorageClass(pvc)
-			Expect(sc).To(Equal(testStorageClass))
-		})
-
-		It("should return empty string for PVC without storage class", func() {
-			pvc := &corev1.PersistentVolumeClaim{
-				Spec: corev1.PersistentVolumeClaimSpec{},
-			}
-
-			sc := getPVCStorageClass(pvc)
-			Expect(sc).To(Equal(""))
-		})
-
-		It("should handle nil storage class pointer", func() {
-			pvc := &corev1.PersistentVolumeClaim{
-				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: nil,
-				},
-			}
-
-			sc := getPVCStorageClass(pvc)
-			Expect(sc).To(Equal(""))
-		})
-
-		It("should handle nil PVC", func() {
-			sc := getPVCStorageClass(nil)
-			Expect(sc).To(Equal(""))
-		})
-
-		It("should handle empty storage class name", func() {
-			storageClassName := ""
-			pvc := &corev1.PersistentVolumeClaim{
-				Spec: corev1.PersistentVolumeClaimSpec{
-					StorageClassName: &storageClassName,
-				},
-			}
-
-			sc := getPVCStorageClass(pvc)
-			Expect(sc).To(Equal(""))
 		})
 	})
 
@@ -176,7 +133,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			Expect(storageRequest.Value()).To(Equal(int64(0)))
 		})
 
@@ -204,7 +161,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 					},
 				}
 
-				storageRequest := getPVCStorageRequest(pvc)
+				storageRequest := GetPVCStorageRequest(pvc)
 				expected := resource.MustParse(tc.expected)
 				Expect(storageRequest.Equal(expected)).To(BeTrue(), "Failed for input: %s", tc.input)
 			}
@@ -221,7 +178,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			expected := resource.MustParse("1.5Gi")
 			Expect(storageRequest.Equal(expected)).To(BeTrue())
 		})
@@ -249,7 +206,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 					},
 				}
 
-				storageRequest := getPVCStorageRequest(pvc)
+				storageRequest := GetPVCStorageRequest(pvc)
 				expected := resource.MustParse("1Gi")
 				Expect(storageRequest.Equal(expected)).To(BeTrue(), "Failed for phase: %s", phase)
 			}
@@ -267,7 +224,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				Status: corev1.PersistentVolumeClaimStatus{},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			expected := resource.MustParse("1Gi")
 			Expect(storageRequest.Equal(expected)).To(BeTrue())
 		})
@@ -292,8 +249,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 					},
 				}
 
-				sc := getPVCStorageClass(pvc)
-				Expect(sc).To(Equal(storageClassName), "Failed for storage class: %s", storageClassName)
+				Expect(PVCMatchesStorageClass(pvc, storageClassName)).To(BeTrue(), "Failed for storage class: %s", storageClassName)
 			}
 		})
 
@@ -305,8 +261,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			sc := getPVCStorageClass(pvc)
-			Expect(sc).To(Equal(longName))
+			Expect(PVCMatchesStorageClass(pvc, longName)).To(BeTrue())
 		})
 	})
 
@@ -323,7 +278,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			Expect(storageRequest.Value()).To(Equal(int64(0)))
 		})
 
@@ -340,7 +295,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			storageRequest := getPVCStorageRequest(pvc)
+			storageRequest := GetPVCStorageRequest(pvc)
 			Expect(storageRequest.Value()).To(Equal(int64(0)))
 		})
 	})
@@ -348,11 +303,11 @@ var _ = Describe("StorageResourceCalculator", func() {
 	Describe("StorageResourceCalculator CalculateStorageUsage", func() {
 		var (
 			calculator *StorageResourceCalculator
-			fakeClient *fake.Clientset
+			fakeClient ctrlclient.Client
 		)
 
 		BeforeEach(func() {
-			fakeClient = fake.NewSimpleClientset()
+			fakeClient = newStorageFakeClient()
 			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
@@ -387,12 +342,8 @@ var _ = Describe("StorageResourceCalculator", func() {
 			}
 
 			// Add PVCs to fake client
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc1, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
-			_, err = fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc2, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc1)).To(Succeed())
+			Expect(fakeClient.Create(ctx, pvc2)).To(Succeed())
 
 			usage, err := calculator.CalculateStorageUsage(ctx, "test-ns")
 
@@ -421,9 +372,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc)).To(Succeed())
 
 			usage, err := calculator.CalculateStorageUsage(ctx, "test-ns")
 
@@ -435,11 +384,11 @@ var _ = Describe("StorageResourceCalculator", func() {
 	Describe("StorageResourceCalculator CalculateUsage", func() {
 		var (
 			calculator *StorageResourceCalculator
-			fakeClient *fake.Clientset
+			fakeClient ctrlclient.Client
 		)
 
 		BeforeEach(func() {
-			fakeClient = fake.NewSimpleClientset()
+			fakeClient = newStorageFakeClient()
 			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
@@ -458,9 +407,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc)).To(Succeed())
 
 			usage, err := calculator.CalculateUsage(ctx, "test-ns", corev1.ResourceRequestsStorage)
 
@@ -480,11 +427,11 @@ var _ = Describe("StorageResourceCalculator", func() {
 	Describe("StorageResourceCalculator CalculateStorageClassUsage", func() {
 		var (
 			calculator *StorageResourceCalculator
-			fakeClient *fake.Clientset
+			fakeClient ctrlclient.Client
 		)
 
 		BeforeEach(func() {
-			fakeClient = fake.NewSimpleClientset()
+			fakeClient = newStorageFakeClient()
 			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
@@ -520,12 +467,8 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc1, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
-			_, err = fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc2, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc1)).To(Succeed())
+			Expect(fakeClient.Create(ctx, pvc2)).To(Succeed())
 
 			usage, err := calculator.CalculateStorageClassUsage(ctx, "test-ns", storageClass)
 
@@ -552,9 +495,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc)).To(Succeed())
 
 			usage, err := calculator.CalculateStorageClassUsage(ctx, "test-ns", storageClass)
 
@@ -577,9 +518,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc)).To(Succeed())
 
 			usage, err := calculator.CalculateStorageClassUsage(ctx, "test-ns", storageClass)
 
@@ -592,11 +531,11 @@ var _ = Describe("StorageResourceCalculator", func() {
 	Describe("StorageResourceCalculator CalculateStorageClassCount", func() {
 		var (
 			calculator *StorageResourceCalculator
-			fakeClient *fake.Clientset
+			fakeClient ctrlclient.Client
 		)
 
 		BeforeEach(func() {
-			fakeClient = fake.NewSimpleClientset()
+			fakeClient = newStorageFakeClient()
 			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
@@ -622,12 +561,8 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc1, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
-			_, err = fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc2, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc1)).To(Succeed())
+			Expect(fakeClient.Create(ctx, pvc2)).To(Succeed())
 
 			count, err := calculator.CalculateStorageClassCount(ctx, "test-ns", storageClass)
 
@@ -648,9 +583,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc)).To(Succeed())
 
 			count, err := calculator.CalculateStorageClassCount(ctx, "test-ns", storageClass)
 
@@ -668,9 +601,7 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-ns").Create(
-				ctx, pvc, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc)).To(Succeed())
 
 			count, err := calculator.CalculateStorageClassCount(ctx, "test-ns", storageClass)
 
@@ -682,12 +613,11 @@ var _ = Describe("StorageResourceCalculator", func() {
 	Describe("CalculatePVCCount", func() {
 		var (
 			calculator *StorageResourceCalculator
-			fakeClient *fake.Clientset
-			ctx        context.Context
+			fakeClient ctrlclient.Client
 		)
 
 		BeforeEach(func() {
-			fakeClient = fake.NewSimpleClientset()
+			fakeClient = newStorageFakeClient()
 			calculator = NewStorageResourceCalculator(fakeClient, logger)
 		})
 
@@ -726,25 +656,17 @@ var _ = Describe("StorageResourceCalculator", func() {
 				},
 			}
 
-			_, err := fakeClient.CoreV1().PersistentVolumeClaims("test-namespace").Create(
-				ctx, pvc1, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
-			_, err = fakeClient.CoreV1().PersistentVolumeClaims("test-namespace").Create(
-				ctx, pvc2, metav1.CreateOptions{})
-			Expect(err).NotTo(HaveOccurred())
+			Expect(fakeClient.Create(ctx, pvc1)).To(Succeed())
+			Expect(fakeClient.Create(ctx, pvc2)).To(Succeed())
 
 			count, err := calculator.CalculatePVCCount(ctx, "test-namespace")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(count).To(Equal(int64(2)))
 		})
 
-		It("should handle client error", func() {
-			// Create a client that will fail
-			fakeClient := fake.NewSimpleClientset()
-			calculator := NewStorageResourceCalculator(fakeClient, logger)
-
+		It("should handle empty namespace", func() {
 			_, err := calculator.CalculatePVCCount(ctx, "non-existent-namespace")
-			Expect(err).NotTo(HaveOccurred()) // Fake client doesn't actually fail
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })

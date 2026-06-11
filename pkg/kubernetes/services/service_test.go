@@ -9,13 +9,15 @@ import (
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/apimachinery/pkg/runtime"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var _ = Describe("ServiceResourceCalculator", func() {
 	var (
 		ctx    context.Context
-		client *fake.Clientset
+		client ctrlclient.Client
 		calc   *ServiceResourceCalculator
 		logger *zap.Logger
 	)
@@ -25,7 +27,9 @@ var _ = Describe("ServiceResourceCalculator", func() {
 		logger, err = zap.NewDevelopment()
 		Expect(err).ToNot(HaveOccurred())
 		ctx = context.Background()
-		client = fake.NewSimpleClientset(
+		scheme := runtime.NewScheme()
+		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		client = ctrlclientfake.NewClientBuilder().WithScheme(scheme).WithObjects(
 			&corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{Name: "svc1", Namespace: "ns1"},
 				Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP},
@@ -46,7 +50,7 @@ var _ = Describe("ServiceResourceCalculator", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: "svc5", Namespace: "ns2"},
 				Spec:       corev1.ServiceSpec{Type: corev1.ServiceTypeClusterIP},
 			},
-		)
+		).Build()
 		calc = NewServiceResourceCalculator(client, logger)
 	})
 

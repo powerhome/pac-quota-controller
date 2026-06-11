@@ -8,8 +8,7 @@ import (
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // CountServices returns the total number of services and a breakdown by type in the namespace (public interface).
@@ -26,12 +25,12 @@ func (c *ServiceResourceCalculator) CountServices(
 
 // ServiceResourceCalculator provides methods for counting services and subtypes in a namespace.
 type ServiceResourceCalculator struct {
-	Client kubernetes.Interface
+	Client client.Client
 	logger *zap.Logger
 }
 
 // NewServiceResourceCalculator creates a new ServiceResourceCalculator.
-func NewServiceResourceCalculator(c kubernetes.Interface, logger *zap.Logger) *ServiceResourceCalculator {
+func NewServiceResourceCalculator(c client.Client, logger *zap.Logger) *ServiceResourceCalculator {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -75,8 +74,8 @@ func (c *ServiceResourceCalculator) CalculateUsage(
 	error,
 ) {
 	correlationID := quota.GetCorrelationID(ctx)
-	serviceList, err := c.Client.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
+	serviceList := &corev1.ServiceList{}
+	if err := c.Client.List(ctx, serviceList, client.InNamespace(namespace)); err != nil {
 		c.logger.Error("Failed to list services",
 			zap.String("correlation_id", correlationID),
 			zap.String("namespace", namespace),
@@ -106,8 +105,8 @@ func (c *ServiceResourceCalculator) countServicesByType(
 	err error,
 ) {
 	correlationID := quota.GetCorrelationID(ctx)
-	serviceList, err := c.Client.CoreV1().Services(namespace).List(ctx, metav1.ListOptions{})
-	if err != nil {
+	serviceList := &corev1.ServiceList{}
+	if err = c.Client.List(ctx, serviceList, client.InNamespace(namespace)); err != nil {
 		c.logger.Error("Failed to list services",
 			zap.String("correlation_id", correlationID),
 			zap.String("namespace", namespace),
