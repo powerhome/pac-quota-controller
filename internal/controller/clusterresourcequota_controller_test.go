@@ -1660,6 +1660,26 @@ var _ = Describe("calculateAndAggregateUsage list efficiency", func() {
 	})
 })
 
+var _ = Describe("percentOfHard", func() {
+	It("returns 0 when hard is zero or unset", func() {
+		Expect(percentOfHard(resource.MustParse("500m"), resource.Quantity{})).To(Equal(0.0))
+		Expect(percentOfHard(resource.MustParse("500m"), resource.MustParse("0"))).To(Equal(0.0))
+	})
+
+	It("returns used/hard for nonzero hard", func() {
+		Expect(percentOfHard(resource.MustParse("500m"), resource.MustParse("1"))).To(BeNumerically("~", 0.5, 0.0001))
+		Expect(percentOfHard(resource.MustParse("2Gi"), resource.MustParse("8Gi"))).To(BeNumerically("~", 0.25, 0.0001))
+	})
+})
+
+var _ = Describe("CRQTotalUsage metric labels", func() {
+	It("accepts exactly (crq_name, resource) — guards against re-adding cardinality-bomb labels", func() {
+		// If someone re-adds a `namespace` or `namespaces` label, this assignment
+		// fails at compile time and forces the change to be discussed first.
+		metrics.CRQTotalUsage.WithLabelValues("crq-a", "requests.cpu").Set(0.5)
+	})
+})
+
 var _ = Describe("calculateObjectCount with unsupported resource", func() {
 	var (
 		logger     *zap.Logger

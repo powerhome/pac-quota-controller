@@ -249,33 +249,13 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	for _, nsUsage := range usageByNamespace {
 		ns := nsUsage.Namespace
 		for resourceName, used := range nsUsage.Status.Used {
-			hard, hasHard := crq.Spec.Hard[resourceName]
-			var percent float64
-			if hasHard && hard.Value() > 0 {
-				percent = used.AsApproximateFloat64() / hard.AsApproximateFloat64()
-			} else {
-				percent = 0.0
-			}
-			metrics.CRQUsage.WithLabelValues(crq.Name, ns, string(resourceName)).Set(percent)
+			hard := crq.Spec.Hard[resourceName]
+			metrics.CRQUsage.WithLabelValues(crq.Name, ns, string(resourceName)).Set(percentOfHard(used, hard))
 		}
 	}
-	// Pick the first namespace (alphabetically) for routing and join all for context
-	var routingNamespace string
-	if len(selectedNamespaces) > 0 {
-		routingNamespace = selectedNamespaces[0]
-	}
-	allNamespaces := strings.Join(selectedNamespaces, ",")
 	for resourceName, total := range totalUsage {
-		hard, hasHard := crq.Spec.Hard[resourceName]
-		var percent float64
-		if hasHard && hard.Value() > 0 {
-			percent = total.AsApproximateFloat64() / hard.AsApproximateFloat64()
-		} else {
-			percent = 0.0
-		}
-		metrics.CRQTotalUsage.WithLabelValues(
-			crq.Name, string(resourceName), routingNamespace, allNamespaces,
-		).Set(percent)
+		hard := crq.Spec.Hard[resourceName]
+		metrics.CRQTotalUsage.WithLabelValues(crq.Name, string(resourceName)).Set(percentOfHard(total, hard))
 	}
 
 	// Update the status of the ClusterResourceQuota
@@ -292,6 +272,14 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 
 	metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "success").Inc()
 	return ctrl.Result{}, nil
+}
+
+// percentOfHard returns used/hard as a 0..1 float, or 0 when hard is unset.
+func percentOfHard(used, hard resource.Quantity) float64 {
+	if hard.Value() <= 0 {
+		return 0
+	}
+	return used.AsApproximateFloat64() / hard.AsApproximateFloat64()
 }
 
 // calculateAndAggregateUsage walks each namespace once, lists only the resource
