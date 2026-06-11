@@ -20,7 +20,11 @@ var (
 			Name: "pac_quota_controller_crq_total_usage",
 			Help: "Aggregated usage of a resource across all namespaces for a ClusterResourceQuota.",
 		},
-		[]string{"crq_name", "resource", "namespace", "namespaces"},
+		// The per-namespace breakdown lives on CRQUsage; this metric is a single
+		// total per (crq, resource). Earlier shapes included a comma-joined
+		// `namespaces` label, which churned a new series on every namespace
+		// add/remove and was an unbounded-cardinality bomb at scale.
+		[]string{"crq_name", "resource"},
 	)
 	WebhookValidationCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -33,6 +37,12 @@ var (
 		prometheus.HistogramOpts{
 			Name: "pac_quota_controller_webhook_validation_duration_seconds",
 			Help: "Duration of webhook validation requests.",
+			// Admission webhooks operate sub-millisecond on cache hits; the default
+			// Prometheus buckets bottom out at 5ms and lose all signal in the hot path.
+			Buckets: []float64{
+				0.0001, 0.0005, 0.001, 0.002, 0.005,
+				0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
+			},
 		},
 		[]string{"webhook", "operation", "namespace"},
 	)
@@ -42,6 +52,16 @@ var (
 			Help: "Total number of webhook admission decisions (allowed/denied).",
 		},
 		[]string{"webhook", "operation", "decision", "namespace"},
+	)
+	// WebhookAdmissionDenied breaks down denials by reason so operators can
+	// distinguish working-as-intended quota_exceeded from broken-config
+	// signals (bad_request, gvk_mismatch, missing_namespace).
+	WebhookAdmissionDenied = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pac_quota_controller_webhook_admission_denied_total",
+			Help: "Webhook admissions denied, broken down by reason.",
+		},
+		[]string{"webhook", "reason"},
 	)
 	// WebhookCRQLookup counts CRQ resolution outcomes during admission.
 	// Result values: found, not_found, namespace_error, crq_error, no_client.
@@ -115,6 +135,7 @@ func RegisterWebhookMetrics() {
 			WebhookValidationCount,
 			WebhookValidationDuration,
 			WebhookAdmissionDecision,
+			WebhookAdmissionDenied,
 			WebhookCRQLookup,
 			WebhookStatusMissing,
 			QuotaReconcileTotal,

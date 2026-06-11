@@ -73,6 +73,7 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("Namespace is required for %s validation", cfg.name),
 		}
+		metrics.WebhookAdmissionDenied.WithLabelValues(cfg.name, "missing_namespace").Inc()
 		c.JSON(http.StatusOK, review)
 		return
 	}
@@ -92,6 +93,7 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("Expected %s resource, got %s", cfg.expectedGVK.Kind, review.Request.Kind.Kind),
 		}
+		metrics.WebhookAdmissionDenied.WithLabelValues(cfg.name, "gvk_mismatch").Inc()
 		c.JSON(http.StatusOK, review)
 		return
 	}
@@ -99,8 +101,12 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 	warnings, err := validate(c.Request.Context(), review.Request)
 	if err != nil {
 		code := http.StatusForbidden
+		reason := "quota_exceeded"
 		if se, ok := err.(*statusError); ok {
 			code = se.code
+			if code == http.StatusBadRequest {
+				reason = "bad_request"
+			}
 		}
 		logger.Info("Admission denied",
 			zap.String("webhook", cfg.name),
@@ -117,6 +123,7 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 			Message: err.Error(),
 		}
 		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "denied", ns).Inc()
+		metrics.WebhookAdmissionDenied.WithLabelValues(cfg.name, reason).Inc()
 	} else {
 		review.Response.Allowed = true
 		if len(warnings) > 0 {
