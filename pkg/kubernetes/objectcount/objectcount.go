@@ -4,30 +4,53 @@ package objectcount
 import (
 	"context"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"go.uber.org/zap"
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // ObjectCountCalculator implements usage.ResourceCalculatorInterface for generic object count resources.
 type ObjectCountCalculator struct {
-	Client kubernetes.Interface
+	Client client.Client
 	logger *zap.Logger
 }
 
-func NewObjectCountCalculator(client kubernetes.Interface, logger *zap.Logger) *ObjectCountCalculator {
+func NewObjectCountCalculator(c client.Client, logger *zap.Logger) *ObjectCountCalculator {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 	return &ObjectCountCalculator{
-		Client: client,
+		Client: c,
 		logger: logger.Named("object-count-calculator"),
 	}
 }
+
+// listConstructors maps each supported `objectcount`-style resource name to a
+// factory that returns a typed empty list. The switch table that used to live
+// in CalculateUsage was 10 identical branches — this map is the same data
+// without the duplication.
+var listConstructors = map[corev1.ResourceName]func() client.ObjectList{
+	// There is always a kube-root-ca.crt configmap in each namespace
+	"configmaps":                           func() client.ObjectList { return &corev1.ConfigMapList{} },
+	"secrets":                              func() client.ObjectList { return &corev1.SecretList{} },
+	"replicationcontrollers":               func() client.ObjectList { return &corev1.ReplicationControllerList{} },
+	"deployments.apps":                     func() client.ObjectList { return &appsv1.DeploymentList{} },
+	"statefulsets.apps":                    func() client.ObjectList { return &appsv1.StatefulSetList{} },
+	"daemonsets.apps":                      func() client.ObjectList { return &appsv1.DaemonSetList{} },
+	"jobs.batch":                           func() client.ObjectList { return &batchv1.JobList{} },
+	"cronjobs.batch":                       func() client.ObjectList { return &batchv1.CronJobList{} },
+	"horizontalpodautoscalers.autoscaling": newHPAList,
+	"ingresses.networking.k8s.io":          func() client.ObjectList { return &networkingv1.IngressList{} },
+}
+
+func newHPAList() client.ObjectList { return &autoscalingv1.HorizontalPodAutoscalerList{} }
 
 // CalculateUsage returns the count of the specified resource in the namespace.
 func (c *ObjectCountCalculator) CalculateUsage(
@@ -35,46 +58,14 @@ func (c *ObjectCountCalculator) CalculateUsage(
 	namespace string,
 	resourceName corev1.ResourceName) (resource.Quantity, error) {
 	correlationID := quota.GetCorrelationID(ctx)
-	var count int64
-	var err error
 
-	switch resourceName {
-	// There is always a kube-root-ca.crt configmap in each namespace
-	case "configmaps":
-		list, e := c.Client.CoreV1().ConfigMaps(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	case "secrets":
-		list, e := c.Client.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	case "replicationcontrollers":
-		list, e := c.Client.CoreV1().ReplicationControllers(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	case "deployments.apps":
-		list, e := c.Client.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	case "statefulsets.apps":
-		list, e := c.Client.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	case "daemonsets.apps":
-		list, e := c.Client.AppsV1().DaemonSets(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	case "jobs.batch":
-		list, e := c.Client.BatchV1().Jobs(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	case "cronjobs.batch":
-		list, e := c.Client.BatchV1().CronJobs(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	case "horizontalpodautoscalers.autoscaling":
-		list, e := c.Client.AutoscalingV1().HorizontalPodAutoscalers(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	case "ingresses.networking.k8s.io":
-		list, e := c.Client.NetworkingV1().Ingresses(namespace).List(ctx, metav1.ListOptions{})
-		count, err = int64(len(list.Items)), e
-	default:
+	newList, ok := listConstructors[resourceName]
+	if !ok {
 		return resource.Quantity{}, nil
 	}
 
-	if err != nil {
+	list := newList()
+	if err := c.Client.List(ctx, list, client.InNamespace(namespace)); err != nil {
 		c.logger.Error("Failed to calculate object count usage",
 			zap.String("correlation_id", correlationID),
 			zap.String("namespace", namespace),
@@ -83,6 +74,7 @@ func (c *ObjectCountCalculator) CalculateUsage(
 		return resource.Quantity{}, err
 	}
 
+	count := int64(meta.LenList(list))
 	c.logger.Debug("Calculated object count usage",
 		zap.String("correlation_id", correlationID),
 		zap.String("namespace", namespace),

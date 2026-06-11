@@ -1,30 +1,15 @@
 package pod
 
 import (
-	"context"
-	"fmt"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/testing"
-
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 )
 
 var _ = Describe("Pod", func() {
-	var ctx context.Context
-	var logger *zap.Logger
-	BeforeEach(func() {
-		ctx = context.Background()
-		logger, _ = zap.NewDevelopment()
-	})
 	Describe("IsTerminal", func() {
 		It("should return true for succeeded pods", func() {
 			pod := &corev1.Pod{
@@ -73,15 +58,6 @@ var _ = Describe("Pod", func() {
 
 		It("should return false for nil pod", func() {
 			Expect(IsPodTerminal(nil)).To(BeFalse())
-		})
-	})
-
-	Describe("NewPodResourceCalculator", func() {
-		It("should create a new calculator", func() {
-			fakeClient := fake.NewSimpleClientset()
-			calc := NewPodResourceCalculator(fakeClient, logger)
-			Expect(calc).NotTo(BeNil())
-			Expect(calc.Client).To(Equal(fakeClient))
 		})
 	})
 
@@ -442,133 +418,6 @@ var _ = Describe("Pod", func() {
 			}
 			result := CalculatePodUsage(pod, "hugepages-2Mi")
 			Expect(result.Equal(resource.MustParse("128Mi"))).To(BeTrue())
-		})
-	})
-
-	Describe("PodResourceCalculator", func() {
-		var (
-			calculator *PodResourceCalculator
-			fakeClient *fake.Clientset
-		)
-
-		BeforeEach(func() {
-			fakeClient = fake.NewSimpleClientset()
-			calculator = &PodResourceCalculator{
-				BaseResourceCalculator: usage.BaseResourceCalculator{
-					Client: fakeClient,
-				},
-				logger: logger,
-			}
-		})
-
-		Describe("CalculatePodCount", func() {
-			It("should count non-terminal pods", func() {
-				pods := []corev1.Pod{
-					{
-						ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "test"},
-						Status:     corev1.PodStatus{Phase: corev1.PodRunning},
-					},
-					{
-						ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "test"},
-						Status:     corev1.PodStatus{Phase: corev1.PodSucceeded}, // Terminal
-					},
-					{
-						ObjectMeta: metav1.ObjectMeta{Name: "pod3", Namespace: "test"},
-						Status:     corev1.PodStatus{Phase: corev1.PodPending},
-					},
-				}
-				for _, p := range pods {
-					_, err := fakeClient.CoreV1().Pods("test").Create(ctx, &p, metav1.CreateOptions{})
-					Expect(err).NotTo(HaveOccurred())
-				}
-
-				count, err := calculator.CalculatePodCount(ctx, "test")
-				Expect(err).NotTo(HaveOccurred())
-				Expect(count).To(Equal(int64(2))) // pod1 and pod3
-			})
-
-			It("should handle client errors when listing pods", func() {
-				fakeClient.PrependReactor("list", "pods",
-					func(action testing.Action) (handled bool, ret runtime.Object, err error) {
-						return true, nil, fmt.Errorf("list error")
-					})
-
-				_, err := calculator.CalculatePodCount(ctx, "test")
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("list error"))
-			})
-		})
-
-		Describe("CalculateUsage", func() {
-			It("should delegate to CalculatePodCount for 'pods' resource", func() {
-				pod := corev1.Pod{
-					ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "test"},
-					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
-				}
-				_, err := fakeClient.CoreV1().Pods("test").Create(ctx, &pod, metav1.CreateOptions{})
-				Expect(err).NotTo(HaveOccurred())
-
-				usageResult, err := calculator.CalculateUsage(ctx, "test", usage.ResourcePods)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(usageResult.Value()).To(Equal(int64(1)))
-			})
-
-			It("should handle podcast count errors when resource is pods", func() {
-				fakeClient.PrependReactor("list", "pods",
-					func(action testing.Action) (handled bool, ret runtime.Object, err error) {
-						return true, nil, fmt.Errorf("pod count error")
-					})
-
-				_, err := calculator.CalculateUsage(ctx, "test", usage.ResourcePods)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("pod count error"))
-			})
-
-			It("should sum usage across non-terminal pods", func() {
-				pods := []corev1.Pod{
-					{
-						ObjectMeta: metav1.ObjectMeta{Name: "pod1", Namespace: "test"},
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("100m"),
-								}}},
-							},
-						},
-						Status: corev1.PodStatus{Phase: corev1.PodRunning},
-					},
-					{
-						ObjectMeta: metav1.ObjectMeta{Name: "pod2", Namespace: "test"},
-						Spec: corev1.PodSpec{
-							Containers: []corev1.Container{
-								{Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-									corev1.ResourceCPU: resource.MustParse("200m"),
-								}}},
-							},
-						},
-						Status: corev1.PodStatus{Phase: corev1.PodSucceeded}, // Terminal
-					},
-				}
-				for _, p := range pods {
-					_, err := fakeClient.CoreV1().Pods("test").Create(ctx, &p, metav1.CreateOptions{})
-					Expect(err).NotTo(HaveOccurred())
-				}
-
-				usageResult, err := calculator.CalculateUsage(ctx, "test", corev1.ResourceRequestsCPU)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(usageResult.Equal(resource.MustParse("100m"))).To(BeTrue())
-			})
-
-			It("should handle client errors when listing pods", func() {
-				fakeClient.PrependReactor("list", "pods",
-					func(action testing.Action) (handled bool, ret runtime.Object, err error) {
-						return true, nil, fmt.Errorf("list error")
-					})
-
-				_, err := calculator.CalculateUsage(ctx, "test", corev1.ResourceRequestsCPU)
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(Equal("list error"))
-			})
 		})
 	})
 

@@ -26,7 +26,7 @@ spec:
         - alert: QuotaBreached
           annotations:
             summary: ClusterResourceQuota limit breached
-            description: "ClusterResourceQuota {{`{{ $labels.crq_name }}`}} has exceeded its assigned limit for resource {{`{{ $labels.resource }}`}} (namespaces: {{`{{ $labels.namespaces }}`}})."
+            description: "ClusterResourceQuota {{`{{ $labels.crq_name }}`}} has exceeded its assigned limit for resource {{`{{ $labels.resource }}`}}."
           expr: |
             pac_quota_controller_crq_total_usage > 1.0
           for: {{ .Values.prometheus.alerting.rules.quotaBreach.for }}
@@ -55,4 +55,28 @@ spec:
           for: 5m
           labels:
             severity: critical
+
+        {{- if .Values.prometheus.alerting.rules.webhookBadRequest.enable }}
+        - alert: WebhookAdmissionBadRequestSpike
+          annotations:
+            summary: ClusterResourceQuota webhook denying with bad_request
+            description: "Webhook {{`{{ $labels.webhook }}`}} is denying admissions with reason=bad_request — typically signals a decode or unsupported-operation bug in the webhook, NOT a quota breach."
+          expr: |
+            rate(pac_quota_controller_webhook_admission_denied_total{reason="bad_request"}[5m]) > {{ .Values.prometheus.alerting.rules.webhookBadRequest.threshold }}
+          for: {{ .Values.prometheus.alerting.rules.webhookBadRequest.for }}
+          labels:
+            severity: warning
+        {{- end }}
+
+        {{- if .Values.prometheus.alerting.rules.eventsCleanupStalled.enable }}
+        - alert: EventsCleanupStalled
+          annotations:
+            summary: PAC quota events cleanup has not run
+            description: "No PAC quota events have been cleaned in the last {{ .Values.prometheus.alerting.rules.eventsCleanupStalled.window }}. The cleanup loop may have regressed (RBAC, source-label bug, etc.)."
+          expr: |
+            sum(increase(pac_quota_controller_events_cleaned_total[{{ .Values.prometheus.alerting.rules.eventsCleanupStalled.window }}])) == 0
+          for: {{ .Values.prometheus.alerting.rules.eventsCleanupStalled.for }}
+          labels:
+            severity: warning
+        {{- end }}
 {{- end }}

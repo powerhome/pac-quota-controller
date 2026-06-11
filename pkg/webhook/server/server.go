@@ -5,9 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -49,6 +47,12 @@ type GinWebhookServer struct {
 
 	k8sClient     kubernetes.Interface
 	runtimeClient client.Client
+
+	// cacheSynced flips to true once the manager's informer cache has finished
+	// initial sync. /readyz gates on this so the apiserver doesn't route
+	// admission traffic to a webhook whose CRQ lookups would silently fail-open
+	// against a cold cache.
+	cacheSynced atomic.Bool
 }
 
 // NewGinWebhookServer creates a new Gin-based webhook server
@@ -136,6 +140,13 @@ func (s *GinWebhookServer) setupRoutes() {
 	s.healthManager.AddChecker(health.NewSimpleHealthChecker("webhook-server"))
 	s.readinessChecker = ready.NewSimpleReadinessChecker("webhook-server")
 	s.readyManager.AddChecker(s.readinessChecker)
+	// Surface the "no runtime client → no CRQ enforcement" degraded state via
+	// /readyz so the orchestrator can pull traffic instead of silently fail-open.
+	s.readyManager.AddChecker(&crqClientReadinessChecker{server: s})
+	// Block /readyz until the manager's informer cache has reported initial
+	// sync. Without this the apiserver can route admission traffic to a webhook
+	// whose CRQ list is empty, producing silent fail-open.
+	s.readyManager.AddChecker(&cacheSyncReadinessChecker{server: s})
 
 	s.engine.GET("/healthz", s.healthManager.HealthHandler())
 	s.engine.GET("/readyz", s.readyManager.ReadyHandler())
@@ -211,8 +222,9 @@ func (s *GinWebhookServer) Start(ctx context.Context) error {
 	// Wait for context cancellation
 	<-ctx.Done()
 
-	// Perform graceful shutdown
-	return s.shutdown(ctx)
+	// Perform graceful shutdown. Pass no ctx — `shutdown` runs on a fresh
+	// background timeout precisely because the request ctx is now done.
+	return s.shutdown()
 }
 
 // startCertWatcher starts the certificate watcher if configured
@@ -326,8 +338,10 @@ func (s *GinWebhookServer) calculateNextBackoff(currentBackoff, maxBackoff time.
 	return nextBackoff
 }
 
-// shutdown performs graceful shutdown of the server
-func (s *GinWebhookServer) shutdown(ctx context.Context) error {
+// shutdown performs graceful shutdown of the server. It runs on a fresh
+// background timeout because the caller's ctx is, by construction, already
+// cancelled — that's what triggered the shutdown in the first place.
+func (s *GinWebhookServer) shutdown() error {
 	s.logger.Info("Shutting down webhook server")
 
 	if s.certWatcher != nil {
@@ -335,7 +349,7 @@ func (s *GinWebhookServer) shutdown(ctx context.Context) error {
 		s.certWatcher.Stop()
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	return s.server.Shutdown(shutdownCtx)
@@ -349,13 +363,65 @@ func (s *GinWebhookServer) MarkReady() {
 	}
 }
 
-// StartWithSignalHandler starts the server with signal handling
-func (s *GinWebhookServer) StartWithSignalHandler(ctx context.Context) error {
-	// Create context that listens for the interrupt signal from the OS
-	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stop()
+// MarkCacheSynced flips the cache-sync readiness gate. Callers should invoke
+// this only after the manager reports its informer cache has completed initial
+// sync (e.g. mgr.GetCache().WaitForCacheSync(ctx) returned true).
+func (s *GinWebhookServer) MarkCacheSynced() {
+	if !s.cacheSynced.Swap(true) {
+		s.logger.Info("Webhook informer cache reported synced; /readyz will now pass")
+	}
+}
 
-	return s.Start(ctx)
+// crqClientReadinessChecker reports the webhook as not-ready while the runtime
+// (CRQ) client is unset. Without it the webhook silently fail-opens on every
+// admission; /readyz failing pulls the pod out of the Service so the
+// orchestrator can surface the misconfiguration.
+type crqClientReadinessChecker struct {
+	server *GinWebhookServer
+}
+
+func (c *crqClientReadinessChecker) IsReady() bool {
+	return c.server != nil && c.server.runtimeClient != nil
+}
+
+func (c *crqClientReadinessChecker) GetReadinessStatus() ready.ReadinessStatus {
+	if c.IsReady() {
+		return ready.ReadinessStatus{
+			Ready:   true,
+			Status:  "ready",
+			Details: map[string]any{"name": "crq-client"},
+		}
+	}
+	return ready.ReadinessStatus{
+		Ready:   false,
+		Status:  "not ready: CRQ client missing - quota enforcement is disabled",
+		Details: map[string]any{"name": "crq-client"},
+	}
+}
+
+// cacheSyncReadinessChecker reports not-ready until the manager's informer
+// cache has had a chance to populate. See server.MarkCacheSynced.
+type cacheSyncReadinessChecker struct {
+	server *GinWebhookServer
+}
+
+func (c *cacheSyncReadinessChecker) IsReady() bool {
+	return c.server != nil && c.server.cacheSynced.Load()
+}
+
+func (c *cacheSyncReadinessChecker) GetReadinessStatus() ready.ReadinessStatus {
+	if c.IsReady() {
+		return ready.ReadinessStatus{
+			Ready:   true,
+			Status:  "ready",
+			Details: map[string]any{"name": "cache-sync"},
+		}
+	}
+	return ready.ReadinessStatus{
+		Ready:   false,
+		Status:  "not ready: informer cache has not finished initial sync",
+		Details: map[string]any{"name": "cache-sync"},
+	}
 }
 
 // GetCertWatcher returns the certificate watcher for external management

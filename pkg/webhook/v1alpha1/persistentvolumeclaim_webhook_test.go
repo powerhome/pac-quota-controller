@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 )
 
@@ -40,13 +41,13 @@ func newPVCReview(uid string, pvc *corev1.PersistentVolumeClaim) *admissionv1.Ad
 	}
 }
 
-func makePVC(name, storage, storageClass string) *corev1.PersistentVolumeClaim {
+func makePVC(name, storageReq, storageClass string) *corev1.PersistentVolumeClaim {
 	pvc := &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: pvcWebhookTestNamespace},
 	}
-	if storage != "" {
+	if storageReq != "" {
 		pvc.Spec.Resources.Requests = corev1.ResourceList{
-			corev1.ResourceStorage: resource.MustParse(storage),
+			corev1.ResourceStorage: resource.MustParse(storageReq),
 		}
 	}
 	if storageClass != "" {
@@ -85,16 +86,16 @@ var _ = Describe("PersistentVolumeClaimWebhook", func() {
 		})
 	})
 
-	Describe("getStorageRequest", func() {
+	Describe("storage.GetPVCStorageRequest", func() {
 		It("returns the storage value when present", func() {
 			pvc := makePVC("p", "10Gi", "")
-			q := getStorageRequest(pvc)
+			q := storage.GetPVCStorageRequest(pvc)
 			Expect(q.Cmp(resource.MustParse("10Gi"))).To(Equal(0))
 		})
 
 		It("returns the zero quantity when no requests are set", func() {
 			pvc := &corev1.PersistentVolumeClaim{}
-			q := getStorageRequest(pvc)
+			q := storage.GetPVCStorageRequest(pvc)
 			Expect(q.IsZero()).To(BeTrue())
 		})
 	})

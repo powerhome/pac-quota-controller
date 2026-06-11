@@ -40,6 +40,12 @@ func main() {
 					logger.Error("Failed to sync logger", zap.Error(err))
 				}
 			}()
+			// fatal exits 1 after flushing the logger so the last error line is
+			// guaranteed to surface even when os.Exit short-circuits the defers.
+			fatal := func() {
+				_ = logger.Sync()
+				os.Exit(1)
+			}
 
 			// Configure controller-runtime logger to use zap for consistent JSON formatting
 			ctrl.SetLogger(zapctrl.New(zapctrl.UseDevMode(false), zapctrl.JSONEncoder()))
@@ -54,20 +60,20 @@ func main() {
 			mgr, err := manager.SetupManager(cfg, scheme)
 			if err != nil {
 				logger.Error("unable to start manager", zap.Error(err))
-				os.Exit(1)
+				fatal()
 			}
 
 			// Set up controllers
 			if err := manager.SetupControllers(ctx, mgr, cfg, logger); err != nil {
 				logger.Error("unable to set up controllers", zap.Error(err))
-				os.Exit(1)
+				fatal()
 			}
 
 			// Create kubernetes clientset for webhook server
 			clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 			if err != nil {
 				logger.Error("unable to create kubernetes clientset", zap.Error(err))
-				os.Exit(1)
+				fatal()
 			}
 
 			// Set up Gin webhook server with manager's client for CRQ operations
@@ -89,6 +95,18 @@ func main() {
 				}()
 			}
 
+			// Flip the webhook's cache-sync readiness gate once the manager's
+			// informer cache has finished initial sync. Until then /readyz
+			// returns 503 so the apiserver does not route admission traffic to
+			// a webhook whose CRQ lookups would hit a cold cache.
+			go func() {
+				if mgr.GetCache().WaitForCacheSync(ctx) {
+					webhookServer.MarkCacheSynced()
+				} else {
+					logger.Error("informer cache failed to sync; webhook /readyz will stay 503")
+				}
+			}()
+
 			// Log when manager is elected as leader
 			go func() {
 				<-mgr.Elected()
@@ -101,7 +119,7 @@ func main() {
 			logger.Info("Starting controller manager")
 			if err := mgr.Start(ctx); err != nil {
 				logger.Error("controller manager failed", zap.Error(err))
-				os.Exit(1)
+				fatal()
 			}
 		},
 	}

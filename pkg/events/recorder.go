@@ -3,7 +3,6 @@ package events
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -28,28 +27,14 @@ const (
 	LabelEventSource = "quota.pac.io/event-source"
 	LabelEventType   = "quota.pac.io/event-type"
 	LabelCRQName     = "quota.pac.io/crq-name"
-
-	// Backoff configuration
-	InitialBackoffSeconds = 30
-	MaxBackoffSeconds     = 900 // 15 minutes
-	BackoffMultiplier     = 2
 )
 
 // EventRecorder wraps the Kubernetes event recorder with PAC-specific functionality
 type EventRecorder struct {
-	recorder       events.EventRecorder
-	violationCache map[string]*ViolationTracker
-	logger         *zap.Logger
-	namespace      string
-	podName        string
-}
-
-// ViolationTracker tracks webhook violations for exponential backoff
-type ViolationTracker struct {
-	LastEvent      time.Time
-	Count          int
-	NextAllowedAt  time.Time
-	BackoffSeconds int
+	recorder  events.EventRecorder
+	logger    *zap.Logger
+	namespace string
+	podName   string
 }
 
 // NewEventRecorder creates a new EventRecorder
@@ -57,12 +42,14 @@ func NewEventRecorder(
 	recorder events.EventRecorder,
 	namespace string,
 	logger *zap.Logger) *EventRecorder {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &EventRecorder{
-		recorder:       recorder,
-		violationCache: make(map[string]*ViolationTracker),
-		logger:         logger,
-		namespace:      namespace,
-		podName:        getPodName(), // Get current pod name
+		recorder:  recorder,
+		logger:    logger.Named("event-recorder"),
+		namespace: namespace,
+		podName:   getPodName(),
 	}
 }
 
@@ -119,24 +106,4 @@ func (r *EventRecorder) recordEvent(crq *quotav1alpha1.ClusterResourceQuota,
 	eventType, reason, message string) {
 
 	r.recorder.Eventf(crq, nil, eventType, reason, reason, message)
-}
-
-// CleanupExpiredViolations removes old violation tracking entries
-func (r *EventRecorder) CleanupExpiredViolations() {
-	cutoff := time.Now().Add(-1 * time.Hour) // Clean entries older than 1 hour
-
-	for key, tracker := range r.violationCache {
-		if tracker.LastEvent.Before(cutoff) {
-			delete(r.violationCache, key)
-		}
-	}
-}
-
-// GetViolationStats returns statistics about violation tracking (for testing/debugging)
-func (r *EventRecorder) GetViolationStats() map[string]ViolationTracker {
-	stats := make(map[string]ViolationTracker)
-	for key, tracker := range r.violationCache {
-		stats[key] = *tracker
-	}
-	return stats
 }

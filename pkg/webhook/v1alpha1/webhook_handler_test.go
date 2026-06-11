@@ -4,19 +4,24 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 
 	"github.com/gin-gonic/gin"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	promtestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 )
 
 // postReview runs the engine and returns the parsed AdmissionReview and HTTP code.
@@ -124,6 +129,101 @@ var _ = Describe("runWebhook", func() {
 		Expect(code).To(Equal(http.StatusOK))
 		Expect(resp.Response.Allowed).To(BeFalse())
 		Expect(resp.Response.Result.Code).To(Equal(int32(http.StatusForbidden)))
+	})
+})
+
+var _ = Describe("WebhookAdmissionDenied reason emission", func() {
+	var (
+		engine *gin.Engine
+		logger *zap.Logger
+	)
+
+	BeforeEach(func() {
+		gin.SetMode(gin.TestMode)
+		engine = gin.New()
+		logger = zap.NewNop()
+	})
+
+	deltaFor := func(reason string, fn func()) float64 {
+		before := promtestutil.ToFloat64(metrics.WebhookAdmissionDenied.WithLabelValues("t", reason))
+		fn()
+		after := promtestutil.ToFloat64(metrics.WebhookAdmissionDenied.WithLabelValues("t", reason))
+		return after - before
+	}
+
+	It("labels quota_exceeded when the validator returns a plain (default 403) error", func() {
+		engine.POST("/webhook", func(c *gin.Context) {
+			runWebhook(c, logger, webhookConfig{name: "t", requireNamespace: true},
+				func(context.Context, *admissionv1.AdmissionRequest) ([]string, error) {
+					return nil, fmt.Errorf("quota exceeded")
+				})
+		})
+		body, _ := json.Marshal(admissionv1.AdmissionReview{
+			Request: &admissionv1.AdmissionRequest{UID: "1", Operation: admissionv1.Create, Namespace: "ns"},
+		})
+		delta := deltaFor("quota_exceeded", func() { postReview(engine, body) })
+		Expect(delta).To(Equal(float64(1)))
+	})
+
+	It("labels bad_request when the validator returns a statusError with code 400", func() {
+		engine.POST("/webhook", func(c *gin.Context) {
+			runWebhook(c, logger, webhookConfig{name: "t", requireNamespace: true},
+				func(context.Context, *admissionv1.AdmissionRequest) ([]string, error) {
+					return nil, unsupportedOperationError(admissionv1.Delete, "Pod")
+				})
+		})
+		body, _ := json.Marshal(admissionv1.AdmissionReview{
+			Request: &admissionv1.AdmissionRequest{UID: "1", Operation: admissionv1.Create, Namespace: "ns"},
+		})
+		delta := deltaFor("bad_request", func() { postReview(engine, body) })
+		Expect(delta).To(Equal(float64(1)))
+	})
+
+	It("labels gvk_mismatch on the early GVK-check denial path", func() {
+		expected := metav1.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}
+		engine.POST("/webhook", func(c *gin.Context) {
+			runWebhook(c, logger, webhookConfig{name: "t", expectedGVK: &expected},
+				func(context.Context, *admissionv1.AdmissionRequest) ([]string, error) { return nil, nil })
+		})
+		body, _ := json.Marshal(admissionv1.AdmissionReview{
+			Request: &admissionv1.AdmissionRequest{
+				UID: "1", Operation: admissionv1.Create,
+				Kind: metav1.GroupVersionKind{Kind: "Service"},
+			},
+		})
+		delta := deltaFor("gvk_mismatch", func() { postReview(engine, body) })
+		Expect(delta).To(Equal(float64(1)))
+	})
+
+	It("labels missing_namespace on the requireNamespace denial path", func() {
+		engine.POST("/webhook", func(c *gin.Context) {
+			runWebhook(c, logger, webhookConfig{name: "t", requireNamespace: true},
+				func(context.Context, *admissionv1.AdmissionRequest) ([]string, error) { return nil, nil })
+		})
+		body, _ := json.Marshal(admissionv1.AdmissionReview{
+			Request: &admissionv1.AdmissionRequest{UID: "1", Operation: admissionv1.Create},
+		})
+		delta := deltaFor("missing_namespace", func() { postReview(engine, body) })
+		Expect(delta).To(Equal(float64(1)))
+	})
+})
+
+var _ = Describe("logValidationPassed", func() {
+	It("emits a Debug entry with the standard fields and any extras", func() {
+		core, recorded := observer.New(zapcore.DebugLevel)
+		l := zap.New(core)
+
+		logValidationPassed(l, "Pod", "team-alpha", admissionv1.Create, zap.String("pod", "nginx"))
+
+		entries := recorded.All()
+		Expect(entries).To(HaveLen(1))
+		Expect(entries[0].Level).To(Equal(zapcore.DebugLevel))
+		Expect(entries[0].Message).To(Equal("Pod CRQ validation passed"))
+
+		fields := entries[0].ContextMap()
+		Expect(fields).To(HaveKeyWithValue("namespace", "team-alpha"))
+		Expect(fields).To(HaveKeyWithValue("operation", string(admissionv1.Create)))
+		Expect(fields).To(HaveKeyWithValue("pod", "nginx"))
 	})
 })
 
@@ -258,6 +358,20 @@ var _ = Describe("resolveCRQForNamespace", func() {
 	It("returns nil when client is nil", func() {
 		crq := resolveCRQForNamespace(ctx, nil, logger, nsName)
 		Expect(crq).To(BeNil())
+	})
+
+	It("emits a Warn log on every nil-client hit so the silent fail-open is operator-visible", func() {
+		core, recorded := observer.New(zapcore.WarnLevel)
+		testLogger := zap.New(core)
+
+		Expect(resolveCRQForNamespace(ctx, nil, testLogger, "ns-1")).To(BeNil())
+		Expect(resolveCRQForNamespace(ctx, nil, testLogger, "ns-2")).To(BeNil())
+
+		entries := recorded.FilterMessageSnippet("crqClient").All()
+		Expect(entries).To(HaveLen(2))
+		for _, e := range entries {
+			Expect(e.Level).To(Equal(zapcore.WarnLevel))
+		}
 	})
 
 	It("returns nil (fail-open) when namespace cannot be fetched", func() {

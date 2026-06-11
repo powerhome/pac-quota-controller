@@ -124,10 +124,6 @@ func (h *PodWebhook) validateOperation(
 		}
 	}
 
-	h.logger.Debug("Pod CRQ validation passed",
-		zap.String("pod", podObj.Name),
-		zap.String("namespace", podObj.Namespace),
-		zap.String("operation", string(op)),
-	)
+	logValidationPassed(h.logger, "Pod", podObj.Namespace, op, zap.String("pod", podObj.Name))
 	return nil, nil
 }

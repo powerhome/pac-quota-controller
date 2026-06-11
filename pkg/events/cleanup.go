@@ -8,6 +8,8 @@ import (
 	"go.uber.org/zap"
 	eventsv1 "k8s.io/api/events/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/powerhome/pac-quota-controller/pkg/metrics"
 )
 
 // eventTime returns the most recent observation time for an Event, falling
@@ -57,10 +59,13 @@ type EventCleanupManager struct {
 
 // NewEventCleanupManager creates a new cleanup manager
 func NewEventCleanupManager(k8sClient client.Client, config CleanupConfig, logger *zap.Logger) *EventCleanupManager {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &EventCleanupManager{
 		client: k8sClient,
 		config: config,
-		logger: logger,
+		logger: logger.Named("event-cleanup"),
 	}
 }
 
@@ -73,8 +78,8 @@ func (m *EventCleanupManager) Start(ctx context.Context) {
 
 	m.logger.Info("Starting event cleanup manager",
 		zap.Duration("interval", m.config.CleanupInterval),
-		zap.Duration("maxAge", m.config.MaxAge),
-		zap.Int("maxEventsPerCRQ", m.config.MaxEventsPerCRQ))
+		zap.Duration("max_age", m.config.MaxAge),
+		zap.Int("max_events_per_crq", m.config.MaxEventsPerCRQ))
 
 	ticker := time.NewTicker(m.config.CleanupInterval)
 	defer ticker.Stop()
@@ -99,19 +104,16 @@ func (m *EventCleanupManager) Start(ctx context.Context) {
 
 // cleanup performs the actual event cleanup
 func (m *EventCleanupManager) cleanup(ctx context.Context) error {
-	// Find all PAC quota events from controller
-	controllerEvents, err := m.getPACEvents(ctx)
+	controllerEvents, err := m.getPACEvents(ctx, "controller")
 	if err != nil {
 		return err
 	}
 
-	// Find all PAC quota events from webhook
-	webhookEvents, err := m.getPACEvents(ctx)
+	webhookEvents, err := m.getPACEvents(ctx, "webhook")
 	if err != nil {
 		return err
 	}
 
-	// Combine all events
 	allEvents := append(controllerEvents.Items, webhookEvents.Items...)
 
 	if len(allEvents) == 0 {
@@ -146,11 +148,12 @@ func (m *EventCleanupManager) cleanup(ctx context.Context) error {
 	return nil
 }
 
-// getPACEvents retrieves PAC quota events by source
-func (m *EventCleanupManager) getPACEvents(ctx context.Context) (*eventsv1.EventList, error) {
+// getPACEvents retrieves PAC quota events emitted from the given source
+// ("controller" or "webhook").
+func (m *EventCleanupManager) getPACEvents(ctx context.Context, source string) (*eventsv1.EventList, error) {
 	events := &eventsv1.EventList{}
 	listOpts := []client.ListOption{
-		client.MatchingLabels{LabelEventSource: "controller"},
+		client.MatchingLabels{LabelEventSource: source},
 	}
 
 	if err := m.client.List(ctx, events, listOpts...); err != nil {
@@ -194,13 +197,18 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 			m.logger.Error("Failed to delete event",
 				zap.Error(err),
 				zap.String("event", event.Name),
-				zap.String("crq", crqName),
+				zap.String("crq_name", crqName),
 				zap.String("reason", event.Reason))
 		} else {
 			deletedCount++
+			source := event.Labels[LabelEventSource]
+			if source == "" {
+				source = "unknown"
+			}
+			metrics.EventsCleanedTotal.WithLabelValues(source).Inc()
 			m.logger.Debug("Deleted old event",
 				zap.String("event", event.Name),
-				zap.String("crq", crqName),
+				zap.String("crq_name", crqName),
 				zap.String("reason", event.Reason),
 				zap.Duration("age", time.Since(eventTime(&event))))
 		}
@@ -208,9 +216,9 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 
 	if deletedCount > 0 {
 		m.logger.Debug("Cleaned up events for CRQ",
-			zap.String("crq", crqName),
-			zap.Int("deletedCount", deletedCount),
-			zap.Int("remainingCount", len(events)-deletedCount))
+			zap.String("crq_name", crqName),
+			zap.Int("deleted_count", deletedCount),
+			zap.Int("remaining_count", len(events)-deletedCount))
 	}
 
 	return deletedCount
@@ -220,15 +228,13 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 func (m *EventCleanupManager) GetCleanupStats(ctx context.Context) (map[string]int, error) {
 	stats := make(map[string]int)
 
-	// Count controller events
-	controllerEvents, err := m.getPACEvents(ctx)
+	controllerEvents, err := m.getPACEvents(ctx, "controller")
 	if err != nil {
 		return nil, err
 	}
 	stats["controller_events"] = len(controllerEvents.Items)
 
-	// Count webhook events
-	webhookEvents, err := m.getPACEvents(ctx)
+	webhookEvents, err := m.getPACEvents(ctx, "webhook")
 	if err != nil {
 		return nil, err
 	}

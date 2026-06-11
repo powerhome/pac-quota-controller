@@ -32,7 +32,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -132,11 +131,7 @@ func containerTerminated(oldStatuses, newStatuses []corev1.ContainerStatus) bool
 type ClusterResourceQuotaReconciler struct {
 	client.Client
 	Scheme                   *runtime.Scheme
-	KubeClient               kubernetes.Interface
 	crqClient                quota.CRQClientInterface
-	ComputeCalculator        *pod.PodResourceCalculator
-	StorageCalculator        *storage.StorageResourceCalculator
-	ServiceCalculator        *services.ServiceResourceCalculator
 	ObjectCountCalculator    *objectcount.ObjectCountCalculator
 	EventRecorder            *events.EventRecorder
 	Config                   *config.Config
@@ -168,13 +163,13 @@ func (r *ClusterResourceQuotaReconciler) isNamespaceExcluded(ns *corev1.Namespac
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	r.logger.Info("Reconciling ClusterResourceQuota", zap.String("crq", req.Name))
+	r.logger.Info("Reconciling ClusterResourceQuota", zap.String("crq_name", req.Name))
 	metrics.QuotaReconcileTotal.WithLabelValues(req.Name, "started").Inc()
 	startTime := time.Now()
 	defer func() {
 		duration := time.Since(startTime)
 		r.logger.Info("Finished reconciliation",
-			zap.String("crq", req.Name),
+			zap.String("crq_name", req.Name),
 			zap.Duration("duration", duration),
 		)
 	}()
@@ -188,7 +183,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request
-		r.logger.Error("Failed to get ClusterResourceQuota", zap.Error(err), zap.String("crq", req.Name))
+		r.logger.Error("Failed to get ClusterResourceQuota", zap.Error(err), zap.String("crq_name", req.Name))
 		metrics.QuotaReconcileErrors.WithLabelValues(req.Name).Inc()
 		metrics.QuotaReconcileTotal.WithLabelValues(req.Name, "failed").Inc()
 		return ctrl.Result{}, err
@@ -199,7 +194,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	if crq.Spec.NamespaceSelector != nil {
 		selector, err := metav1.LabelSelectorAsSelector(crq.Spec.NamespaceSelector)
 		if err != nil {
-			r.logger.Error("Failed to create selector from CRQ spec", zap.Error(err), zap.String("crq", crq.Name))
+			r.logger.Error("Failed to create selector from CRQ spec", zap.Error(err), zap.String("crq_name", crq.Name))
 			r.EventRecorder.InvalidSelector(crq, err)
 			metrics.QuotaReconcileErrors.WithLabelValues(crq.Name).Inc()
 			metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "invalid_selector").Inc()
@@ -212,7 +207,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 
 		if err := r.List(ctx, namespaceList, listOpts); err != nil {
-			r.logger.Error("Failed to list namespaces", zap.Error(err), zap.String("crq", crq.Name))
+			r.logger.Error("Failed to list namespaces", zap.Error(err), zap.String("crq_name", crq.Name))
 			r.EventRecorder.CalculationFailed(crq, err)
 			metrics.QuotaReconcileErrors.WithLabelValues(crq.Name).Inc()
 			metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "failed").Inc()
@@ -241,7 +236,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	// Calculate aggregated resource usage across all selected namespaces
 	totalUsage, usageByNamespace, err := r.calculateAndAggregateUsage(ctx, crq, selectedNamespaces)
 	if err != nil {
-		r.logger.Error("Failed to calculate resource usage", zap.Error(err), zap.String("crq", crq.Name))
+		r.logger.Error("Failed to calculate resource usage", zap.Error(err), zap.String("crq_name", crq.Name))
 		metrics.QuotaReconcileErrors.WithLabelValues(crq.Name).Inc()
 		metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "failed").Inc()
 		return ctrl.Result{}, err
@@ -254,42 +249,22 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	for _, nsUsage := range usageByNamespace {
 		ns := nsUsage.Namespace
 		for resourceName, used := range nsUsage.Status.Used {
-			hard, hasHard := crq.Spec.Hard[resourceName]
-			var percent float64
-			if hasHard && hard.Value() > 0 {
-				percent = used.AsApproximateFloat64() / hard.AsApproximateFloat64()
-			} else {
-				percent = 0.0
-			}
-			metrics.CRQUsage.WithLabelValues(crq.Name, ns, string(resourceName)).Set(percent)
+			hard := crq.Spec.Hard[resourceName]
+			metrics.CRQUsage.WithLabelValues(crq.Name, ns, string(resourceName)).Set(percentOfHard(used, hard))
 		}
 	}
-	// Pick the first namespace (alphabetically) for routing and join all for context
-	var routingNamespace string
-	if len(selectedNamespaces) > 0 {
-		routingNamespace = selectedNamespaces[0]
-	}
-	allNamespaces := strings.Join(selectedNamespaces, ",")
 	for resourceName, total := range totalUsage {
-		hard, hasHard := crq.Spec.Hard[resourceName]
-		var percent float64
-		if hasHard && hard.Value() > 0 {
-			percent = total.AsApproximateFloat64() / hard.AsApproximateFloat64()
-		} else {
-			percent = 0.0
-		}
-		metrics.CRQTotalUsage.WithLabelValues(
-			crq.Name, string(resourceName), routingNamespace, allNamespaces,
-		).Set(percent)
+		hard := crq.Spec.Hard[resourceName]
+		metrics.CRQTotalUsage.WithLabelValues(crq.Name, string(resourceName)).Set(percentOfHard(total, hard))
 	}
 
 	// Update the status of the ClusterResourceQuota
 	if err := r.updateStatus(ctx, crq, totalUsage, usageByNamespace); err != nil {
 		if errors.IsNotFound(err) {
-			r.logger.Info("CRQ not found during status update, likely deleted. Skipping status update.", zap.String("name", crq.Name))
+			r.logger.Info("CRQ not found during status update, likely deleted. Skipping status update.", zap.String("crq_name", crq.Name))
 			return ctrl.Result{}, nil
 		}
-		r.logger.Error("Failed to update ClusterResourceQuota status", zap.Error(err), zap.String("crq", crq.Name))
+		r.logger.Error("Failed to update ClusterResourceQuota status", zap.Error(err), zap.String("crq_name", crq.Name))
 		metrics.QuotaReconcileErrors.WithLabelValues(crq.Name).Inc()
 		metrics.QuotaReconcileTotal.WithLabelValues(crq.Name, "status_update_failed").Inc()
 		return ctrl.Result{}, err
@@ -299,150 +274,71 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	return ctrl.Result{}, nil
 }
 
-// calculateAndAggregateUsage calculates the current resource usage for the given CRQ.
+// percentOfHard returns used/hard as a 0..1 float, or 0 when hard is unset.
+func percentOfHard(used, hard resource.Quantity) float64 {
+	if hard.Value() <= 0 {
+		return 0
+	}
+	return used.AsApproximateFloat64() / hard.AsApproximateFloat64()
+}
+
+// calculateAndAggregateUsage walks each namespace once, lists only the resource
+// kinds the CRQ tracks, and computes per-resource usage off the in-memory slices.
+// Inverting the (resource → namespace) loop into (namespace → resource) eliminates
+// the prefetch/snapshot phase, the dual snapshot-vs-calculator branches, and the
+// O(classes × namespaces × PVCs) scans that the previous shape produced.
 func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	ctx context.Context,
 	crq *quotav1alpha1.ClusterResourceQuota,
 	namespaces []string,
 ) (quotav1alpha1.ResourceList, []quotav1alpha1.ResourceQuotaStatusByNamespace, error) {
-	r.logger.Debug("Calculating resource usage", zap.String("crq", crq.Name))
+	r.logger.Debug("Calculating resource usage", zap.String("crq_name", crq.Name))
 	timer := prometheus.NewTimer(metrics.QuotaAggregationDuration.WithLabelValues(crq.Name))
 	defer timer.ObserveDuration()
 
-	totalUsage := make(quotav1alpha1.ResourceList)
+	totalUsage := make(quotav1alpha1.ResourceList, len(crq.Spec.Hard))
 	usageByNamespace := make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))
-	nsIndexMap := make(map[string]int)
-
-	resourceSnapshots := map[string]namespaceResourceSnapshot{}
-	if shouldPrefetchNamespaceResources(crq.Spec.Hard) {
-		var err error
-		resourceSnapshots, err = r.prefetchNamespaceResources(ctx, namespaces)
-		if err != nil {
-			r.logger.Warn(
-				"Failed to prefetch namespace resources, falling back to calculators",
-				zap.Error(err),
-				zap.String("crq", crq.Name),
-			)
-			resourceSnapshots = nil
-		}
-	}
-
-	// Initialize maps for efficient lookup
 	for i, nsName := range namespaces {
 		usageByNamespace[i] = quotav1alpha1.ResourceQuotaStatusByNamespace{
 			Namespace: nsName,
-			Status: quotav1alpha1.ResourceQuotaStatus{
-				Used: make(quotav1alpha1.ResourceList),
-			},
+			Status:    quotav1alpha1.ResourceQuotaStatus{Used: make(quotav1alpha1.ResourceList)},
 		}
-		nsIndexMap[nsName] = i
 	}
 
-	// Iterate over each resource defined in the CRQ spec
-	for resourceName := range crq.Spec.Hard {
-		// Initialize total usage for this resource
-		totalUsage[resourceName] = resource.Quantity{}
+	kinds := r.classifyKindsNeeded(crq.Spec.Hard)
 
-		// Detect storage class–scoped quota resources
-		resourceStr := string(resourceName)
-		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage") {
-			// Example: fast-ssd.storageclass.storage.k8s.io/requests.storage
-			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage")
-			for _, nsName := range namespaces {
-				var currentUsage resource.Quantity
-				stepStart := time.Now()
-				if snapshot, ok := resourceSnapshots[nsName]; ok {
-					currentUsage = calculateStorageClassUsageFromPVCs(snapshot.PVCs, storageClass)
-				} else if r.StorageCalculator != nil {
-					storageUsage, err := r.StorageCalculator.CalculateStorageClassUsage(ctx, nsName, storageClass)
-					if err != nil {
-						metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, "storage_class_usage").Observe(time.Since(stepStart).Seconds())
-						return nil, nil, fmt.Errorf("failed to calculate storage class usage for %s in %s: %w",
-							storageClass, nsName, err)
-					}
-					currentUsage = storageUsage
-				} else {
-					r.logger.Error("StorageCalculator is nil",
-						zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
-					currentUsage = resource.MustParse("0")
-				}
-				metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, "storage_class_usage").Observe(time.Since(stepStart).Seconds())
-				nsIndex := nsIndexMap[nsName]
-				usageByNamespace[nsIndex].Status.Used[resourceName] = currentUsage
-				if existing, exists := totalUsage[resourceName]; exists {
-					existing.Add(currentUsage)
-					totalUsage[resourceName] = existing
-				} else {
-					totalUsage[resourceName] = currentUsage
-				}
-			}
-			continue
-		}
-		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims") {
-			// Example: fast-ssd.storageclass.storage.k8s.io/persistentvolumeclaims
-			storageClass := strings.TrimSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims")
-			for _, nsName := range namespaces {
-				var currentCount int64
-				stepStart := time.Now()
-				if snapshot, ok := resourceSnapshots[nsName]; ok {
-					currentCount = calculateStorageClassCountFromPVCs(snapshot.PVCs, storageClass)
-				} else if r.StorageCalculator != nil {
-					count, err := r.StorageCalculator.CalculateStorageClassCount(ctx, nsName, storageClass)
-					if err != nil {
-						metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, "storage_class_count").Observe(time.Since(stepStart).Seconds())
-						return nil, nil, fmt.Errorf("failed to calculate storage class PVC count for %s in %s: %w",
-							storageClass, nsName, err)
-					}
-					currentCount = count
-				} else {
-					r.logger.Error("StorageCalculator is nil",
-						zap.String("namespace", nsName), zap.Stringer("resource", resourceName))
-					currentCount = 0
-				}
-				metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, "storage_class_count").Observe(time.Since(stepStart).Seconds())
-				nsIndex := nsIndexMap[nsName]
-				usageByNamespace[nsIndex].Status.Used[resourceName] = *resource.NewQuantity(currentCount, resource.DecimalSI)
-				if existing, exists := totalUsage[resourceName]; exists {
-					existing.Add(*resource.NewQuantity(currentCount, resource.DecimalSI))
-					totalUsage[resourceName] = existing
-				} else {
-					totalUsage[resourceName] = *resource.NewQuantity(currentCount, resource.DecimalSI)
-				}
-			}
+	for i, nsName := range namespaces {
+		if nsName == "" {
+			r.logger.Info("Skipping usage calculation for empty namespace name")
 			continue
 		}
 
-		for _, nsName := range namespaces {
-			// If nsName is empty, skip usage calculation for this entry
-			if nsName == "" {
-				r.logger.Info("Skipping usage calculation for empty namespace name")
-				continue
-			}
-			stepName := r.aggregationStepForResource(resourceName)
+		pods, svcs, pvcs, err := r.listNamespaceResources(ctx, nsName, kinds)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		var pvcsByClass map[string][]corev1.PersistentVolumeClaim
+		if kinds.storageClasses {
+			pvcsByClass = bucketPVCsByStorageClass(pvcs)
+		}
+
+		for resourceName := range crq.Spec.Hard {
 			stepStart := time.Now()
-
-			currentUsage, calcErr := r.resolveNamespaceResourceUsage(ctx, nsName, resourceName, resourceSnapshots)
-
-			if calcErr != nil {
-				metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, stepName).Observe(time.Since(stepStart).Seconds())
-				return nil, nil, calcErr
+			used, err := r.computeNamespaceResourceUsage(
+				ctx, nsName, resourceName, pods, svcs, pvcs, pvcsByClass,
+			)
+			metrics.QuotaAggregationStepDuration.
+				WithLabelValues(crq.Name, r.aggregationStepForResource(resourceName)).
+				Observe(time.Since(stepStart).Seconds())
+			if err != nil {
+				return nil, nil, err
 			}
 
-			metrics.QuotaAggregationStepDuration.WithLabelValues(crq.Name, stepName).Observe(time.Since(stepStart).Seconds())
-
-			// Update usage for the specific namespace
-			nsIndex := nsIndexMap[nsName]
-			usageByNamespace[nsIndex].Status.Used[resourceName] = currentUsage
-
-			// Aggregate total usage correctly
-			// Since resource.Quantity has pointer receiver methods, we need to be careful
-			// about how we handle the aggregation
-			if existing, exists := totalUsage[resourceName]; exists {
-				existing.Add(currentUsage)
-				totalUsage[resourceName] = existing
-			} else {
-				totalUsage[resourceName] = currentUsage
-			}
+			usageByNamespace[i].Status.Used[resourceName] = used
+			q := totalUsage[resourceName]
+			q.Add(used)
+			totalUsage[resourceName] = q
 		}
 	}
 
@@ -450,52 +346,18 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	return totalUsage, usageByNamespace, nil
 }
 
-func (r *ClusterResourceQuotaReconciler) resolveNamespaceResourceUsage(
-	ctx context.Context,
-	nsName string,
-	resourceName corev1.ResourceName,
-	resourceSnapshots map[string]namespaceResourceSnapshot,
-) (resource.Quantity, error) {
-	snapshot, hasSnapshot := resourceSnapshots[nsName]
-
-	switch resourceName {
-	case corev1.ResourceRequestsCPU,
-		corev1.ResourceRequestsMemory,
-		corev1.ResourceLimitsCPU,
-		corev1.ResourceLimitsMemory,
-		corev1.ResourcePods:
-		if hasSnapshot {
-			return calculateComputeUsageFromPods(snapshot.Pods, resourceName), nil
-		}
-		return r.calculateComputeResources(ctx, nsName, resourceName)
-	case corev1.ResourceRequestsStorage:
-		if hasSnapshot {
-			return calculateStorageUsageFromPVCs(snapshot.PVCs, resourceName), nil
-		}
-		return r.calculateStorageResources(ctx, nsName, resourceName)
-	case usage.ResourcePersistentVolumeClaims:
-		if hasSnapshot {
-			return calculatePVCCountUsageFromPVCs(snapshot.PVCs), nil
-		}
-		return r.calculateStorageResources(ctx, nsName, resourceName)
-	case usage.ResourceServices, usage.ResourceServicesLoadBalancers, usage.ResourceServicesNodePorts:
-		if hasSnapshot {
-			return calculateServiceUsageFromServices(snapshot.Services, resourceName), nil
-		}
-		return r.calculateServiceResources(ctx, nsName, resourceName)
-	default:
-		// Handle extended resources (hugepages, GPUs, etc.) via compute calculator.
-		if r.isComputeResource(resourceName) {
-			if hasSnapshot {
-				return calculateComputeUsageFromPods(snapshot.Pods, resourceName), nil
-			}
-			return r.calculateComputeResources(ctx, nsName, resourceName)
-		}
-		return r.calculateObjectCount(ctx, nsName, resourceName)
-	}
+// namespaceKinds enumerates the kinds of namespaced resources a CRQ requires
+// listing. storageClasses is true when any *.storageclass.storage.k8s.io/* key
+// is present, so the controller knows to bucket PVCs by class once per namespace.
+type namespaceKinds struct {
+	pods           bool
+	services       bool
+	pvcs           bool
+	storageClasses bool
 }
 
-func shouldPrefetchNamespaceResources(hard quotav1alpha1.ResourceList) bool {
+func (r *ClusterResourceQuotaReconciler) classifyKindsNeeded(hard quotav1alpha1.ResourceList) namespaceKinds {
+	var k namespaceKinds
 	for resourceName := range hard {
 		resourceStr := string(resourceName)
 		switch resourceName {
@@ -503,95 +365,115 @@ func shouldPrefetchNamespaceResources(hard quotav1alpha1.ResourceList) bool {
 			corev1.ResourceRequestsMemory,
 			corev1.ResourceLimitsCPU,
 			corev1.ResourceLimitsMemory,
-			corev1.ResourcePods,
-			corev1.ResourceRequestsStorage,
-			usage.ResourcePersistentVolumeClaims,
-			usage.ResourceServices,
+			corev1.ResourcePods:
+			k.pods = true
+		case usage.ResourceServices,
 			usage.ResourceServicesLoadBalancers,
 			usage.ResourceServicesNodePorts:
-			return true
-		}
-
-		if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage") ||
-			strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims") {
-			return true
+			k.services = true
+		case corev1.ResourceRequestsStorage, usage.ResourcePersistentVolumeClaims:
+			k.pvcs = true
+		default:
+			if r.isComputeResource(resourceName) {
+				k.pods = true
+			} else if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage") ||
+				strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims") {
+				k.pvcs = true
+				k.storageClasses = true
+			}
 		}
 	}
-
-	return false
+	return k
 }
 
-func calculateComputeUsageFromPods(pods []corev1.Pod, resourceName corev1.ResourceName) resource.Quantity {
-	return pod.CalculateUsageFromPods(pods, resourceName)
-}
-
-func calculateServiceUsageFromServices(svcs []corev1.Service, resourceName corev1.ResourceName) resource.Quantity {
-	return services.CalculateUsageFromServices(svcs, resourceName)
-}
-
-func calculateStorageUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim, resourceName corev1.ResourceName) resource.Quantity {
-	return storage.CalculateStorageUsageFromPVCs(pvcs, resourceName)
-}
-
-func calculatePVCCountUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim) resource.Quantity {
-	return storage.CalculatePVCCountUsageFromPVCs(pvcs)
-}
-
-func calculateStorageClassUsageFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) resource.Quantity {
-	return storage.CalculateStorageClassUsageFromPVCs(pvcs, storageClass)
-}
-
-func calculateStorageClassCountFromPVCs(pvcs []corev1.PersistentVolumeClaim, storageClass string) int64 {
-	return storage.CalculateStorageClassCountFromPVCs(pvcs, storageClass)
-}
-
-func pvcMatchesStorageClass(pvc *corev1.PersistentVolumeClaim, storageClass string) bool {
-	return storage.PVCMatchesStorageClass(pvc, storageClass)
-}
-
-type namespaceResourceSnapshot struct {
-	Pods     []corev1.Pod
-	Services []corev1.Service
-	PVCs     []corev1.PersistentVolumeClaim
-}
-
-func (r *ClusterResourceQuotaReconciler) prefetchNamespaceResources(
+func (r *ClusterResourceQuotaReconciler) listNamespaceResources(
 	ctx context.Context,
-	namespaces []string,
-) (map[string]namespaceResourceSnapshot, error) {
-	if r.KubeClient == nil {
-		return nil, fmt.Errorf("kube client is nil")
-	}
+	nsName string,
+	kinds namespaceKinds,
+) ([]corev1.Pod, []corev1.Service, []corev1.PersistentVolumeClaim, error) {
+	var pods []corev1.Pod
+	var svcs []corev1.Service
+	var pvcs []corev1.PersistentVolumeClaim
 
-	snapshots := make(map[string]namespaceResourceSnapshot, len(namespaces))
-	for _, nsName := range namespaces {
-		if nsName == "" {
+	if kinds.pods {
+		list := &corev1.PodList{}
+		if err := r.List(ctx, list, client.InNamespace(nsName)); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to list pods in namespace %s: %w", nsName, err)
+		}
+		pods = list.Items
+	}
+	if kinds.services {
+		list := &corev1.ServiceList{}
+		if err := r.List(ctx, list, client.InNamespace(nsName)); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to list services in namespace %s: %w", nsName, err)
+		}
+		svcs = list.Items
+	}
+	if kinds.pvcs {
+		list := &corev1.PersistentVolumeClaimList{}
+		if err := r.List(ctx, list, client.InNamespace(nsName)); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to list pvcs in namespace %s: %w", nsName, err)
+		}
+		pvcs = list.Items
+	}
+	return pods, svcs, pvcs, nil
+}
+
+// bucketPVCsByStorageClass groups PVCs once per namespace so each storage-class
+// resource lookup is O(1) instead of a full PVC scan.
+func bucketPVCsByStorageClass(pvcs []corev1.PersistentVolumeClaim) map[string][]corev1.PersistentVolumeClaim {
+	if len(pvcs) == 0 {
+		return nil
+	}
+	buckets := make(map[string][]corev1.PersistentVolumeClaim, 4)
+	for i := range pvcs {
+		class := storage.PVCStorageClass(&pvcs[i])
+		if class == "" {
 			continue
 		}
+		buckets[class] = append(buckets[class], pvcs[i])
+	}
+	return buckets
+}
 
-		pods, err := r.KubeClient.CoreV1().Pods(nsName).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to prefetch pods in namespace %s: %w", nsName, err)
-		}
-
-		svcs, err := r.KubeClient.CoreV1().Services(nsName).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to prefetch services in namespace %s: %w", nsName, err)
-		}
-
-		pvcs, err := r.KubeClient.CoreV1().PersistentVolumeClaims(nsName).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to prefetch pvcs in namespace %s: %w", nsName, err)
-		}
-
-		snapshots[nsName] = namespaceResourceSnapshot{
-			Pods:     pods.Items,
-			Services: svcs.Items,
-			PVCs:     pvcs.Items,
-		}
+func (r *ClusterResourceQuotaReconciler) computeNamespaceResourceUsage(
+	ctx context.Context,
+	nsName string,
+	resourceName corev1.ResourceName,
+	pods []corev1.Pod,
+	svcs []corev1.Service,
+	pvcs []corev1.PersistentVolumeClaim,
+	pvcsByClass map[string][]corev1.PersistentVolumeClaim,
+) (resource.Quantity, error) {
+	switch resourceName {
+	case corev1.ResourceRequestsCPU,
+		corev1.ResourceRequestsMemory,
+		corev1.ResourceLimitsCPU,
+		corev1.ResourceLimitsMemory,
+		corev1.ResourcePods:
+		return pod.CalculateUsageFromPods(pods, resourceName), nil
+	case corev1.ResourceRequestsStorage:
+		return storage.CalculateStorageUsageFromPVCs(pvcs, resourceName), nil
+	case usage.ResourcePersistentVolumeClaims:
+		return storage.CalculatePVCCountUsageFromPVCs(pvcs), nil
+	case usage.ResourceServices,
+		usage.ResourceServicesLoadBalancers,
+		usage.ResourceServicesNodePorts:
+		return services.CalculateUsageFromServices(svcs, resourceName), nil
 	}
 
-	return snapshots, nil
+	resourceStr := string(resourceName)
+	if class, ok := strings.CutSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage"); ok {
+		return storage.CalculateStorageUsageFromPVCs(pvcsByClass[class], corev1.ResourceRequestsStorage), nil
+	}
+	if class, ok := strings.CutSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims"); ok {
+		return *resource.NewQuantity(int64(len(pvcsByClass[class])), resource.DecimalSI), nil
+	}
+
+	if r.isComputeResource(resourceName) {
+		return pod.CalculateUsageFromPods(pods, resourceName), nil
+	}
+	return r.calculateObjectCount(ctx, nsName, resourceName)
 }
 
 func (r *ClusterResourceQuotaReconciler) aggregationStepForResource(resourceName corev1.ResourceName) string {
@@ -631,63 +513,16 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(
 		}
 		return objectCount, nil
 	default:
-		r.logger.Info("Unsupported object count resource for calculateObjectCount",
+		// CRQ tracks a resource we have no calculator for (typo or unsupported kind).
+		// Return zero to keep the rest of the reconcile working, but emit a Warn +
+		// metric so operators can detect the silent admit.
+		metrics.QuotaUnsupportedResource.WithLabelValues(string(resourceName)).Inc()
+		r.logger.Warn("Unsupported resource in CRQ; reporting zero usage",
 			zap.Stringer("resource", resourceName),
 			zap.String("namespace", ns),
 		)
 		return resource.MustParse("0"), nil
 	}
-}
-
-// calculateComputeResources calculates the usage for compute resource quotas (CPU/Memory).
-func (r *ClusterResourceQuotaReconciler) calculateComputeResources(
-	ctx context.Context, ns string, resourceName corev1.ResourceName,
-) (resource.Quantity, error) {
-	computeUsage, err := r.ComputeCalculator.CalculateUsage(ctx, ns, resourceName)
-	if err != nil {
-		r.logger.Error("Failed to calculate compute resources",
-			zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
-		return resource.Quantity{}, err
-	}
-	return computeUsage, nil
-}
-
-// calculateStorageResources calculates the usage for storage resource quotas.
-func (r *ClusterResourceQuotaReconciler) calculateStorageResources(
-	ctx context.Context, ns string, resourceName corev1.ResourceName,
-) (resource.Quantity, error) {
-	if r.StorageCalculator == nil {
-		r.logger.Error("StorageCalculator is nil",
-			zap.String("namespace", ns), zap.Stringer("resource", resourceName))
-		return resource.MustParse("0"), nil
-	}
-
-	storageUsage, err := r.StorageCalculator.CalculateUsage(ctx, ns, resourceName)
-	if err != nil {
-		r.logger.Error("Failed to calculate storage resources",
-			zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
-		return resource.Quantity{}, err
-	}
-	return storageUsage, nil
-}
-
-// calculateServiceResources calculates the usage for service resource quotas.
-func (r *ClusterResourceQuotaReconciler) calculateServiceResources(
-	ctx context.Context, ns string, resourceName corev1.ResourceName,
-) (resource.Quantity, error) {
-	if r.ServiceCalculator == nil {
-		r.logger.Error("ServiceCalculator is nil",
-			zap.String("namespace", ns), zap.Stringer("resource", resourceName))
-		return resource.MustParse("0"), nil
-	}
-
-	serviceUsage, err := r.ServiceCalculator.CalculateUsage(ctx, ns, resourceName)
-	if err != nil {
-		r.logger.Error("Failed to calculate service resources",
-			zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
-		return resource.Quantity{}, err
-	}
-	return serviceUsage, nil
 }
 
 // updateStatus updates the status of the ClusterResourceQuota object.
@@ -753,7 +588,7 @@ func (r *ClusterResourceQuotaReconciler) findQuotasForObject(ctx context.Context
 		return nil
 	}
 	if crq != nil {
-		r.logger.Debug("Found ClusterResourceQuota for namespace", zap.String("crq", crq.Name), zap.String("namespace", ns.Name))
+		r.logger.Debug("Found ClusterResourceQuota for namespace", zap.String("crq_name", crq.Name), zap.String("namespace", ns.Name))
 	} else {
 		r.logger.Debug("No ClusterResourceQuota found for namespace", zap.String("namespace", ns.Name))
 	}
@@ -797,41 +632,28 @@ func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.R
 	return false
 }
 
-// SetupWithManager sets up the controller with the Manager.
+// SetupWithManager sets up the controller with the Manager. It is a thin
+// orchestrator over three helpers so each concern (DI, background workers,
+// watch wiring) reads independently.
 func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, cfg *config.Config, mgr ctrl.Manager) error {
-	// Initialize logger
+	r.ensureDependencies(mgr, cfg)
+	r.startBackgroundWorkers(ctx, mgr)
+	r.logger.Info("Setting up ClusterResourceQuota controller")
+	return r.installWatches(mgr)
+}
+
+// ensureDependencies lazily initialises all reconciler-owned collaborators.
+// Tests can pre-populate any field; production paths fall back to defaults.
+func (r *ClusterResourceQuotaReconciler) ensureDependencies(mgr ctrl.Manager, cfg *config.Config) {
 	if r.logger == nil {
 		r.logger = zap.L().Named("clusterresourcequota-controller")
-	}
-
-	// Initialize the KubeClient using the manager's config if not already set
-	if r.KubeClient == nil {
-		cfg := mgr.GetConfig()
-		r.KubeClient = kubernetes.NewForConfigOrDie(cfg)
-	}
-	k8sConfig := mgr.GetConfig()
-	clientset, err := kubernetes.NewForConfig(k8sConfig)
-	if err != nil {
-		return fmt.Errorf("unable to create kubernetes clientset: %w", err)
 	}
 	if r.crqClient == nil {
 		r.crqClient = quota.NewCRQClient(r.Client, r.logger)
 	}
-
-	if r.StorageCalculator == nil {
-		r.StorageCalculator = storage.NewStorageResourceCalculator(clientset, r.logger)
-	}
-	if r.ComputeCalculator == nil {
-		r.ComputeCalculator = pod.NewPodResourceCalculator(clientset, r.logger)
-	}
-	if r.ServiceCalculator == nil {
-		r.ServiceCalculator = services.NewServiceResourceCalculator(clientset, r.logger)
-	}
 	if r.ObjectCountCalculator == nil {
-		r.ObjectCountCalculator = objectcount.NewObjectCountCalculator(clientset, r.logger)
+		r.ObjectCountCalculator = objectcount.NewObjectCountCalculator(r.Client, r.logger)
 	}
-
-	// Initialize EventRecorder
 	if r.EventRecorder == nil {
 		r.EventRecorder = events.NewEventRecorder(
 			mgr.GetEventRecorder("pac-quota-controller"),
@@ -839,17 +661,22 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, c
 			r.logger,
 		)
 	}
-
-	// Initialize previous namespaces tracking
 	if r.previousNamespacesByQuota == nil {
 		r.previousNamespacesByQuota = make(map[string][]string)
 	}
+}
 
-	// Load event cleanup configuration from multiple sources
-	var cleanupConfig events.CleanupConfig
+// startBackgroundWorkers fires the long-lived goroutines that outlive a
+// single Reconcile. Currently just the event-cleanup manager (exits on ctx).
+func (r *ClusterResourceQuotaReconciler) startBackgroundWorkers(ctx context.Context, mgr ctrl.Manager) {
+	cleanupConfig := r.resolveCleanupConfig()
+	cleanupManager := events.NewEventCleanupManager(mgr.GetClient(), cleanupConfig, r.logger)
+	go cleanupManager.Start(ctx)
+}
 
+func (r *ClusterResourceQuotaReconciler) resolveCleanupConfig() events.CleanupConfig {
 	if r.Config != nil && r.Config.EventsEnable {
-		cleanupConfig, err = events.LoadEventCleanupConfig(
+		cleanupConfig, err := events.LoadEventCleanupConfig(
 			r.Config.EventsConfigPath,
 			r.Config.EventsTTL,
 			r.Config.EventsMaxEventsPerCRQ,
@@ -857,44 +684,22 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, c
 		)
 		if err != nil {
 			r.logger.Warn("Failed to load event cleanup config, using defaults", zap.Error(err))
-			cleanupConfig = events.DefaultCleanupConfig()
+			return events.DefaultCleanupConfig()
 		}
-	} else {
-		// Events disabled or no config provided, use defaults but disable cleanup
-		cleanupConfig = events.DefaultCleanupConfig()
-		if r.Config != nil && !r.Config.EventsEnable {
-			cleanupConfig.Enabled = false
-		}
+		return cleanupConfig
 	}
+	cleanupConfig := events.DefaultCleanupConfig()
+	if r.Config != nil && !r.Config.EventsEnable {
+		cleanupConfig.Enabled = false
+	}
+	return cleanupConfig
+}
 
-	cleanupManager := events.NewEventCleanupManager(mgr.GetClient(), cleanupConfig, r.logger)
-
-	// Start cleanup in background
-	go func() {
-		cleanupManager.Start(ctx)
-	}()
-
-	// Start periodic violation cache cleanup
-	go func() {
-		ticker := time.NewTicker(15 * time.Minute)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			r.EventRecorder.CleanupExpiredViolations()
-		}
-	}()
-
-	r.logger.Info("Setting up ClusterResourceQuota controller")
-
-	// Predicate to filter out updates to status subresource
-	// This prevents reconcile loops caused by status updates
+// installWatches wires the CRQ owner watch plus every cross-resource watch
+// that should re-enqueue the matching CRQ.
+func (r *ClusterResourceQuotaReconciler) installWatches(mgr ctrl.Manager) error {
 	resourcePredicate := resourceUpdatePredicate{}
-
-	b := ctrl.NewControllerManagedBy(mgr).
-		For(&quotav1alpha1.ClusterResourceQuota{})
-
-	// Watch for changes to tracked resources and trigger reconciliation for associated CRQs
-	watchedObjectTypes := []struct {
+	watched := []struct {
 		obj   client.Object
 		preds []predicate.Predicate
 	}{
@@ -914,14 +719,15 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, c
 		{&autoscalingv1.HorizontalPodAutoscaler{}, nil},
 		{&networkingv1.Ingress{}, nil},
 	}
-	for _, w := range watchedObjectTypes {
+
+	b := ctrl.NewControllerManagedBy(mgr).
+		For(&quotav1alpha1.ClusterResourceQuota{})
+	for _, w := range watched {
 		b = b.Watches(
 			w.obj,
 			handler.EnqueueRequestsFromMapFunc(r.findQuotasForObject),
 			builder.WithPredicates(w.preds...),
 		)
 	}
-
-	return b.Named("clusterresourcequota").
-		Complete(r)
+	return b.Named("clusterresourcequota").Complete(r)
 }

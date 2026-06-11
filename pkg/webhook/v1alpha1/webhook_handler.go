@@ -73,6 +73,7 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("Namespace is required for %s validation", cfg.name),
 		}
+		metrics.WebhookAdmissionDenied.WithLabelValues(cfg.name, "missing_namespace").Inc()
 		c.JSON(http.StatusOK, review)
 		return
 	}
@@ -92,6 +93,7 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 			Code:    http.StatusBadRequest,
 			Message: fmt.Sprintf("Expected %s resource, got %s", cfg.expectedGVK.Kind, review.Request.Kind.Kind),
 		}
+		metrics.WebhookAdmissionDenied.WithLabelValues(cfg.name, "gvk_mismatch").Inc()
 		c.JSON(http.StatusOK, review)
 		return
 	}
@@ -99,8 +101,12 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 	warnings, err := validate(c.Request.Context(), review.Request)
 	if err != nil {
 		code := http.StatusForbidden
+		reason := "quota_exceeded"
 		if se, ok := err.(*statusError); ok {
 			code = se.code
+			if code == http.StatusBadRequest {
+				reason = "bad_request"
+			}
 		}
 		logger.Info("Admission denied",
 			zap.String("webhook", cfg.name),
@@ -117,6 +123,7 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 			Message: err.Error(),
 		}
 		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "denied", ns).Inc()
+		metrics.WebhookAdmissionDenied.WithLabelValues(cfg.name, reason).Inc()
 	} else {
 		review.Response.Allowed = true
 		if len(warnings) > 0 {
@@ -152,6 +159,18 @@ func unsupportedOperationError(op admissionv1.Operation, resourceType string) er
 	return newStatusErrorf(http.StatusBadRequest, "Operation %s is not supported for %s", op, resourceType)
 }
 
+// logValidationPassed emits the standard "CRQ validation passed" debug log
+// shared by every webhook. namespace and op are always included; extras carry
+// the kind-specific fields (resource name, deltas, etc.).
+func logValidationPassed(logger *zap.Logger, kind, namespace string, op admissionv1.Operation, extras ...zap.Field) {
+	fields := append(make([]zap.Field, 0, 2+len(extras)),
+		zap.String("namespace", namespace),
+		zap.String("operation", string(op)),
+	)
+	fields = append(fields, extras...)
+	logger.Debug(kind+" CRQ validation passed", fields...)
+}
+
 // validateAgainstCRQ checks whether admitting `requested` of `resourceName` in
 // `namespaceName` would exceed the matching CRQ hard limit. It fails open
 // (admits + emits a metric) on any lookup or status-population miss.
@@ -163,58 +182,11 @@ func validateAgainstCRQ(
 	resourceName corev1.ResourceName,
 	requested resource.Quantity,
 ) error {
-	correlationID := quota.GetCorrelationID(ctx)
-
-	if crqClient == nil {
-		logger.Info("Skipping CRQ validation - no CRQ client available",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", namespaceName),
-			zap.String("resource", string(resourceName)),
-			zap.String("requested_quantity", requested.String()))
-		metrics.WebhookCRQLookup.WithLabelValues("no_client").Inc()
-		return nil
-	}
-
-	ns := &corev1.Namespace{}
-	if err := crqClient.Client.Get(ctx, types.NamespacedName{Name: namespaceName}, ns); err != nil {
-		// Fail-open: transient cache miss must not block unrelated workloads.
-		logger.Error("Failed to get namespace - allowing operation",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", namespaceName),
-			zap.Error(err))
-		metrics.WebhookCRQLookup.WithLabelValues("namespace_error").Inc()
-		return nil
-	}
-
-	logger.Debug("Starting CRQ validation",
-		zap.String("correlation_id", correlationID),
-		zap.String("namespace", ns.Name),
-		zap.String("resource", string(resourceName)),
-		zap.String("requested_quantity", requested.String()),
-		zap.Any("namespace_labels", ns.Labels))
-
-	crq, err := crqClient.GetCRQByNamespace(ctx, ns)
-	if err != nil {
-		// Fail-open on CRQ lookup errors; revisit when the CRQ informer is proven reliable.
-		logger.Error("Failed to get CRQ for namespace",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.Error(err))
-		metrics.WebhookCRQLookup.WithLabelValues("crq_error").Inc()
-		return nil
-	}
-
+	crq := resolveCRQForNamespace(ctx, crqClient, logger, namespaceName)
 	if crq == nil {
-		logger.Debug("No CRQ applies to namespace, allowing operation",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", ns.Name),
-			zap.String("resource", string(resourceName)))
-		metrics.WebhookCRQLookup.WithLabelValues("not_found").Inc()
 		return nil
 	}
-
-	metrics.WebhookCRQLookup.WithLabelValues("found").Inc()
-	return validateCRQStatusUsage(crq, resourceName, requested, logger, correlationID)
+	return validateCRQStatusUsage(crq, resourceName, requested, logger, quota.GetCorrelationID(ctx))
 }
 
 // validateCRQStatusUsage compares an in-memory CRQ status against a request.
@@ -295,6 +267,11 @@ func resolveCRQForNamespace(
 	correlationID := quota.GetCorrelationID(ctx)
 
 	if crqClient == nil {
+		// Fail-open path: every admission silently passes. Log Warn so an
+		// operator sees the misconfiguration even when only metrics are scraped.
+		logger.Warn("crqClient is nil - admitting request without quota enforcement; check webhook server wiring",
+			zap.String("correlation_id", correlationID),
+			zap.String("namespace", namespaceName))
 		metrics.WebhookCRQLookup.WithLabelValues("no_client").Inc()
 		return nil
 	}

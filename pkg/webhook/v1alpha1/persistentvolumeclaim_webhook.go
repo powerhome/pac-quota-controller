@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
+	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/storage"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 )
 
@@ -72,13 +73,14 @@ func (h *PersistentVolumeClaimWebhook) validate(
 		oldPVC = &p
 	}
 
-	return nil, h.validateOperation(ctx, &pvc, oldPVC)
+	return nil, h.validateOperation(ctx, &pvc, oldPVC, req.Operation)
 }
 
 func (h *PersistentVolumeClaimWebhook) validateOperation(
 	ctx context.Context,
 	pvc *corev1.PersistentVolumeClaim,
 	oldPVC *corev1.PersistentVolumeClaim,
+	op admissionv1.Operation,
 ) error {
 	crq := resolveCRQForNamespace(ctx, h.crqClient, h.logger, pvc.Namespace)
 	if crq == nil {
@@ -86,9 +88,9 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 	}
 
 	correlationID := quota.GetCorrelationID(ctx)
-	storageDelta := getStorageRequest(pvc)
+	storageDelta := storage.GetPVCStorageRequest(pvc)
 	if oldPVC != nil {
-		storageDelta.Sub(getStorageRequest(oldPVC))
+		storageDelta.Sub(storage.GetPVCStorageRequest(oldPVC))
 	}
 
 	type check struct {
@@ -124,9 +126,8 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 	}
 
 	for _, c := range checks {
-		// Weird edge-case where an admission request for PVC downsizing passes from the API
-		// This should not happen, but helps the tests, as we can't assume answers from the API
-		// Potentially dead code
+		// Skip zero-or-negative deltas: API rejects PVC shrink in practice, but
+		// tests can inject one and we don't want to charge negative quota.
 		if c.quantity.Sign() <= 0 {
 			continue
 		}
@@ -135,18 +136,8 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 		}
 	}
 
-	h.logger.Debug("PVC CRQ validation passed",
+	logValidationPassed(h.logger, "PVC", pvc.Namespace, op,
 		zap.String("pvc", pvc.Name),
-		zap.String("namespace", pvc.Namespace),
-		zap.String("storageDelta", storageDelta.String()))
+		zap.String("storage_delta", storageDelta.String()))
 	return nil
-}
-
-func getStorageRequest(pvc *corev1.PersistentVolumeClaim) resource.Quantity {
-	if pvc.Spec.Resources.Requests != nil {
-		if storageRequest, exists := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; exists {
-			return storageRequest
-		}
-	}
-	return resource.Quantity{}
 }
