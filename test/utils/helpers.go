@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
@@ -93,12 +94,17 @@ func UpdatePodStatus(
 	namespace, podName string,
 	mutate func(status *corev1.PodStatus),
 ) error {
-	pod := &corev1.Pod{}
-	if err := k8sClient.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
-		return err
-	}
-	mutate(&pod.Status)
-	return k8sClient.Status().Update(ctx, pod)
+	// The kubelet continuously rewrites a running pod's status, so a plain
+	// Get/Update races against it and fails with a resourceVersion conflict.
+	// Re-fetch and re-apply the mutation on each conflicting attempt.
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		pod := &corev1.Pod{}
+		if err := k8sClient.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
+			return err
+		}
+		mutate(&pod.Status)
+		return k8sClient.Status().Update(ctx, pod)
+	})
 }
 
 // GetPodLogs retrieves logs from a specified pod.
