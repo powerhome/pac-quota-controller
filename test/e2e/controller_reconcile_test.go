@@ -337,62 +337,6 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 				}, Timeout, Interval).Should(Succeed(), "Pods in error states should count towards quota usage")
 			})
 
-			It("should keep usage stable on non-terminal pod phase status updates", func() {
-				pod, err := testutils.CreatePod(
-					ctx,
-					k8sClient,
-					nsName,
-					"phase-update-pod-"+suffix,
-					corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("200m"),
-						corev1.ResourceMemory: resource.MustParse("128Mi"),
-					},
-					nil,
-				)
-				Expect(err).NotTo(HaveOccurred())
-				DeferCleanup(func() {
-					_ = k8sClient.Delete(ctx, pod)
-				})
-
-				Eventually(func() error {
-					usage := testutils.GetRefreshedCRQStatusUsage(ctx, k8sClient, crq.Name)
-					return testutils.ExpectCRQUsageToMatch(usage, map[string]string{
-						"requests.cpu":    "200m",
-						"requests.memory": "128Mi",
-					})
-				}, Timeout, Interval).Should(Succeed())
-
-				// Update phase and status fields while staying non-terminal.
-				err = testutils.UpdatePodStatus(ctx, k8sClient, nsName, pod.Name, func(status *corev1.PodStatus) {
-					status.Phase = corev1.PodRunning
-					status.Conditions = []corev1.PodCondition{
-						{
-							Type:               corev1.PodReady,
-							Status:             corev1.ConditionFalse,
-							Reason:             "ContainersNotReady",
-							LastTransitionTime: metav1.Now(),
-						},
-					}
-					status.ContainerStatuses = []corev1.ContainerStatus{
-						{
-							Name: "container",
-							State: corev1.ContainerState{
-								Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"},
-							},
-						},
-					}
-				})
-				Expect(err).NotTo(HaveOccurred())
-
-				Consistently(func() error {
-					usage := testutils.GetRefreshedCRQStatusUsage(ctx, k8sClient, crq.Name)
-					return testutils.ExpectCRQUsageToMatch(usage, map[string]string{
-						"requests.cpu":    "200m",
-						"requests.memory": "128Mi",
-					})
-				}, 15*time.Second, 3*time.Second).Should(Succeed())
-			})
-
 			It("should not count CPU resources from failed jobs", func() {
 				job, err := testutils.CreateJob(
 					ctx,

@@ -14,15 +14,29 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/fake"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlclientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 const nsName = "objectcount-test-ns"
 
+func newObjectCountScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = corev1.AddToScheme(s)
+	_ = appsv1.AddToScheme(s)
+	_ = batchv1.AddToScheme(s)
+	_ = autoscalingv1.AddToScheme(s)
+	_ = networkingv1.AddToScheme(s)
+	return s
+}
+
+func newObjectCountFakeClient(objs ...ctrlclient.Object) ctrlclient.Client {
+	return ctrlclientfake.NewClientBuilder().WithScheme(newObjectCountScheme()).WithObjects(objs...).Build()
+}
+
 var _ = Describe("ObjectCountCalculator", func() {
 	var (
 		ctx    context.Context
-		scheme *runtime.Scheme
 		logger *zap.Logger
 	)
 
@@ -31,18 +45,12 @@ var _ = Describe("ObjectCountCalculator", func() {
 		logger, err = zap.NewDevelopment()
 		Expect(err).ToNot(HaveOccurred())
 		ctx = context.Background()
-		scheme = runtime.NewScheme()
-		_ = corev1.AddToScheme(scheme)
-		_ = appsv1.AddToScheme(scheme)
-		_ = batchv1.AddToScheme(scheme)
-		_ = autoscalingv1.AddToScheme(scheme)
-		_ = networkingv1.AddToScheme(scheme)
 	})
 
 	DescribeTable("CalculateUsage for all supported resources",
-		func(resourceName string, object runtime.Object, expected int64) {
+		func(resourceName string, object ctrlclient.Object, expected int64) {
 			rn := corev1.ResourceName(resourceName)
-			client := fake.NewSimpleClientset(object)
+			client := newObjectCountFakeClient(object)
 			calc := NewObjectCountCalculator(client, logger)
 			usage, err := calc.CalculateUsage(ctx, nsName, rn)
 			Expect(err).ToNot(HaveOccurred())
@@ -114,7 +122,7 @@ var _ = Describe("ObjectCountCalculator", func() {
 		rn := corev1.ResourceName("configmaps")
 		cm1 := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: ns}}
 		cm2 := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm2", Namespace: ns}}
-		client := fake.NewSimpleClientset(cm1, cm2)
+		client := newObjectCountFakeClient(cm1, cm2)
 		calc := NewObjectCountCalculator(client, logger)
 		usage, err := calc.CalculateUsage(ctx, ns, rn)
 		Expect(err).ToNot(HaveOccurred())
@@ -127,7 +135,7 @@ var _ = Describe("ObjectCountCalculator", func() {
 		rnSecret := corev1.ResourceName("secrets")
 		cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "cm1", Namespace: ns}}
 		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "s1", Namespace: ns}}
-		client := fake.NewSimpleClientset(cm, secret)
+		client := newObjectCountFakeClient(cm, secret)
 		calcCM := NewObjectCountCalculator(client, logger)
 		calcSecret := NewObjectCountCalculator(client, logger)
 		usageCM, err := calcCM.CalculateUsage(ctx, ns, rnCM)
@@ -141,7 +149,7 @@ var _ = Describe("ObjectCountCalculator", func() {
 	It("should return zero for no resources present", func() {
 		ns := nsName
 		rn := corev1.ResourceName("pods")
-		client := fake.NewSimpleClientset()
+		client := newObjectCountFakeClient()
 		calc := NewObjectCountCalculator(client, logger)
 		usage, err := calc.CalculateUsage(ctx, ns, rn)
 		Expect(err).ToNot(HaveOccurred())
@@ -151,7 +159,7 @@ var _ = Describe("ObjectCountCalculator", func() {
 	It("should return zero for inexistent resource type", func() {
 		ns := nsName
 		rn := corev1.ResourceName("nonexistent")
-		client := fake.NewSimpleClientset()
+		client := newObjectCountFakeClient()
 		calc := NewObjectCountCalculator(client, logger)
 		usage, err := calc.CalculateUsage(ctx, ns, rn)
 		Expect(err).ToNot(HaveOccurred())

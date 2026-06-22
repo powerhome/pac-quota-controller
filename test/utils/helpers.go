@@ -86,21 +86,6 @@ func ServiceAccountToken(
 	return result.Status.Token, nil
 }
 
-// UpdatePodStatus performs a status-only update using the provided mutator.
-func UpdatePodStatus(
-	ctx context.Context,
-	k8sClient client.Client,
-	namespace, podName string,
-	mutate func(status *corev1.PodStatus),
-) error {
-	pod := &corev1.Pod{}
-	if err := k8sClient.Get(ctx, client.ObjectKey{Name: podName, Namespace: namespace}, pod); err != nil {
-		return err
-	}
-	mutate(&pod.Status)
-	return k8sClient.Status().Update(ctx, pod)
-}
-
 // GetPodLogs retrieves logs from a specified pod.
 func GetPodLogs(ctx context.Context, clientSet *kubernetes.Clientset, namespace, podName string) string {
 	podLogOpts := &corev1.PodLogOptions{}
