@@ -120,6 +120,11 @@ func DescribePod(ctx context.Context, k8sClient client.Client, namespace, podNam
 // CreateNamespace creates a namespace with the specified name and labels.
 func CreateNamespace(ctx context.Context, k8sClient client.Client, namespace string,
 	nsLabels map[string]string) (*corev1.Namespace, error) {
+	// Tag test namespaces so Scrub can clean them up.
+	if nsLabels == nil {
+		nsLabels = map[string]string{}
+	}
+	nsLabels[E2ELabelKey] = E2ELabelValue
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   namespace,
