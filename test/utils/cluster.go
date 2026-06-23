@@ -133,7 +133,7 @@ func (c E2EConfig) BuildAndLoadImage(ctx context.Context, root string) error {
 func (c E2EConfig) InstallCertManager(ctx context.Context) error {
 	// Ignore error: fails if the repo is already added.
 	_ = runCmd(ctx, "", "helm", "repo", "add", "jetstack", "https://charts.jetstack.io")
-	if err := runCmd(ctx, "", "helm", "repo", "update"); err != nil {
+	if err := runCmd(ctx, "", "helm", "repo", "update", "jetstack"); err != nil {
 		return err
 	}
 	if err := runCmd(ctx, "", "helm", "upgrade", "--install", "cert-manager", "jetstack/cert-manager",
