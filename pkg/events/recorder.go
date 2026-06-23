@@ -22,11 +22,6 @@ const (
 	// Event types
 	EventTypeNormal  = "Normal"
 	EventTypeWarning = "Warning"
-
-	// Event labels for identification and cleanup
-	LabelEventSource = "quota.pac.io/event-source"
-	LabelEventType   = "quota.pac.io/event-type"
-	LabelCRQName     = "quota.pac.io/crq-name"
 )
 
 // EventRecorder wraps the Kubernetes event recorder with PAC-specific functionality
