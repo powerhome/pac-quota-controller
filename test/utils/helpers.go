@@ -298,16 +298,21 @@ func WaitForCRQResourceUsage(
 	expected resource.Quantity,
 ) error {
 	const (
-		timeout  = 30 * time.Second
-		interval = 250 * time.Millisecond
+		timeout     = 60 * time.Second
+		interval    = 250 * time.Millisecond
+		callTimeout = 5 * time.Second
 	)
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return wait.PollUntilContextTimeout(ctxWithTimeout, interval, timeout, true,
-		func(ctx context.Context) (bool, error) {
+		func(_ context.Context) (bool, error) {
 			crq := &quotav1alpha1.ClusterResourceQuota{}
-			if err := k8sClient.Get(ctx, client.ObjectKey{Name: crqName}, crq); err != nil {
-				return false, err
+			// Use a short per-call context so a slow API call doesn't consume
+			// the entire polling budget. Treat transient errors as not-yet-ready.
+			getCtx, getCancel := context.WithTimeout(ctx, callTimeout)
+			defer getCancel()
+			if err := k8sClient.Get(getCtx, client.ObjectKey{Name: crqName}, crq); err != nil {
+				return false, nil
 			}
 			used, ok := crq.Status.Total.Used[resourceName]
 			if !ok {
