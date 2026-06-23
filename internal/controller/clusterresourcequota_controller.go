@@ -298,19 +298,12 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 
 	totalUsage := make(quotav1alpha1.ResourceList, len(crq.Spec.Hard))
 	usageByNamespace := make([]quotav1alpha1.ResourceQuotaStatusByNamespace, len(namespaces))
+	kinds := r.classifyKindsNeeded(crq.Spec.Hard)
+
 	for i, nsName := range namespaces {
 		usageByNamespace[i] = quotav1alpha1.ResourceQuotaStatusByNamespace{
 			Namespace: nsName,
 			Status:    quotav1alpha1.ResourceQuotaStatus{Used: make(quotav1alpha1.ResourceList)},
-		}
-	}
-
-	kinds := r.classifyKindsNeeded(crq.Spec.Hard)
-
-	for i, nsName := range namespaces {
-		if nsName == "" {
-			r.logger.Info("Skipping usage calculation for empty namespace name")
-			continue
 		}
 
 		pods, svcs, pvcs, err := r.listNamespaceResources(ctx, nsName, kinds)
