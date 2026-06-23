@@ -35,6 +35,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -714,7 +715,8 @@ func (r *ClusterResourceQuotaReconciler) installWatches(mgr ctrl.Manager) error 
 	}
 
 	b := ctrl.NewControllerManagedBy(mgr).
-		For(&quotav1alpha1.ClusterResourceQuota{})
+		For(&quotav1alpha1.ClusterResourceQuota{}).
+		WithOptions(ctrlcontroller.Options{MaxConcurrentReconciles: 5})
 	for _, w := range watched {
 		b = b.Watches(
 			w.obj,
