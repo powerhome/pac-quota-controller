@@ -60,7 +60,7 @@ var _ = Describe("ClusterResourceQuota Webhook", func() {
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, fresh); err != nil {
 					return false
 				}
-				return fresh.Status.Total.Used != nil
+				return fresh.Status.Total.Hard != nil
 			}, Timeout, Interval).Should(BeTrue())
 
 			By("Updating the ClusterResourceQuota spec")
