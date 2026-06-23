@@ -39,3 +39,31 @@ var _ = Describe("DeduplicateAndSort", func() {
 		Expect(result).To(Equal(expected))
 	})
 })
+
+var _ = Describe("EqualStringMap", func() {
+	It("returns true for two nil maps", func() {
+		Expect(EqualStringMap(nil, nil)).To(BeTrue())
+	})
+
+	It("treats nil and empty maps as equal", func() {
+		Expect(EqualStringMap(nil, map[string]string{})).To(BeTrue())
+	})
+
+	It("returns true for equal maps", func() {
+		a := map[string]string{"x": "1", "y": "2"}
+		b := map[string]string{"y": "2", "x": "1"}
+		Expect(EqualStringMap(a, b)).To(BeTrue())
+	})
+
+	It("returns false when lengths differ", func() {
+		Expect(EqualStringMap(map[string]string{"x": "1"}, map[string]string{"x": "1", "y": "2"})).To(BeFalse())
+	})
+
+	It("returns false when a value differs", func() {
+		Expect(EqualStringMap(map[string]string{"x": "1"}, map[string]string{"x": "2"})).To(BeFalse())
+	})
+
+	It("returns false when a key is missing", func() {
+		Expect(EqualStringMap(map[string]string{"x": "1"}, map[string]string{"y": "1"})).To(BeFalse())
+	})
+})
