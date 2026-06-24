@@ -3,7 +3,6 @@ package manager
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
@@ -18,9 +17,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// pkgLogger is the fallback used by Start() (which has no logger plumbed in).
-// SetupControllers does NOT mutate this; it derives a local logger from its
-// caller-supplied instance to avoid a package-level data race.
+// pkgLogger is the fallback used by SetupControllers when no logger is supplied.
 var pkgLogger = pkglogger.L().Named("manager")
 
 // InitScheme initializes the runtime scheme
@@ -111,13 +108,4 @@ func SetupControllers(ctx context.Context, mgr ctrl.Manager, cfg *config.Config,
 	}
 
 	return nil
-}
-
-// Start starts the manager with graceful shutdown
-func Start(mgr ctrl.Manager) {
-	pkgLogger.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		pkgLogger.Error("problem running manager", zap.Error(err))
-		os.Exit(1)
-	}
 }

@@ -15,10 +15,6 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
-const (
-	testNamespace = "test-namespace"
-)
-
 func TestEventRecorder(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "EventRecorder Suite")
@@ -41,7 +37,7 @@ var _ = Describe("EventRecorder", func() {
 		scheme := runtime.NewScheme()
 		Expect(quotav1alpha1.AddToScheme(scheme)).To(Succeed())
 
-		eventRecorder = NewEventRecorder(fakeRecorder, testNamespace, logger)
+		eventRecorder = NewEventRecorder(fakeRecorder, logger)
 
 		testCRQ = &quotav1alpha1.ClusterResourceQuota{
 			ObjectMeta: metav1.ObjectMeta{

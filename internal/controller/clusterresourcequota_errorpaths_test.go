@@ -76,7 +76,7 @@ var _ = Describe("Reconciler error paths", func() {
 		return &ClusterResourceQuotaReconciler{
 			Client:                    c,
 			logger:                    logger,
-			EventRecorder:             events.NewEventRecorder(rec, "pac-quota-controller-system", logger),
+			EventRecorder:             events.NewEventRecorder(rec, logger),
 			previousNamespacesByQuota: make(map[string][]string),
 		}
 	}

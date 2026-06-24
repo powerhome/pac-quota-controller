@@ -163,37 +163,23 @@ func (s *GinWebhookServer) setupRoutes() {
 		s.logger.Warn("Dynamic client is nil, CRQ operations will not be available")
 	}
 
-	s.logger.Info("Setting up ClusterResourceQuota webhook")
-
 	s.crqHandler = v1alpha1.NewClusterResourceQuotaWebhook(s.k8sClient, crqClient, s.logger)
 	s.engine.POST("/validate-quota-powerapp-cloud-v1alpha1-clusterresourcequota", s.crqHandler.Handle)
-
-	s.logger.Info("Setting up namespace webhook")
 
 	s.namespaceHandler = v1alpha1.NewNamespaceWebhook(s.k8sClient, crqClient, s.logger)
 	s.engine.POST("/validate--v1-namespace", s.namespaceHandler.Handle)
 
-	s.logger.Info("Setting up pod webhook")
-
 	s.podHandler = v1alpha1.NewPodWebhook(crqClient, s.logger)
 	s.engine.POST("/validate--v1-pod", s.podHandler.Handle)
-
-	s.logger.Info("Setting up service webhook")
 
 	s.serviceHandler = v1alpha1.NewServiceWebhook(crqClient, s.logger)
 	s.engine.POST("/validate--v1-service", s.serviceHandler.Handle)
 
-	s.logger.Info("Setting up PVC webhook")
-
 	s.pvcHandler = v1alpha1.NewPersistentVolumeClaimWebhook(crqClient, s.logger)
 	s.engine.POST("/validate--v1-persistentvolumeclaim", s.pvcHandler.Handle)
 
-	s.logger.Info("Setting up objectcount webhook")
-
 	s.objectCountHandler = v1alpha1.NewObjectCountWebhook(crqClient, s.logger)
 	s.engine.POST("/validate-objectcount-v1", s.objectCountHandler.Handle)
-
-	s.logger.Info("All webhook handlers configured with CRQ client support")
 
 }
 
@@ -287,7 +273,7 @@ func (s *GinWebhookServer) startServerInBackground() <-chan error {
 // waitForServerReady waits for the server to be ready to accept connections
 func (s *GinWebhookServer) waitForServerReady(ctx context.Context, serverStarted <-chan error) error {
 	isReady := false
-	maxRetries := 30 // 15 seconds max wait time (30 * 500ms)
+	maxRetries := 30 // ~60s max wait (500ms→1s→2s cap, 28 retries at 2s)
 	backoff := 500 * time.Millisecond
 	maxBackoff := 2 * time.Second
 
@@ -299,7 +285,7 @@ func (s *GinWebhookServer) waitForServerReady(ctx context.Context, serverStarted
 			}
 			return fmt.Errorf("webhook server stopped unexpectedly")
 		case <-ctx.Done():
-			return s.handleContextCancelled(ctx)
+			return s.handleContextCancelled()
 		case <-time.After(backoff):
 			if s.isServerReady() {
 				isReady = true
@@ -317,14 +303,14 @@ func (s *GinWebhookServer) waitForServerReady(ctx context.Context, serverStarted
 }
 
 // handleContextCancelled handles context cancellation during startup
-func (s *GinWebhookServer) handleContextCancelled(ctx context.Context) error {
+func (s *GinWebhookServer) handleContextCancelled() error {
 	s.logger.Info("Context cancelled before server ready, shutting down")
 
 	if s.certWatcher != nil {
 		s.certWatcher.Stop()
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	return s.server.Shutdown(shutdownCtx)
 }

@@ -2,7 +2,6 @@ package events
 
 import (
 	"fmt"
-	"os"
 
 	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -26,42 +25,19 @@ const (
 
 // EventRecorder wraps the Kubernetes event recorder with PAC-specific functionality
 type EventRecorder struct {
-	recorder  events.EventRecorder
-	logger    *zap.Logger
-	namespace string
-	podName   string
+	recorder events.EventRecorder
+	logger   *zap.Logger
 }
 
 // NewEventRecorder creates a new EventRecorder
-func NewEventRecorder(
-	recorder events.EventRecorder,
-	namespace string,
-	logger *zap.Logger) *EventRecorder {
+func NewEventRecorder(recorder events.EventRecorder, logger *zap.Logger) *EventRecorder {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 	return &EventRecorder{
-		recorder:  recorder,
-		logger:    logger.Named("event-recorder"),
-		namespace: namespace,
-		podName:   getPodName(),
+		recorder: recorder,
+		logger:   logger.Named("event-recorder"),
 	}
-}
-
-// getPodName gets the current pod name from environment or hostname
-func getPodName() string {
-	// Try to get pod name from downward API environment variable first
-	if podName := os.Getenv("POD_NAME"); podName != "" {
-		return podName
-	}
-
-	// Fallback to hostname (which is usually the pod name in Kubernetes)
-	if hostname, err := os.Hostname(); err == nil {
-		return hostname
-	}
-
-	// Final fallback
-	return "pac-quota-controller-manager"
 }
 
 // QuotaExceeded records an event when quota is exceeded

@@ -122,15 +122,13 @@ var (
 		},
 		[]string{"resource"},
 	)
-	// EventsCleanedTotal counts events deleted by the cleanup loop, broken
-	// down by their `quota.pac.io/event-source` label. Going to zero is the
-	// signal that cleanup itself has regressed (RBAC, query bug, etc.).
-	EventsCleanedTotal = prometheus.NewCounterVec(
+	// EventsCleanedTotal counts events deleted by the cleanup loop.
+	// Going to zero is the signal that cleanup itself has regressed (RBAC, query bug, etc.).
+	EventsCleanedTotal = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_events_cleaned_total",
-			Help: "PAC quota events deleted by the cleanup loop, by source.",
+			Help: "PAC quota events deleted by the cleanup loop.",
 		},
-		[]string{"source"},
 	)
 
 	// Use controller-runtime's global registry

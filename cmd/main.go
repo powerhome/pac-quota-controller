@@ -48,10 +48,8 @@ func newRootCommand() *cobra.Command {
 // blocking until the context is cancelled (SIGTERM/SIGINT) or the manager fails.
 // nolint:gocyclo
 func runManager() {
-	// Initialize configuration
 	cfg := config.InitConfig()
 
-	// Set up logging
 	pkglogger.Initialize(cfg)
 	logger := pkglogger.L()
 	defer func() {
@@ -66,36 +64,30 @@ func runManager() {
 		os.Exit(1)
 	}
 
-	// Configure controller-runtime logger to use zap for consistent JSON formatting
 	ctrl.SetLogger(zapctrl.New(zapctrl.UseDevMode(false), zapctrl.JSONEncoder()))
 
 	// Use controller-runtime's signal handler — cancels context on SIGTERM/SIGINT
 	ctx := ctrl.SetupSignalHandler()
 
-	// Initialize scheme
 	scheme := manager.InitScheme()
 
-	// Create controller manager
 	mgr, err := manager.SetupManager(cfg, scheme)
 	if err != nil {
 		logger.Error("unable to start manager", zap.Error(err))
 		fatal()
 	}
 
-	// Set up controllers
 	if err := manager.SetupControllers(ctx, mgr, cfg, logger); err != nil {
 		logger.Error("unable to set up controllers", zap.Error(err))
 		fatal()
 	}
 
-	// Create kubernetes clientset for webhook server
 	clientset, err := kubernetes.NewForConfig(mgr.GetConfig())
 	if err != nil {
 		logger.Error("unable to create kubernetes clientset", zap.Error(err))
 		fatal()
 	}
 
-	// Set up Gin webhook server with manager's client for CRQ operations
 	webhookServer, webhookCertWatcher := webhook.SetupGinWebhookServer(cfg, clientset, mgr.GetClient(), logger)
 
 	// Start webhook server and cert watcher in background goroutines.
@@ -126,7 +118,6 @@ func runManager() {
 		}
 	}()
 
-	// Log when manager is elected as leader
 	go func() {
 		<-mgr.Elected()
 		logger.Info("Controller manager elected as leader and ready to process resources")

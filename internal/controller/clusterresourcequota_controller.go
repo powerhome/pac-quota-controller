@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -219,9 +218,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 			if r.isNamespaceExcluded(&ns) {
 				continue
 			}
-			if selector.Matches(labels.Set(ns.Labels)) {
-				selectedNamespaces = append(selectedNamespaces, ns.Name)
-			}
+			selectedNamespaces = append(selectedNamespaces, ns.Name)
 		}
 		sort.Strings(selectedNamespaces)
 	}
@@ -285,9 +282,6 @@ func percentOfHard(used, hard resource.Quantity) float64 {
 
 // calculateAndAggregateUsage walks each namespace once, lists only the resource
 // kinds the CRQ tracks, and computes per-resource usage off the in-memory slices.
-// Inverting the (resource → namespace) loop into (namespace → resource) eliminates
-// the prefetch/snapshot phase, the dual snapshot-vs-calculator branches, and the
-// O(classes × namespaces × PVCs) scans that the previous shape produced.
 func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 	ctx context.Context,
 	crq *quotav1alpha1.ClusterResourceQuota,
@@ -630,7 +624,7 @@ func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.R
 // orchestrator over three helpers so each concern (DI, background workers,
 // watch wiring) reads independently.
 func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, cfg *config.Config, mgr ctrl.Manager) error {
-	r.ensureDependencies(mgr, cfg)
+	r.ensureDependencies(mgr)
 	r.startBackgroundWorkers(ctx, mgr)
 	r.logger.Info("Setting up ClusterResourceQuota controller")
 	return r.installWatches(mgr)
@@ -638,7 +632,7 @@ func (r *ClusterResourceQuotaReconciler) SetupWithManager(ctx context.Context, c
 
 // ensureDependencies lazily initialises all reconciler-owned collaborators.
 // Tests can pre-populate any field; production paths fall back to defaults.
-func (r *ClusterResourceQuotaReconciler) ensureDependencies(mgr ctrl.Manager, cfg *config.Config) {
+func (r *ClusterResourceQuotaReconciler) ensureDependencies(mgr ctrl.Manager) {
 	if r.logger == nil {
 		r.logger = zap.L().Named("clusterresourcequota-controller")
 	}
@@ -651,7 +645,6 @@ func (r *ClusterResourceQuotaReconciler) ensureDependencies(mgr ctrl.Manager, cf
 	if r.EventRecorder == nil {
 		r.EventRecorder = events.NewEventRecorder(
 			mgr.GetEventRecorder("pac-quota-controller"),
-			cfg.OwnNamespace,
 			r.logger,
 		)
 	}

@@ -31,7 +31,7 @@ var _ = Describe("ClusterResourceQuota Helpers", func() {
 
 		// Create reconciler with mock event recorder
 		reconciler = &ClusterResourceQuotaReconciler{
-			EventRecorder: events.NewEventRecorder(fakeRecorder, "test-namespace", logger),
+			EventRecorder: events.NewEventRecorder(fakeRecorder, logger),
 		}
 
 		// Create test CRQ

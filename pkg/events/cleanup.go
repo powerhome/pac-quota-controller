@@ -7,6 +7,7 @@ import (
 
 	"go.uber.org/zap"
 	eventsv1 "k8s.io/api/events/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/powerhome/pac-quota-controller/pkg/metrics"
@@ -31,8 +32,6 @@ func eventTime(e *eventsv1.Event) time.Time {
 const (
 	// crqEventKind is the Regarding kind on every event the controller records.
 	crqEventKind = "ClusterResourceQuota"
-	// eventSource labels the cleanup metric; only the controller emits events.
-	eventSource = "controller"
 )
 
 // CleanupConfig holds configuration for event cleanup
@@ -146,7 +145,7 @@ func (m *EventCleanupManager) cleanup(ctx context.Context) error {
 // getPACEvents lists every event the controller recorded against a CRQ.
 func (m *EventCleanupManager) getPACEvents(ctx context.Context) ([]eventsv1.Event, error) {
 	list := &eventsv1.EventList{}
-	if err := m.client.List(ctx, list); err != nil {
+	if err := m.client.List(ctx, list, client.InNamespace(metav1.NamespaceDefault)); err != nil {
 		return nil, err
 	}
 
@@ -197,7 +196,7 @@ func (m *EventCleanupManager) cleanupEventsForCRQ(ctx context.Context, crqName s
 				zap.String("reason", event.Reason))
 		} else {
 			deletedCount++
-			metrics.EventsCleanedTotal.WithLabelValues(eventSource).Inc()
+			metrics.EventsCleanedTotal.Inc()
 			m.logger.Debug("Deleted old event",
 				zap.String("event", event.Name),
 				zap.String("crq_name", crqName),

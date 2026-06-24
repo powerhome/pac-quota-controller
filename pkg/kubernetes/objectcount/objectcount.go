@@ -38,19 +38,19 @@ func NewObjectCountCalculator(c client.Client, logger *zap.Logger) *ObjectCountC
 // without the duplication.
 var listConstructors = map[corev1.ResourceName]func() client.ObjectList{
 	// There is always a kube-root-ca.crt configmap in each namespace
-	"configmaps":                           func() client.ObjectList { return &corev1.ConfigMapList{} },
-	"secrets":                              func() client.ObjectList { return &corev1.SecretList{} },
-	"replicationcontrollers":               func() client.ObjectList { return &corev1.ReplicationControllerList{} },
-	"deployments.apps":                     func() client.ObjectList { return &appsv1.DeploymentList{} },
-	"statefulsets.apps":                    func() client.ObjectList { return &appsv1.StatefulSetList{} },
-	"daemonsets.apps":                      func() client.ObjectList { return &appsv1.DaemonSetList{} },
-	"jobs.batch":                           func() client.ObjectList { return &batchv1.JobList{} },
-	"cronjobs.batch":                       func() client.ObjectList { return &batchv1.CronJobList{} },
-	"horizontalpodautoscalers.autoscaling": newHPAList,
-	"ingresses.networking.k8s.io":          func() client.ObjectList { return &networkingv1.IngressList{} },
+	"configmaps":             func() client.ObjectList { return &corev1.ConfigMapList{} },
+	"secrets":                func() client.ObjectList { return &corev1.SecretList{} },
+	"replicationcontrollers": func() client.ObjectList { return &corev1.ReplicationControllerList{} },
+	"deployments.apps":       func() client.ObjectList { return &appsv1.DeploymentList{} },
+	"statefulsets.apps":      func() client.ObjectList { return &appsv1.StatefulSetList{} },
+	"daemonsets.apps":        func() client.ObjectList { return &appsv1.DaemonSetList{} },
+	"jobs.batch":             func() client.ObjectList { return &batchv1.JobList{} },
+	"cronjobs.batch":         func() client.ObjectList { return &batchv1.CronJobList{} },
+	"horizontalpodautoscalers.autoscaling": func() client.ObjectList {
+		return &autoscalingv1.HorizontalPodAutoscalerList{}
+	},
+	"ingresses.networking.k8s.io": func() client.ObjectList { return &networkingv1.IngressList{} },
 }
-
-func newHPAList() client.ObjectList { return &autoscalingv1.HorizontalPodAutoscalerList{} }
 
 // CalculateUsage returns the count of the specified resource in the namespace.
 func (c *ObjectCountCalculator) CalculateUsage(

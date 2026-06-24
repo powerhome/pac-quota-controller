@@ -78,13 +78,13 @@ var _ = Describe("EventCleanupManager.cleanup", func() {
 			Enabled:         true,
 		}, logger)
 
-		pre := promtestutil.ToFloat64(metrics.EventsCleanedTotal.WithLabelValues(eventSource))
+		pre := promtestutil.ToFloat64(metrics.EventsCleanedTotal)
 		Expect(mgr.cleanup(ctx)).To(Succeed())
 
 		assertGone(fc, "evt-old-1")
 		assertGone(fc, "evt-old-2")
 		assertExists(fc, "evt-fresh")
-		Expect(promtestutil.ToFloat64(metrics.EventsCleanedTotal.WithLabelValues(eventSource)) - pre).
+		Expect(promtestutil.ToFloat64(metrics.EventsCleanedTotal) - pre).
 			To(Equal(float64(2)))
 	})
 
