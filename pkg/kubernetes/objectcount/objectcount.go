@@ -11,6 +11,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -31,63 +32,40 @@ func NewObjectCountCalculator(c client.Client, logger *zap.Logger) *ObjectCountC
 	}
 }
 
+// listConstructors maps each supported `objectcount`-style resource name to a
+// factory that returns a typed empty list. The switch table that used to live
+// in CalculateUsage was 10 identical branches — this map is the same data
+// without the duplication.
+var listConstructors = map[corev1.ResourceName]func() client.ObjectList{
+	// There is always a kube-root-ca.crt configmap in each namespace
+	"configmaps":             func() client.ObjectList { return &corev1.ConfigMapList{} },
+	"secrets":                func() client.ObjectList { return &corev1.SecretList{} },
+	"replicationcontrollers": func() client.ObjectList { return &corev1.ReplicationControllerList{} },
+	"deployments.apps":       func() client.ObjectList { return &appsv1.DeploymentList{} },
+	"statefulsets.apps":      func() client.ObjectList { return &appsv1.StatefulSetList{} },
+	"daemonsets.apps":        func() client.ObjectList { return &appsv1.DaemonSetList{} },
+	"jobs.batch":             func() client.ObjectList { return &batchv1.JobList{} },
+	"cronjobs.batch":         func() client.ObjectList { return &batchv1.CronJobList{} },
+	"horizontalpodautoscalers.autoscaling": func() client.ObjectList {
+		return &autoscalingv1.HorizontalPodAutoscalerList{}
+	},
+	"ingresses.networking.k8s.io": func() client.ObjectList { return &networkingv1.IngressList{} },
+}
+
 // CalculateUsage returns the count of the specified resource in the namespace.
 func (c *ObjectCountCalculator) CalculateUsage(
 	ctx context.Context,
 	namespace string,
 	resourceName corev1.ResourceName) (resource.Quantity, error) {
 	correlationID := quota.GetCorrelationID(ctx)
-	var count int64
-	var err error
 
-	opts := []client.ListOption{client.InNamespace(namespace)}
-	switch resourceName {
-	// There is always a kube-root-ca.crt configmap in each namespace
-	case "configmaps":
-		list := &corev1.ConfigMapList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	case "secrets":
-		list := &corev1.SecretList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	case "replicationcontrollers":
-		list := &corev1.ReplicationControllerList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	case "deployments.apps":
-		list := &appsv1.DeploymentList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	case "statefulsets.apps":
-		list := &appsv1.StatefulSetList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	case "daemonsets.apps":
-		list := &appsv1.DaemonSetList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	case "jobs.batch":
-		list := &batchv1.JobList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	case "cronjobs.batch":
-		list := &batchv1.CronJobList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	case "horizontalpodautoscalers.autoscaling":
-		list := &autoscalingv1.HorizontalPodAutoscalerList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	case "ingresses.networking.k8s.io":
-		list := &networkingv1.IngressList{}
-		err = c.Client.List(ctx, list, opts...)
-		count = int64(len(list.Items))
-	default:
+	newList, ok := listConstructors[resourceName]
+	if !ok {
 		return resource.Quantity{}, nil
 	}
 
-	if err != nil {
+	list := newList()
+	if err := c.Client.List(ctx, list, client.InNamespace(namespace)); err != nil {
 		c.logger.Error("Failed to calculate object count usage",
 			zap.String("correlation_id", correlationID),
 			zap.String("namespace", namespace),
@@ -96,6 +74,7 @@ func (c *ObjectCountCalculator) CalculateUsage(
 		return resource.Quantity{}, err
 	}
 
+	count := int64(meta.LenList(list))
 	c.logger.Debug("Calculated object count usage",
 		zap.String("correlation_id", correlationID),
 		zap.String("namespace", namespace),

@@ -1,8 +1,6 @@
 package e2e
 
 import (
-	"time"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
@@ -55,7 +53,15 @@ var _ = Describe("ClusterResourceQuota Webhook", func() {
 					corev1.ResourceMemory: resource.MustParse("4Gi"),
 				})
 			Expect(err).ToNot(HaveOccurred())
-			time.Sleep(2 * time.Second) // Ensure CRQ is updated by reconciliation
+
+			// Wait for the controller to reconcile the CRQ at least once.
+			Eventually(func() bool {
+				fresh := &quotav1alpha1.ClusterResourceQuota{}
+				if err := k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, fresh); err != nil {
+					return false
+				}
+				return fresh.Status.Total.Hard != nil
+			}, Timeout, Interval).Should(BeTrue())
 
 			By("Updating the ClusterResourceQuota spec")
 			err = testutils.UpdateClusterResourceQuotaSpec(
@@ -106,7 +112,7 @@ var _ = Describe("ClusterResourceQuota Webhook", func() {
 					}
 				}
 				return false
-			}, time.Second*30, time.Second*1).Should(BeTrue(), "First CRQ should have the namespace in its status")
+			}, Timeout, Interval).Should(BeTrue(), "First CRQ should have the namespace in its status")
 
 			By("Attempting to create a second ClusterResourceQuota with overlapping namespace selector")
 			_, err = testutils.CreateClusterResourceQuota(ctx, k8sClient, "crq2-"+suffix, &metav1.LabelSelector{

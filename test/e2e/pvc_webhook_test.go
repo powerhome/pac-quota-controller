@@ -9,6 +9,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	testutils "github.com/powerhome/pac-quota-controller/test/utils"
@@ -94,8 +95,10 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 			)).To(Succeed())
 
 			// Now try to create another PVC that would exceed the quota
-			_, err = testutils.CreatePVC(ctx, k8sClient, ns.Name, "second-pvc-blocked", "1Gi", nil)
-			Expect(err).To(HaveOccurred())
+			err = testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				name := testutils.GenerateResourceName("second-pvc-blocked")
+				return testutils.CreatePVC(ctx, k8sClient, ns.Name, name, "1Gi", nil)
+			})
 			Expect(err.Error()).To(SatisfyAll(
 				ContainSubstring("ClusterResourceQuota"),
 				ContainSubstring(crq.Name),
@@ -140,17 +143,13 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 			)).To(Succeed())
 
 			// Try to create another PVC that would exceed the 2Gi quota (500Mi + 2Gi = 2.5Gi > 2Gi)
-			pvc2, err := testutils.CreatePVC(ctx, k8sClient, ns.Name, "test-pvc-large", "2Gi", nil)
-			Expect(err).To(HaveOccurred())
+			err = testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				return testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-large"), "2Gi", nil)
+			})
 			Expect(err.Error()).To(SatisfyAll(
 				ContainSubstring("ClusterResourceQuota"),
 				ContainSubstring(crq.Name),
 			))
-
-			// Clean up the second PVC if it was created
-			defer func() {
-				_ = k8sClient.Delete(ctx, pvc2)
-			}()
 		})
 	})
 
@@ -184,8 +183,9 @@ var _ = Describe("PVC Webhook E2E Tests", func() {
 			)).To(Succeed())
 
 			// Create third PVC - should fail
-			_, err = testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-3"), "1Gi", nil)
-			Expect(err).To(HaveOccurred())
+			err = testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				return testutils.CreatePVC(ctx, k8sClient, ns.Name, testutils.GenerateResourceName("test-pvc-3"), "1Gi", nil)
+			})
 			Expect(err.Error()).To(SatisfyAll(
 				ContainSubstring("ClusterResourceQuota"),
 				ContainSubstring(crq.Name),

@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	testutils "github.com/powerhome/pac-quota-controller/test/utils"
@@ -144,8 +145,10 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			)).To(Succeed())
 
 			By("Trying to create fast SSD PVC that exceeds storage quota (should fail)")
-			pvc3 := createTestPVC("fast-pvc-3", testNamespace, storageClassFast, "2Gi") // Total would be 6Gi > 5Gi limit
-			err := k8sClient.Create(ctx, pvc3)
+			err := testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				pvc := createTestPVC(testutils.GenerateResourceName("fast-pvc-3"), testNamespace, storageClassFast, "2Gi")
+				return pvc, k8sClient.Create(ctx, pvc)
+			})
 			Expect(err).To(HaveOccurred(), "Should block PVC that exceeds fast SSD storage quota")
 			Expect(err.Error()).To(
 				ContainSubstring("ClusterResourceQuota storage class '"+storageClassFast+"' storage validation failed"),
@@ -164,8 +167,10 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			)).To(Succeed())
 
 			By("Trying to create fast SSD PVC that exceeds count quota (should fail)")
-			pvc5 := createTestPVC("fast-pvc-5", testNamespace, storageClassFast, "100Mi") // Count would be 4 > 3 limit
-			err = k8sClient.Create(ctx, pvc5)
+			err = testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				pvc := createTestPVC(testutils.GenerateResourceName("fast-pvc-5"), testNamespace, storageClassFast, "100Mi")
+				return pvc, k8sClient.Create(ctx, pvc)
+			})
 			Expect(err).To(HaveOccurred(), "Should block PVC that exceeds fast SSD count quota")
 			Expect(err.Error()).To(
 				ContainSubstring("ClusterResourceQuota storage class '"+storageClassFast+"' PVC count validation failed"),
@@ -188,8 +193,10 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			)).To(Succeed())
 
 			By("Trying to create slow HDD PVC that exceeds count quota (should fail)")
-			slowPVC3 := createTestPVC("slow-pvc-3", testNamespace, storageClassSlow, "500Mi") // Count would be 3 > 2 limit
-			err = k8sClient.Create(ctx, slowPVC3)
+			err = testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				pvc := createTestPVC(testutils.GenerateResourceName("slow-pvc-3"), testNamespace, storageClassSlow, "500Mi")
+				return pvc, k8sClient.Create(ctx, pvc)
+			})
 			Expect(err).To(HaveOccurred(), "Should block PVC that exceeds slow HDD count quota")
 			Expect(err.Error()).To(
 				ContainSubstring("ClusterResourceQuota storage class '"+storageClassSlow+"' PVC count validation failed"),
@@ -270,8 +277,10 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			)).To(Succeed())
 
 			By("Trying to create fast SSD PVC #4 that exceeds storage quota (should fail)")
-			fastPVC4 := createTestPVC("fast-mixed-4", testNamespace, storageClassFast, "1Gi")
-			err := k8sClient.Create(ctx, fastPVC4)
+			err := testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				pvc := createTestPVC(testutils.GenerateResourceName("fast-mixed-4"), testNamespace, storageClassFast, "1Gi")
+				return pvc, k8sClient.Create(ctx, pvc)
+			})
 			Expect(err).To(HaveOccurred(), "Should block when fast SSD storage quota exceeded")
 			Expect(err.Error()).To(
 				ContainSubstring("ClusterResourceQuota storage class '"+storageClassFast+"' storage validation failed"),
@@ -294,8 +303,10 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			)).To(Succeed())
 
 			By("Trying to create slow HDD PVC #3 that exceeds count quota (should fail)")
-			slowPVC3 := createTestPVC("slow-mixed-3", testNamespace, storageClassSlow, "1Mi")
-			err = k8sClient.Create(ctx, slowPVC3)
+			err = testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				pvc := createTestPVC(testutils.GenerateResourceName("slow-mixed-3"), testNamespace, storageClassSlow, "1Mi")
+				return pvc, k8sClient.Create(ctx, pvc)
+			})
 			Expect(err).To(HaveOccurred(), "Should block when slow HDD count quota exceeded")
 			Expect(err.Error()).To(
 				ContainSubstring("ClusterResourceQuota storage class '"+storageClassSlow+"' PVC count validation failed"),
@@ -314,8 +325,10 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			)).To(Succeed())
 
 			By("Trying to create custom storage class PVC #2 that exceeds count quota (should fail)")
-			customPVC2 := createTestPVC("custom-mixed-2", testNamespace, storageClassCustom, "500Mi")
-			err = k8sClient.Create(ctx, customPVC2)
+			err = testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				pvc := createTestPVC(testutils.GenerateResourceName("custom-mixed-2"), testNamespace, storageClassCustom, "500Mi")
+				return pvc, k8sClient.Create(ctx, pvc)
+			})
 			Expect(err).To(HaveOccurred(), "Should block when custom storage class count quota exceeded")
 			Expect(err.Error()).To(
 				ContainSubstring("ClusterResourceQuota storage class '"+storageClassCustom+"' PVC count validation failed"),

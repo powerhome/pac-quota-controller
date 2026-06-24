@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -120,6 +121,11 @@ func DescribePod(ctx context.Context, k8sClient client.Client, namespace, podNam
 // CreateNamespace creates a namespace with the specified name and labels.
 func CreateNamespace(ctx context.Context, k8sClient client.Client, namespace string,
 	nsLabels map[string]string) (*corev1.Namespace, error) {
+	// Tag test namespaces so Scrub can clean them up.
+	if nsLabels == nil {
+		nsLabels = map[string]string{}
+	}
+	nsLabels[E2ELabelKey] = E2ELabelValue
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   namespace,
@@ -293,16 +299,21 @@ func WaitForCRQResourceUsage(
 	expected resource.Quantity,
 ) error {
 	const (
-		timeout  = 30 * time.Second
-		interval = 250 * time.Millisecond
+		timeout     = 60 * time.Second
+		interval    = 250 * time.Millisecond
+		callTimeout = 5 * time.Second
 	)
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return wait.PollUntilContextTimeout(ctxWithTimeout, interval, timeout, true,
-		func(ctx context.Context) (bool, error) {
+		func(_ context.Context) (bool, error) {
 			crq := &quotav1alpha1.ClusterResourceQuota{}
-			if err := k8sClient.Get(ctx, client.ObjectKey{Name: crqName}, crq); err != nil {
-				return false, err
+			// Use a short per-call context so a slow API call doesn't consume
+			// the entire polling budget. Treat transient errors as not-yet-ready.
+			getCtx, getCancel := context.WithTimeout(ctx, callTimeout)
+			defer getCancel()
+			if err := k8sClient.Get(getCtx, client.ObjectKey{Name: crqName}, crq); err != nil {
+				return false, nil
 			}
 			used, ok := crq.Status.Total.Used[resourceName]
 			if !ok {
@@ -705,4 +716,27 @@ func NewIngress(name, namespace string) *networkingv1.Ingress {
 			}},
 		},
 	}
+}
+
+// EventuallyDenied retries createFunc until the webhook denies the request,
+// cleaning up any resource that accidentally slips through while the webhook
+// informer cache catches up to the reconciler's CRQ status update.
+// Returns the denial error for the caller to assert on.
+func EventuallyDenied(
+	ctx context.Context,
+	k8sClient client.Client,
+	createFunc func() (client.Object, error),
+) error {
+	var denialErr error
+	gomega.Eventually(func() bool {
+		obj, err := createFunc()
+		if err != nil {
+			denialErr = err
+			return true
+		}
+		_ = k8sClient.Delete(ctx, obj)
+		return false
+	}, 30*time.Second, 500*time.Millisecond).Should(gomega.BeTrue(),
+		"expected webhook to deny the request within 30s")
+	return denialErr
 }

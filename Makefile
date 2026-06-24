@@ -83,36 +83,10 @@ install-tools: ## Install development tools
 .PHONY: deps
 deps: envtest golangci-lint mockery ## Install all development dependencies
 
-.PHONY: test-e2e-setup
-test-e2e-setup:
-	@echo "[test-e2e-setup] Building manager image..."
-	make docker-build IMG=$(IMG)
-	@echo "[test-e2e-setup] Ensuring Kind cluster exists..."
-	$(eval KIND_CLUSTER ?= pac-quota-controller-test-e2e)
-	@if ! kind get clusters | grep -q "^$(KIND_CLUSTER)$$" ; then \
-		kind create cluster --name $(KIND_CLUSTER) --image $(KIND_NODE_IMAGE); \
-	fi
-	@echo "[test-e2e-setup] Loading image to Kind..."
-	kind load docker-image $(IMG) --name $(KIND_CLUSTER)
-	make install-cert-manager
-	@echo "[test-e2e-setup] Deploying Helm chart with e2e configuration..."
-	make helm-deploy IMG=$(IMG)
-	@echo "[test-e2e-setup] Helm chart deployed and controller is available."
-	@echo "[test-e2e-setup] Waiting for controller to be ready..."
-	@$(KUBECTL) -n pac-quota-controller-system wait --for=condition=ready pod --timeout=60s -l control-plane=controller-manager
-	@echo "[test-e2e-setup] Controller is ready."
-
-.PHONY: test-e2e-cleanup
-# Clean up Kind cluster before/after e2e tests for a fully clean environment
-test-e2e-cleanup:
-	@echo "[test-e2e-cleanup] Deleting Kind cluster..."
-	$(KIND) delete cluster --name $(KIND_CLUSTER) || true
-
 .PHONY: test-e2e
-# Run e2e tests with setup/cleanup
-test-e2e: test-e2e-cleanup test-e2e-setup
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
-	make test-e2e-cleanup
+# Run the e2e suite. The Go suite owns the cluster lifecycle; this is just an alias.
+test-e2e:
+	E2E_IMG=$(IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
 
 .PHONY: lint
 lint: generate golangci-lint ## Run golangci-lint linter

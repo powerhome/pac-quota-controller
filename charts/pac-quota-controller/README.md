@@ -1,6 +1,6 @@
 # pac-quota-controller
 
-![Version: 0.4.4](https://img.shields.io/badge/Version-0.4.4-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.4](https://img.shields.io/badge/AppVersion-0.4.4-informational?style=flat-square)
+![Version: 0.4.5](https://img.shields.io/badge/Version-0.4.5-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.4.4](https://img.shields.io/badge/AppVersion-0.4.4-informational?style=flat-square)
 
 A Helm chart for PAC Quota Controller - Managing cluster resource quotas across namespaces
 
@@ -308,7 +308,7 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | controllerManager.securityContext.seccompProfile.type | string | `"RuntimeDefault"` |  |
 | controllerManager.serviceAccount.annotations | object | `{}` |  |
 | controllerManager.serviceAccount.name | string | `"pac-quota-controller-manager"` |  |
-| controllerManager.terminationGracePeriodSeconds | int | `15` |  |
+| controllerManager.terminationGracePeriodSeconds | int | `35` |  |
 | events.cleanup.interval | string | `"1h"` |  |
 | events.cleanup.maxEventsPerCRQ | int | `100` |  |
 | events.cleanup.ttl | string | `"24h"` |  |
@@ -320,6 +320,9 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | excludedNamespaces[0] | string | `"kube-system"` |  |
 | metrics.enable | bool | `true` |  |
 | prometheus.alerting.enable | bool | `false` |  |
+| prometheus.alerting.rules.eventsCleanupStalled.enable | bool | `false` |  |
+| prometheus.alerting.rules.eventsCleanupStalled.for | string | `"30m"` |  |
+| prometheus.alerting.rules.eventsCleanupStalled.window | string | `"6h"` |  |
 | prometheus.alerting.rules.highLatency.enable | bool | `true` |  |
 | prometheus.alerting.rules.highLatency.for | string | `"10m"` |  |
 | prometheus.alerting.rules.highLatency.threshold | int | `5` |  |
@@ -328,6 +331,9 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | prometheus.alerting.rules.reconcileErrors.enable | bool | `true` |  |
 | prometheus.alerting.rules.reconcileErrors.for | string | `"5m"` |  |
 | prometheus.alerting.rules.reconcileErrors.threshold | int | `0` |  |
+| prometheus.alerting.rules.webhookBadRequest.enable | bool | `true` |  |
+| prometheus.alerting.rules.webhookBadRequest.for | string | `"10m"` |  |
+| prometheus.alerting.rules.webhookBadRequest.threshold | float | `0.1` |  |
 | prometheus.enable | bool | `false` |  |
 | prometheus.serviceMonitor.enable | bool | `false` |  |
 | rbac.enable | bool | `true` |  |

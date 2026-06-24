@@ -82,7 +82,7 @@ var _ = Describe("Storage Resources E2E", func() {
 					return usage.Equal(expectedUsage)
 				}
 				return false
-			}, "30s", "1s").Should(BeTrue())
+			}, Timeout, Interval).Should(BeTrue())
 		})
 	})
 
@@ -150,7 +150,7 @@ var _ = Describe("Storage Resources E2E", func() {
 					return usage.Equal(expectedUsage)
 				}
 				return false
-			}, "30s", "1s").Should(BeTrue())
+			}, Timeout, Interval).Should(BeTrue())
 		})
 	})
 
@@ -247,7 +247,7 @@ var _ = Describe("Storage Resources E2E", func() {
 				expectedEphemeral := resource.MustParse("500Mi")
 
 				return storageUsage.Equal(expectedStorage) && ephemeralUsage.Equal(expectedEphemeral)
-			}, "30s", "1s").Should(BeTrue())
+			}, Timeout, Interval).Should(BeTrue())
 		})
 	})
 })

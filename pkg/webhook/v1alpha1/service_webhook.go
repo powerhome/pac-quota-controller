@@ -100,10 +100,7 @@ func (h *ServiceWebhook) validateOperation(
 		}
 	}
 
-	h.logger.Debug("Service CRQ validation passed",
-		zap.String("service", svc.Name),
-		zap.String("namespace", svc.Namespace),
-		zap.String("operation", string(op)))
+	logValidationPassed(h.logger, "Service", svc.Namespace, op, zap.String("service", svc.Name))
 	return nil, nil
 }
 

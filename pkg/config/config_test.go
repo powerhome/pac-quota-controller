@@ -84,6 +84,71 @@ var _ = Describe("InitConfig", func() {
 	})
 })
 
+var _ = Describe("InitConfig extended fields", func() {
+	BeforeEach(func() {
+		viper.Reset()
+	})
+	AfterEach(func() {
+		viper.Reset()
+	})
+
+	It("parses excluded-namespaces, trimming spaces and skipping empties", func() {
+		Expect(os.Setenv("EXCLUDED_NAMESPACES", "ns1, ns2 ,, ns3")).To(Succeed())
+		DeferCleanup(func() { _ = os.Unsetenv("EXCLUDED_NAMESPACES") })
+
+		viper.Reset()
+		cfg := InitConfig()
+		Expect(cfg.ExcludedNamespaces).To(Equal([]string{"ns1", "ns2", "ns3"}))
+	})
+
+	It("leaves excluded-namespaces empty when unset", func() {
+		viper.Reset()
+		cfg := InitConfig()
+		Expect(cfg.ExcludedNamespaces).To(BeEmpty())
+	})
+
+	It("defaults the leader-election timings", func() {
+		viper.Reset()
+		cfg := InitConfig()
+		Expect(cfg.LeaderElectionLeaseDuration).To(Equal(60))
+		Expect(cfg.LeaderElectionRenewDeadline).To(Equal(40))
+		Expect(cfg.LeaderElectionRetryPeriod).To(Equal(10))
+	})
+
+	It("defaults the events configuration", func() {
+		viper.Reset()
+		cfg := InitConfig()
+		Expect(cfg.EventsEnable).To(BeTrue())
+		Expect(cfg.EventsTTL).To(Equal("24h"))
+		Expect(cfg.EventsMaxEventsPerCRQ).To(Equal(100))
+		Expect(cfg.EventsCleanupInterval).To(Equal("1h"))
+	})
+
+	It("reads events configuration from the environment", func() {
+		envVars := map[string]string{
+			"EVENTS_ENABLE":             "false",
+			"EVENTS_TTL":                "48h",
+			"EVENTS_MAX_EVENTS_PER_CRQ": "50",
+			"EVENTS_CLEANUP_INTERVAL":   "30m",
+		}
+		for k, v := range envVars {
+			Expect(os.Setenv(k, v)).To(Succeed())
+		}
+		DeferCleanup(func() {
+			for k := range envVars {
+				_ = os.Unsetenv(k)
+			}
+		})
+
+		viper.Reset()
+		cfg := InitConfig()
+		Expect(cfg.EventsEnable).To(BeFalse())
+		Expect(cfg.EventsTTL).To(Equal("48h"))
+		Expect(cfg.EventsMaxEventsPerCRQ).To(Equal(50))
+		Expect(cfg.EventsCleanupInterval).To(Equal("30m"))
+	})
+})
+
 var _ = Describe("SetupFlags", func() {
 	var cmd *cobra.Command
 

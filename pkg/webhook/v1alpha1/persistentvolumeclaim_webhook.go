@@ -73,13 +73,14 @@ func (h *PersistentVolumeClaimWebhook) validate(
 		oldPVC = &p
 	}
 
-	return nil, h.validateOperation(ctx, &pvc, oldPVC)
+	return nil, h.validateOperation(ctx, &pvc, oldPVC, req.Operation)
 }
 
 func (h *PersistentVolumeClaimWebhook) validateOperation(
 	ctx context.Context,
 	pvc *corev1.PersistentVolumeClaim,
 	oldPVC *corev1.PersistentVolumeClaim,
+	op admissionv1.Operation,
 ) error {
 	crq := resolveCRQForNamespace(ctx, h.crqClient, h.logger, pvc.Namespace)
 	if crq == nil {
@@ -125,9 +126,8 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 	}
 
 	for _, c := range checks {
-		// Weird edge-case where an admission request for PVC downsizing passes from the API
-		// This should not happen, but helps the tests, as we can't assume answers from the API
-		// Potentially dead code
+		// Skip zero-or-negative deltas: API rejects PVC shrink in practice, but
+		// tests can inject one and we don't want to charge negative quota.
 		if c.quantity.Sign() <= 0 {
 			continue
 		}
@@ -136,9 +136,8 @@ func (h *PersistentVolumeClaimWebhook) validateOperation(
 		}
 	}
 
-	h.logger.Debug("PVC CRQ validation passed",
+	logValidationPassed(h.logger, "PVC", pvc.Namespace, op,
 		zap.String("pvc", pvc.Name),
-		zap.String("namespace", pvc.Namespace),
-		zap.String("storageDelta", storageDelta.String()))
+		zap.String("storage_delta", storageDelta.String()))
 	return nil
 }

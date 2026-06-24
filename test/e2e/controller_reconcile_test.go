@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,9 +21,20 @@ import (
 )
 
 const (
-	Timeout  = time.Second * 30
-	Interval = time.Second * 5
+	Timeout  = time.Second * 60
+	Interval = time.Second * 1
 )
+
+// waitForJobTerminal blocks until the job records a terminal pod (failed or succeeded).
+func waitForJobTerminal(job *batchv1.Job) {
+	GinkgoHelper()
+	Eventually(func() bool {
+		if err := k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job); err != nil {
+			return false
+		}
+		return job.Status.Failed > 0 || job.Status.Succeeded > 0
+	}, Timeout, Interval).Should(BeTrue())
+}
 
 var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 	var (
@@ -353,8 +365,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					_ = k8sClient.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
 				})
 
-				// Wait longer for job to fail and become terminal
-				time.Sleep(5 * time.Second)
+				waitForJobTerminal(job)
 
 				// Terminal pods should not affect quota usage
 				Eventually(func() error {
@@ -380,8 +391,7 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 					_ = k8sClient.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground))
 				})
 
-				// Wait longer for job to succeed and become terminal
-				time.Sleep(5 * time.Second)
+				waitForJobTerminal(job)
 
 				// Terminal pods should not affect quota usage
 				Eventually(func() error {
@@ -634,8 +644,8 @@ var _ = Describe("ClusterResourceQuota Controller E2E Tests", func() {
 				})
 
 				By("Waiting for jobs to reach terminal state")
-				// Give more time for jobs to fail/succeed and become terminal
-				time.Sleep(8 * time.Second)
+				waitForJobTerminal(failedJob)
+				waitForJobTerminal(succeededJob)
 
 				By("Verifying only active pods are counted in resource usage")
 				// Expected: webPod (100m CPU, 128Mi memory) + dbPod (500m CPU, 1Gi memory) = 600m CPU, 1152Mi memory

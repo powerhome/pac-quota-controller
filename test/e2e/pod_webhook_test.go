@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 	testutils "github.com/powerhome/pac-quota-controller/test/utils"
@@ -86,16 +87,17 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 			Expect(testutils.WaitForCRQResourceUsage(
 				ctx, k8sClient, testCRQName, corev1.ResourceRequestsCPU, resource.MustParse("0"),
 			)).To(Succeed())
-			_, err := testutils.CreatePod(
-				ctx,
-				k8sClient,
-				testNamespace,
-				"test-pod-"+testSuffix,
-				corev1.ResourceList{
-					corev1.ResourceCPU: resource.MustParse("200m"),
-				},
-				nil) // Exceeds 100m limit
-			Expect(err).To(HaveOccurred())
+			err := testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				return testutils.CreatePod(
+					ctx,
+					k8sClient,
+					testNamespace,
+					testutils.GenerateResourceName("test-pod"),
+					corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("200m"),
+					},
+					nil) // Exceeds 100m limit
+			})
 			Expect(err.Error()).To(ContainSubstring("ClusterResourceQuota CPU requests validation failed"))
 		})
 
@@ -132,30 +134,32 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 			Expect(testutils.WaitForCRQResourceUsage(
 				ctx, k8sClient, testCRQName, corev1.ResourceRequestsCPU, resource.MustParse("0"),
 			)).To(Succeed())
-			_, err := testutils.CreatePodWithContainers(
-				ctx, k8sClient, testNamespace, "test-pod-init-container-"+testSuffix,
-				[]corev1.Container{
-					{
-						Name:  "main-container",
-						Image: "nginx:latest",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU: resource.MustParse("50m"),
-							},
-						},
-					},
-				}, []corev1.Container{
-					{
-						Name:  "init-container",
-						Image: "nginx:latest",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU: resource.MustParse("200m"),
-							},
-						},
-					},
-				})
 			// Should fail due to init container exceeding limit
+			err := testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				return testutils.CreatePodWithContainers(
+					ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-init"),
+					[]corev1.Container{
+						{
+							Name:  "main-container",
+							Image: "nginx:latest",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("50m"),
+								},
+							},
+						},
+					}, []corev1.Container{
+						{
+							Name:  "init-container",
+							Image: "nginx:latest",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU: resource.MustParse("200m"),
+								},
+							},
+						},
+					})
+			})
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -496,23 +500,24 @@ var _ = Describe("Pod Admission Webhook Tests", func() {
 				ctx, k8sClient, testCRQName, corev1.ResourcePods, resource.MustParse("2"),
 			)).To(Succeed())
 			// Create third pod - should fail
-			_, err = testutils.CreatePodWithContainers(
-				ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-3"),
-				[]corev1.Container{
-					{
-						Name:  "test-container",
-						Image: "nginx:latest",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-								corev1.ResourceMemory: resource.MustParse("128Mi"),
+			err = testutils.EventuallyDenied(ctx, k8sClient, func() (client.Object, error) {
+				return testutils.CreatePodWithContainers(
+					ctx, k8sClient, testNamespace, testutils.GenerateResourceName("test-pod-3"),
+					[]corev1.Container{
+						{
+							Name:  "test-container",
+							Image: "nginx:latest",
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("10m"),
+									corev1.ResourceMemory: resource.MustParse("128Mi"),
+								},
 							},
 						},
 					},
-				},
-				nil,
-			)
-			Expect(err).To(HaveOccurred())
+					nil,
+				)
+			})
 			Expect(err.Error()).To(ContainSubstring("pods limit exceeded"))
 
 			// Cleanup

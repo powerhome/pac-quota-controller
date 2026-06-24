@@ -2,7 +2,7 @@ package manager
 
 import (
 	"context"
-	"os"
+	"fmt"
 	"time"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
@@ -17,7 +17,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-var logger = pkglogger.L().Named("manager")
+// pkgLogger is the fallback used by SetupControllers when no logger is supplied.
+var pkgLogger = pkglogger.L().Named("manager")
 
 // InitScheme initializes the runtime scheme
 func InitScheme() *k8sruntime.Scheme {
@@ -45,6 +46,9 @@ func SetupManager(
 
 	// Configure leader election timing if enabled
 	if cfg.EnableLeaderElection {
+		if err := validateLeaderElectionTiming(cfg); err != nil {
+			return nil, err
+		}
 		leaseDuration := time.Duration(cfg.LeaderElectionLeaseDuration) * time.Second
 		renewDeadline := time.Duration(cfg.LeaderElectionRenewDeadline) * time.Second
 		retryPeriod := time.Duration(cfg.LeaderElectionRetryPeriod) * time.Second
@@ -62,8 +66,32 @@ func SetupManager(
 	return mgr, nil
 }
 
+// validateLeaderElectionTiming enforces the controller-runtime / client-go
+// invariant LeaseDuration > RenewDeadline > RetryPeriod (all positive).
+// Misconfigured values cause leadership flapping or hung renewals at runtime
+// with cryptic errors; rejecting them at startup fails loud instead.
+func validateLeaderElectionTiming(cfg *config.Config) error {
+	lease := cfg.LeaderElectionLeaseDuration
+	renew := cfg.LeaderElectionRenewDeadline
+	retry := cfg.LeaderElectionRetryPeriod
+	if lease <= 0 || renew <= 0 || retry <= 0 {
+		return fmt.Errorf(
+			"leader election durations must all be positive seconds (lease=%d renew=%d retry=%d)",
+			lease, renew, retry,
+		)
+	}
+	if lease <= renew || renew <= retry {
+		return fmt.Errorf(
+			"leader election requires lease > renew > retry (got lease=%d renew=%d retry=%d)",
+			lease, renew, retry,
+		)
+	}
+	return nil
+}
+
 // SetupControllers sets up all controllers with the manager
 func SetupControllers(ctx context.Context, mgr ctrl.Manager, cfg *config.Config, loggerInstance *zap.Logger) error {
+	logger := pkgLogger
 	if loggerInstance != nil {
 		logger = loggerInstance.Named("setup")
 	}
@@ -80,13 +108,4 @@ func SetupControllers(ctx context.Context, mgr ctrl.Manager, cfg *config.Config,
 	}
 
 	return nil
-}
-
-// Start starts the manager with graceful shutdown
-func Start(mgr ctrl.Manager) {
-	logger.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		logger.Error("problem running manager", zap.Error(err))
-		os.Exit(1)
-	}
 }

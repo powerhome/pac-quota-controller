@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	testutils "github.com/powerhome/pac-quota-controller/test/utils"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -21,38 +22,55 @@ var (
 	k8sClient client.Client
 	clientSet *kubernetes.Clientset
 	ctx       context.Context
+	e2eConfig testutils.E2EConfig
 )
 
-// TestE2E runs the end-to-end (e2e) test suite for the project. These tests execute in an isolated,
-// temporary environment to validate project changes with the purposed to be used in CI jobs.
-// The default setup requires Kind, builds/loads the Manager Docker image locally, and installs
-// CertManager.
+// TestE2E runs the e2e suite. The suite owns the cluster lifecycle (tune via testutils.E2EConfig).
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 	_, _ = fmt.Fprintf(GinkgoWriter, "Starting pac-quota-controller integration test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 
-var _ = BeforeSuite(func() {
-	By("setting up logger to suppress controller-runtime warnings")
+// First func provisions the environment once; second runs on every process.
+var _ = SynchronizedBeforeSuite(func() []byte {
+	e2eConfig = testutils.LoadE2EConfig()
+	setupCtx := context.Background()
+
+	By("provisioning the e2e environment")
+	Expect(e2eConfig.Provision(setupCtx)).To(Succeed(), "Failed to provision e2e environment")
+
+	By("scrubbing leftovers from any previous run")
+	Expect(testutils.Scrub(setupCtx, newK8sClient())).To(Succeed(), "Failed to scrub cluster")
+	return nil
+}, func(_ []byte) {
+	e2eConfig = testutils.LoadE2EConfig()
+	ctx = context.Background()
+
 	log.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	By("initializing Kubernetes client")
-	var err error
-	ctx = context.Background()
 	cfg, err := k8sconfig.GetConfig()
 	Expect(err).NotTo(HaveOccurred(), "Failed to get kubeconfig")
 
-	// Register ClusterResourceQuota CRD types with the global scheme.
-	// The global scheme already includes all built-in Kubernetes types.
-	err = v1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred(), "Failed to add ClusterResourceQuota types to scheme")
-
-	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
-	Expect(err).NotTo(HaveOccurred(), "Failed to create k8s client")
+	k8sClient = newK8sClient()
 	clientSet, err = kubernetes.NewForConfig(cfg)
 	Expect(err).NotTo(HaveOccurred(), "Failed to create Kubernetes clientset")
 })
 
-var _ = AfterSuite(func() {
+// Second func tears the environment down once, after all processes finish.
+var _ = SynchronizedAfterSuite(func() {}, func() {
+	By("tearing down the e2e environment")
+	Expect(e2eConfig.Teardown(context.Background())).To(Succeed(), "Failed to tear down e2e environment")
 })
+
+// newK8sClient builds a controller-runtime client with the CRQ types registered.
+func newK8sClient() client.Client {
+	cfg, err := k8sconfig.GetConfig()
+	Expect(err).NotTo(HaveOccurred(), "Failed to get kubeconfig")
+
+	Expect(v1alpha1.AddToScheme(scheme.Scheme)).To(Succeed(), "Failed to add ClusterResourceQuota types to scheme")
+
+	c, err := client.New(cfg, client.Options{Scheme: scheme.Scheme})
+	Expect(err).NotTo(HaveOccurred(), "Failed to create k8s client")
+	return c
+}

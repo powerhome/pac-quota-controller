@@ -1,35 +1,14 @@
 package pod
 
 import (
-	"context"
 	"strings"
 
-	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/resource"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/quota"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 )
-
-// PodResourceCalculator handles compute resource usage calculations for pods
-type PodResourceCalculator struct {
-	usage.BaseResourceCalculator
-	logger *zap.Logger
-}
-
-// NewPodResourceCalculator creates a new PodResourceCalculator
-func NewPodResourceCalculator(c client.Client, logger *zap.Logger) *PodResourceCalculator {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-	return &PodResourceCalculator{
-		BaseResourceCalculator: *usage.NewBaseResourceCalculator(c),
-		logger:                 logger.Named("pod-calculator"),
-	}
-}
 
 // IsPodTerminal checks if a pod is in a terminal phase (Succeeded or Failed).
 // Terminal pods don't consume compute resources as they're not actively running.
@@ -172,58 +151,6 @@ func getContainerResourceUsage(container corev1.Container, resourceName corev1.R
 		}
 	}
 	return resource.Quantity{}
-}
-
-// CalculateUsage calculates the usage for compute resources (CPU/Memory requests or limits)
-// across all non-terminal pods in the specified namespace
-func (c *PodResourceCalculator) CalculateUsage(
-	ctx context.Context,
-	namespace string,
-	resourceName corev1.ResourceName,
-) (resource.Quantity, error) {
-	correlationID := quota.GetCorrelationID(ctx)
-
-	podList := &corev1.PodList{}
-	if err := c.Client.List(ctx, podList, client.InNamespace(namespace)); err != nil {
-		c.logger.Error("Failed to list pods",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", namespace),
-			zap.Error(err))
-		return resource.Quantity{}, err
-	}
-
-	totalUsage := CalculateUsageFromPods(podList.Items, resourceName)
-
-	c.logger.Debug("Calculated compute usage",
-		zap.String("correlation_id", correlationID),
-		zap.String("namespace", namespace),
-		zap.String("resource", string(resourceName)),
-		zap.String("total_usage", totalUsage.String()),
-		zap.Int("pod_count", len(podList.Items)))
-	return totalUsage, nil
-}
-
-// CalculatePodCount calculates the number of non-terminal pods in a namespace
-func (c *PodResourceCalculator) CalculatePodCount(ctx context.Context, namespace string) (int64, error) {
-	correlationID := quota.GetCorrelationID(ctx)
-
-	podList := &corev1.PodList{}
-	if err := c.Client.List(ctx, podList, client.InNamespace(namespace)); err != nil {
-		c.logger.Error("Failed to list pods",
-			zap.String("correlation_id", correlationID),
-			zap.String("namespace", namespace),
-			zap.Error(err))
-		return 0, err
-	}
-
-	countQty := CalculateUsageFromPods(podList.Items, usage.ResourcePods)
-	count := countQty.Value()
-
-	c.logger.Debug("Calculated pod count",
-		zap.String("correlation_id", correlationID),
-		zap.String("namespace", namespace),
-		zap.Int64("pod_count", count))
-	return count, nil
 }
 
 // SpecEqual compares two pod specs to determine if they are equivalent.
