@@ -120,17 +120,19 @@ var _ = Describe("Service Quota Webhook", func() {
 				ctx, k8sClient, testCRQName, "services.nodeports", resource.MustParse("1"),
 			)).To(Succeed())
 			// Second NodePort service should be denied
-			service2 := &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-nodeport-2-" + testSuffix,
-					Namespace: testNamespace,
-				},
-				Spec: corev1.ServiceSpec{
-					Type:  corev1.ServiceTypeNodePort,
-					Ports: []corev1.ServicePort{{Port: 30002, NodePort: 30003}},
-				},
-			}
-			err := k8sClient.Create(ctx, service2)
+			err := testutils.EventuallyDenied(ctx, k8sClient, func() (ctrlclient.Object, error) {
+				svc := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testutils.GenerateResourceName("test-nodeport-2"),
+						Namespace: testNamespace,
+					},
+					Spec: corev1.ServiceSpec{
+						Type:  corev1.ServiceTypeNodePort,
+						Ports: []corev1.ServicePort{{Port: 30002, NodePort: 30003}},
+					},
+				}
+				return svc, k8sClient.Create(ctx, svc)
+			})
 			Expect(err).To(HaveOccurred())
 		})
 
@@ -166,17 +168,19 @@ var _ = Describe("Service Quota Webhook", func() {
 				ctx, k8sClient, testCRQName, "services.loadbalancers", resource.MustParse("1"),
 			)).To(Succeed())
 			// Second LoadBalancer service should be denied
-			service2 := &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-lb-2-" + testSuffix,
-					Namespace: testNamespace,
-				},
-				Spec: corev1.ServiceSpec{
-					Type:  corev1.ServiceTypeLoadBalancer,
-					Ports: []corev1.ServicePort{{Port: 80}},
-				},
-			}
-			err := k8sClient.Create(ctx, service2)
+			err := testutils.EventuallyDenied(ctx, k8sClient, func() (ctrlclient.Object, error) {
+				svc := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testutils.GenerateResourceName("test-lb-2"),
+						Namespace: testNamespace,
+					},
+					Spec: corev1.ServiceSpec{
+						Type:  corev1.ServiceTypeLoadBalancer,
+						Ports: []corev1.ServicePort{{Port: 80}},
+					},
+				}
+				return svc, k8sClient.Create(ctx, svc)
+			})
 			Expect(err).To(HaveOccurred())
 		})
 

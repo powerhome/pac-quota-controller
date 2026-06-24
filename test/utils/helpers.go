@@ -9,6 +9,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -715,4 +716,27 @@ func NewIngress(name, namespace string) *networkingv1.Ingress {
 			}},
 		},
 	}
+}
+
+// EventuallyDenied retries createFunc until the webhook denies the request,
+// cleaning up any resource that accidentally slips through while the webhook
+// informer cache catches up to the reconciler's CRQ status update.
+// Returns the denial error for the caller to assert on.
+func EventuallyDenied(
+	ctx context.Context,
+	k8sClient client.Client,
+	createFunc func() (client.Object, error),
+) error {
+	var denialErr error
+	gomega.Eventually(func() bool {
+		obj, err := createFunc()
+		if err != nil {
+			denialErr = err
+			return true
+		}
+		_ = k8sClient.Delete(ctx, obj)
+		return false
+	}, 30*time.Second, 500*time.Millisecond).Should(gomega.BeTrue(),
+		"expected webhook to deny the request within 30s")
+	return denialErr
 }
