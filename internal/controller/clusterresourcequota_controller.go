@@ -6,6 +6,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
@@ -138,8 +139,12 @@ type ClusterResourceQuotaReconciler struct {
 	logger                   *zap.Logger
 	ExcludeNamespaceLabelKey string
 	ExcludedNamespaces       []string
-	// previousNamespacesByQuota tracks namespaces from previous reconciliation for change detection
+
+	// mu guards previousNamespacesByQuota and lastQuotaExceededAt across
+	// concurrent Reconcile calls (MaxConcurrentReconciles: 5).
+	mu                        sync.RWMutex
 	previousNamespacesByQuota map[string][]string
+	lastQuotaExceededAt       map[string]time.Time
 }
 
 // isNamespaceExcluded checks if a namespace should be ignored by the controller.
@@ -651,6 +656,9 @@ func (r *ClusterResourceQuotaReconciler) ensureDependencies(mgr ctrl.Manager) {
 	if r.previousNamespacesByQuota == nil {
 		r.previousNamespacesByQuota = make(map[string][]string)
 	}
+	if r.lastQuotaExceededAt == nil {
+		r.lastQuotaExceededAt = make(map[string]time.Time)
+	}
 }
 
 // startBackgroundWorkers fires the long-lived goroutines that outlive a
@@ -675,11 +683,7 @@ func (r *ClusterResourceQuotaReconciler) resolveCleanupConfig() events.CleanupCo
 		}
 		return cleanupConfig
 	}
-	cleanupConfig := events.DefaultCleanupConfig()
-	if r.Config != nil && !r.Config.EventsEnable {
-		cleanupConfig.Enabled = false
-	}
-	return cleanupConfig
+	return events.CleanupConfig{Enabled: false}
 }
 
 // installWatches wires the CRQ owner watch plus every cross-resource watch

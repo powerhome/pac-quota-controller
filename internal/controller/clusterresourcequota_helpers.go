@@ -2,51 +2,81 @@ package controller
 
 import (
 	"sort"
+	"time"
 
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
-// handleNamespaceChanges detects and records namespace additions/removals
+// quotaExceededCooldown is the minimum interval between QuotaExceeded events
+// for the same CRQ+resource pair. Prevents etcd write storms when a CRQ is
+// persistently over quota and reconciles fire on every pod change.
+const quotaExceededCooldown = 5 * time.Minute
+
+// handleNamespaceChanges detects and records namespace additions/removals.
+// Event emission happens outside the lock to avoid blocking reconciles.
 func (r *ClusterResourceQuotaReconciler) handleNamespaceChanges(crq *quotav1alpha1.ClusterResourceQuota, currentNamespaces []string) {
+	r.mu.Lock()
 	previousNamespaces := r.previousNamespacesByQuota[crq.Name]
 
-	// Convert to sets for easy comparison
-	prevSet := make(map[string]bool)
+	prevSet := make(map[string]bool, len(previousNamespaces))
 	for _, ns := range previousNamespaces {
 		prevSet[ns] = true
 	}
 
-	currSet := make(map[string]bool)
+	currSet := make(map[string]bool, len(currentNamespaces))
 	for _, ns := range currentNamespaces {
 		currSet[ns] = true
-		if !prevSet[ns] {
-			r.EventRecorder.NamespaceAdded(crq, ns)
-		}
 	}
 
+	var added, removed []string
+	for _, ns := range currentNamespaces {
+		if !prevSet[ns] {
+			added = append(added, ns)
+		}
+	}
 	for _, ns := range previousNamespaces {
 		if !currSet[ns] {
-			r.EventRecorder.NamespaceRemoved(crq, ns)
+			removed = append(removed, ns)
 		}
 	}
 
-	// Update the tracking
-	r.previousNamespacesByQuota[crq.Name] = make([]string, len(currentNamespaces))
-	copy(r.previousNamespacesByQuota[crq.Name], currentNamespaces)
-	sort.Strings(r.previousNamespacesByQuota[crq.Name])
+	updated := make([]string, len(currentNamespaces))
+	copy(updated, currentNamespaces)
+	sort.Strings(updated)
+	r.previousNamespacesByQuota[crq.Name] = updated
+	r.mu.Unlock()
+
+	for _, ns := range added {
+		r.EventRecorder.NamespaceAdded(crq, ns)
+	}
+	for _, ns := range removed {
+		r.EventRecorder.NamespaceRemoved(crq, ns)
+	}
 }
 
-// checkQuotaThresholds checks for quota warnings and violations
+// checkQuotaThresholds emits a QuotaExceeded event for each over-limit resource,
+// rate-limited to at most one event per CRQ+resource per quotaExceededCooldown.
 func (r *ClusterResourceQuotaReconciler) checkQuotaThresholds(crq *quotav1alpha1.ClusterResourceQuota, usage quotav1alpha1.ResourceList) {
+	now := time.Now()
 	for resourceName, limit := range crq.Spec.Hard {
 		used := usage[resourceName]
-
-		// Use resource.Quantity comparison instead of .Value() to preserve fractional values
-		// Only check if limit is greater than zero to avoid division by zero scenarios
-		if !limit.IsZero() && used.Cmp(limit) > 0 {
-			// Record violation event with human-readable format using resource.Quantity
-			// This preserves the original unit format (e.g., "1500m" for CPU, "200Mi" for memory)
-			r.EventRecorder.QuotaExceeded(crq, string(resourceName), used, limit)
+		if limit.IsZero() || used.Cmp(limit) <= 0 {
+			continue
 		}
+
+		key := crq.Name + "/" + string(resourceName)
+		r.mu.Lock()
+		if r.lastQuotaExceededAt == nil {
+			r.lastQuotaExceededAt = make(map[string]time.Time)
+		}
+		last := r.lastQuotaExceededAt[key]
+		if now.Sub(last) < quotaExceededCooldown {
+			r.mu.Unlock()
+			continue
+		}
+		r.lastQuotaExceededAt[key] = now
+		r.mu.Unlock()
+
+		r.EventRecorder.QuotaExceeded(crq, string(resourceName), used, limit)
 	}
 }

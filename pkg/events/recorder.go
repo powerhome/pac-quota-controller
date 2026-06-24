@@ -21,6 +21,9 @@ const (
 	// Event types
 	EventTypeNormal  = "Normal"
 	EventTypeWarning = "Warning"
+
+	// ActionReconcile is the action field for all CRQ events — they all originate from the reconcile loop.
+	ActionReconcile = "Reconcile"
 )
 
 // EventRecorder wraps the Kubernetes event recorder with PAC-specific functionality
@@ -76,5 +79,5 @@ func (r *EventRecorder) InvalidSelector(crq *quotav1alpha1.ClusterResourceQuota,
 func (r *EventRecorder) recordEvent(crq *quotav1alpha1.ClusterResourceQuota,
 	eventType, reason, message string) {
 
-	r.recorder.Eventf(crq, nil, eventType, reason, reason, message)
+	r.recorder.Eventf(crq, nil, eventType, reason, ActionReconcile, message)
 }

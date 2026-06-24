@@ -283,6 +283,9 @@ func (s *GinWebhookServer) waitForServerReady(ctx context.Context, serverStarted
 			if err != nil {
 				return fmt.Errorf("webhook server failed to start: %w", err)
 			}
+			if ctx.Err() != nil {
+				return s.handleContextCancelled()
+			}
 			return fmt.Errorf("webhook server stopped unexpectedly")
 		case <-ctx.Done():
 			return s.handleContextCancelled()
