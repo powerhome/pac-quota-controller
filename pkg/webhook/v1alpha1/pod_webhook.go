@@ -103,6 +103,8 @@ func (h *PodWebhook) validateOperation(
 		{usage.ResourceRequestsMemory, "memory requests"},
 		{usage.ResourceLimitsCPU, "CPU limits"},
 		{usage.ResourceLimitsMemory, "memory limits"},
+		{usage.ResourceRequestsEphemeralStorage, "ephemeral-storage requests"},
+		{usage.ResourceLimitsEphemeralStorage, "ephemeral-storage limits"},
 	}
 
 	for _, c := range computeResources {

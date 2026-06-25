@@ -348,6 +348,24 @@ var _ = Describe("Pod", func() {
 			Expect(result.Equal(resource.MustParse("1Gi"))).To(BeTrue())
 		})
 
+		It("should handle ephemeral storage limits", func() {
+			pod := &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceEphemeralStorage: resource.MustParse("2Gi"),
+								},
+							},
+						},
+					},
+				},
+			}
+			result := CalculatePodUsage(pod, corev1.ResourceLimitsEphemeralStorage)
+			Expect(result.Equal(resource.MustParse("2Gi"))).To(BeTrue())
+		})
+
 		It("should handle CPU limits", func() {
 			pod := &corev1.Pod{
 				Spec: corev1.PodSpec{

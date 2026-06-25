@@ -1125,6 +1125,28 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(got.String()).To(Equal("2"))
 		})
+
+		It("computes ephemeral-storage limits from the in-memory pod slice", func() {
+			reconciler := &ClusterResourceQuotaReconciler{}
+			pods := []corev1.Pod{
+				{
+					Status: corev1.PodStatus{Phase: corev1.PodRunning},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Limits: corev1.ResourceList{
+								corev1.ResourceEphemeralStorage: resource.MustParse("2Gi"),
+							},
+						},
+					}}},
+				},
+			}
+
+			got, err := reconciler.computeNamespaceResourceUsage(
+				ctx, "ns-a", corev1.ResourceLimitsEphemeralStorage, pods, nil, nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Equal(resource.MustParse("2Gi"))).To(BeTrue())
+		})
 	})
 
 	Context("Service Usage From Prefetched Services", func() {
@@ -1202,6 +1224,14 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				corev1.ResourceName("requests.nvidia.com/gpu"): resource.MustParse("4"),
 			})
 			Expect(kinds.pods).To(BeTrue())
+		})
+
+		It("marks limits.ephemeral-storage as needing pods", func() {
+			kinds := r.classifyKindsNeeded(quotav1alpha1.ResourceList{
+				corev1.ResourceLimitsEphemeralStorage: resource.MustParse("2Gi"),
+			})
+			Expect(kinds.pods).To(BeTrue())
+			Expect(kinds.pvcs).To(BeFalse())
 		})
 	})
 
