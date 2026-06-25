@@ -70,6 +70,32 @@ func makePod(name, cpuReq, memReq, cpuLim, memLim string) *corev1.Pod {
 	}
 }
 
+func makeEphemeralPod(name, ephemeralReq, ephemeralLim string) *corev1.Pod {
+	requests := corev1.ResourceList{}
+	limits := corev1.ResourceList{}
+	if ephemeralReq != "" {
+		requests[corev1.ResourceEphemeralStorage] = resource.MustParse(ephemeralReq)
+	}
+	if ephemeralLim != "" {
+		limits[corev1.ResourceEphemeralStorage] = resource.MustParse(ephemeralLim)
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: podWebhookTestNamespace},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:  "c",
+					Image: "busybox",
+					Resources: corev1.ResourceRequirements{
+						Requests: requests,
+						Limits:   limits,
+					},
+				},
+			},
+		},
+	}
+}
+
 var _ = Describe("PodWebhook", func() {
 	const (
 		nsName  = podWebhookTestNamespace
@@ -210,6 +236,68 @@ var _ = Describe("PodWebhook", func() {
 			resp := sendWebhookRequest(engine, newPodReview("5", pod))
 			Expect(resp.Response.Allowed).To(BeFalse())
 			Expect(resp.Response.Result.Message).To(ContainSubstring("memory limits"))
+		})
+
+		It("denies when ephemeral-storage requests would exceed the quota", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsEphemeralStorage: quantity("2Gi"),
+					usage.ResourcePods:                     quantity("10"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceRequestsEphemeralStorage: quantity("2Gi"),
+					usage.ResourcePods:                     quantity("0"),
+				},
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			pod := makeEphemeralPod("p1", "1Gi", "")
+			resp := sendWebhookRequest(engine, newPodReview("6", pod))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("ephemeral-storage requests"))
+		})
+
+		It("denies when ephemeral-storage limits would exceed the quota", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceLimitsEphemeralStorage: quantity("2Gi"),
+					usage.ResourcePods:                   quantity("10"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceLimitsEphemeralStorage: quantity("2Gi"),
+					usage.ResourcePods:                   quantity("0"),
+				},
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			pod := makeEphemeralPod("p1", "", "1Gi")
+			resp := sendWebhookRequest(engine, newPodReview("7", pod))
+			Expect(resp.Response.Allowed).To(BeFalse())
+			Expect(resp.Response.Result.Message).To(ContainSubstring("ephemeral-storage limits"))
+		})
+
+		It("admits a pod when ephemeral-storage stays under the quota", func() {
+			ns := makeNamespace(nsName, labels)
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{
+					usage.ResourceLimitsEphemeralStorage: quantity("4Gi"),
+					usage.ResourcePods:                   quantity("10"),
+				},
+				quotav1alpha1.ResourceList{
+					usage.ResourceLimitsEphemeralStorage: quantity("1Gi"),
+					usage.ResourcePods:                   quantity("1"),
+				},
+			)
+			h := NewPodWebhook(newTestCRQClient(ns, crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			pod := makeEphemeralPod("p1", "", "2Gi")
+			resp := sendWebhookRequest(engine, newPodReview("8", pod))
+			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 
 		It("denies when the pod count would exceed the quota even with no resource requests", func() {

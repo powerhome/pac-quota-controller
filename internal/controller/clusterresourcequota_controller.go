@@ -606,7 +606,8 @@ func (r *ClusterResourceQuotaReconciler) isComputeResource(resourceName corev1.R
 
 	// Standard compute resources (already handled in switch above, but included for completeness)
 	switch resourceName {
-	case corev1.ResourceRequestsCPU, corev1.ResourceRequestsMemory, corev1.ResourceLimitsCPU, corev1.ResourceLimitsMemory, corev1.ResourceRequestsEphemeralStorage:
+	case corev1.ResourceRequestsCPU, corev1.ResourceRequestsMemory, corev1.ResourceLimitsCPU, corev1.ResourceLimitsMemory,
+		corev1.ResourceRequestsEphemeralStorage, corev1.ResourceLimitsEphemeralStorage:
 		return true
 	}
 
