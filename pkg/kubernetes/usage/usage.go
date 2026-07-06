@@ -1,82 +1,12 @@
 package usage
 
 import (
-	"context"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ResourceCalculatorInterface defines the common interface for resource usage calculations
-type ResourceCalculatorInterface interface {
-	// CalculateUsage calculates the total usage for a specific resource in a namespace
-	CalculateUsage(ctx context.Context, namespace string, resourceName corev1.ResourceName) (resource.Quantity, error)
-}
-
-// BaseResourceCalculator provides common functionality for resource calculators.
-// Client is a controller-runtime client so List/Get calls hit the shared informer cache.
-type BaseResourceCalculator struct {
-	Client client.Client
-}
-
-// NewBaseResourceCalculator creates a new base resource calculator
-func NewBaseResourceCalculator(c client.Client) *BaseResourceCalculator {
-	return &BaseResourceCalculator{
-		Client: c,
-	}
-}
-
-// ResourceUsage represents usage information for a specific resource
-type ResourceUsage struct {
-	ResourceName corev1.ResourceName
-	Quantity     resource.Quantity
-	Error        error
-}
-
-// UsageResult represents the result of usage calculations
-type UsageResult struct {
-	Namespace     string
-	Usage         map[corev1.ResourceName]resource.Quantity
-	Errors        []error
-	ResourceCount int
-}
-
-// NewUsageResult creates a new usage result
-func NewUsageResult(namespace string) *UsageResult {
-	return &UsageResult{
-		Namespace: namespace,
-		Usage:     make(map[corev1.ResourceName]resource.Quantity),
-		Errors:    make([]error, 0),
-	}
-}
-
-// AddUsage adds a resource usage to the result
-func (r *UsageResult) AddUsage(resourceName corev1.ResourceName, quantity resource.Quantity) {
-	r.Usage[resourceName] = quantity
-	r.ResourceCount++
-}
-
-// AddError adds an error to the result
-func (r *UsageResult) AddError(err error) {
-	r.Errors = append(r.Errors, err)
-}
-
-// HasErrors returns true if there are any errors
-func (r *UsageResult) HasErrors() bool {
-	return len(r.Errors) > 0
-}
-
-// GetTotalUsage returns the total usage for a specific resource
-func (r *UsageResult) GetTotalUsage(resourceName corev1.ResourceName) resource.Quantity {
-	if usage, exists := r.Usage[resourceName]; exists {
-		return usage
-	}
-	return resource.Quantity{}
-}
-
-// Core resource names used across the application
+// Core resource names used across the application.
 var (
 	// Core compute resources
 	ResourceRequestsCPU = corev1.ResourceRequestsCPU
@@ -118,19 +48,6 @@ var (
 	ResourceServicesLoadBalancers = corev1.ResourceServicesLoadBalancers
 	ResourceServicesNodePorts     = corev1.ResourceServicesNodePorts
 )
-
-// Common resource calculation utilities
-func NewQuantity(value int64, format resource.Format) resource.Quantity {
-	return *resource.NewQuantity(value, format)
-}
-
-func NewDecimalQuantity(value int64, format resource.Format) resource.Quantity {
-	return *resource.NewQuantity(value, format)
-}
-
-func NewBinaryQuantity(value int64, format resource.Format) resource.Quantity {
-	return *resource.NewQuantity(value, format)
-}
 
 // GetBaseResourceName returns the base resource name for a given resource name.
 // For example, it maps 'requests.cpu' or 'limits.cpu' to 'cpu'.

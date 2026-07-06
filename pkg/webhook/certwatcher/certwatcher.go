@@ -59,7 +59,7 @@ func (cw *CertWatcher) waitForCertificateFiles(ctx context.Context, maxRetries i
 				if err := cw.loadCertificate(); err != nil {
 					cw.logger.Warn("Certificate files exist but failed to load, retrying",
 						zap.Int("attempt", i+1),
-						zap.Int("maxRetries", maxRetries),
+						zap.Int("max_retries", maxRetries),
 						zap.Error(err))
 				} else {
 					cw.logger.Info("Successfully loaded certificates",
@@ -71,11 +71,11 @@ func (cw *CertWatcher) waitForCertificateFiles(ctx context.Context, maxRetries i
 
 		if i < maxRetries-1 { // Don't sleep on the last iteration
 			cw.logger.Info("Waiting for certificate files to become available",
-				zap.String("certPath", cw.certPath),
-				zap.String("keyPath", cw.keyPath),
+				zap.String("cert_path", cw.certPath),
+				zap.String("key_path", cw.keyPath),
 				zap.Int("attempt", i+1),
-				zap.Int("maxRetries", maxRetries),
-				zap.Duration("retryInterval", retryInterval))
+				zap.Int("max_retries", maxRetries),
+				zap.Duration("retry_interval", retryInterval))
 
 			select {
 			case <-ctx.Done():
@@ -133,8 +133,8 @@ func (cw *CertWatcher) loadCertificate() error {
 	cw.cert = &tlsCert
 	cw.logger.Info("Certificate loaded successfully",
 		zap.String("subject", cert.Subject.CommonName),
-		zap.Time("notAfter", cert.NotAfter),
-		zap.Time("notBefore", cert.NotBefore))
+		zap.Time("not_after", cert.NotAfter),
+		zap.Time("not_before", cert.NotBefore))
 
 	return nil
 }
@@ -142,8 +142,8 @@ func (cw *CertWatcher) loadCertificate() error {
 // Start starts watching for certificate changes
 func (cw *CertWatcher) Start(ctx context.Context) error {
 	cw.logger.Info("Starting certificate watcher",
-		zap.String("certPath", cw.certPath),
-		zap.String("keyPath", cw.keyPath))
+		zap.String("cert_path", cw.certPath),
+		zap.String("key_path", cw.keyPath))
 
 	// Wait for certificates to be available with retries
 	maxRetries := 60 // 5 minutes with 5-second intervals

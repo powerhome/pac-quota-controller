@@ -82,17 +82,17 @@ var _ = Describe("Storage Resources E2E", func() {
 					return usage.Equal(expectedUsage)
 				}
 				return false
-			}, "30s", "1s").Should(BeTrue())
+			}, Timeout, Interval).Should(BeTrue())
 		})
 	})
 
 	Context("Ephemeral Storage Usage", func() {
-		It("should track ephemeral storage usage from Pods", func() {
-			By("Creating a namespace with the appropriate label")
+		// Asserts a Pod's ephemeral-storage usage aggregates into the CRQ status under quotaRes.
+		trackEphemeralStorage := func(label string, quotaRes corev1.ResourceName, podResources corev1.ResourceRequirements) {
 			namespace := &corev1.Namespace{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "ephemeral-test-" + suffix,
-					Labels: map[string]string{"ephemeral-quota": "enabled-" + suffix},
+					Name:   label + "-test-" + suffix,
+					Labels: map[string]string{label + "-quota": "enabled-" + suffix},
 				},
 			}
 			Expect(k8sClient.Create(ctx, namespace)).To(Succeed())
@@ -100,36 +100,25 @@ var _ = Describe("Storage Resources E2E", func() {
 				Expect(k8sClient.Delete(ctx, namespace)).To(Succeed())
 			}()
 
-			By("Creating a ClusterResourceQuota with ephemeral storage limits")
 			crq, err := testutils.CreateClusterResourceQuota(ctx, k8sClient, crqName, &metav1.LabelSelector{
-				MatchLabels: map[string]string{"ephemeral-quota": "enabled-" + suffix},
+				MatchLabels: map[string]string{label + "-quota": "enabled-" + suffix},
 			}, quotav1alpha1.ResourceList{
-				corev1.ResourceRequestsEphemeralStorage: resource.MustParse("2Gi"),
+				quotaRes: resource.MustParse("2Gi"),
 			})
 			Expect(err).ToNot(HaveOccurred())
 			defer func() {
 				Expect(k8sClient.Delete(ctx, crq)).To(Succeed())
 			}()
 
-			By("Creating a Pod with ephemeral storage request")
 			pod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pod-" + suffix,
-					Namespace: namespace.Name,
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "test-pod-" + label + "-" + suffix, Namespace: namespace.Name},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{
-							Name:  "test-container",
-							Image: "busybox:latest",
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceEphemeralStorage: resource.MustParse("1Gi"),
-								},
-							},
-							Command: []string{"sleep", "3600"},
-						},
-					},
+					Containers: []corev1.Container{{
+						Name:      "test-container",
+						Image:     "busybox:latest",
+						Resources: podResources,
+						Command:   []string{"sleep", "3600"},
+					}},
 				},
 			}
 			Expect(k8sClient.Create(ctx, pod)).To(Succeed())
@@ -137,20 +126,27 @@ var _ = Describe("Storage Resources E2E", func() {
 				Expect(k8sClient.Delete(ctx, pod)).To(Succeed())
 			}()
 
-			By("Waiting for the CRQ status to be updated with ephemeral storage usage")
+			By("Waiting for the CRQ status to aggregate the ephemeral storage usage")
 			Eventually(func() bool {
 				latestCRQ := &quotav1alpha1.ClusterResourceQuota{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: crqName}, latestCRQ); err != nil {
 					return false
 				}
+				usage, exists := latestCRQ.Status.Total.Used[quotaRes]
+				return exists && usage.Equal(resource.MustParse("1Gi"))
+			}, Timeout, Interval).Should(BeTrue())
+		}
 
-				// Check if ephemeral storage usage is reported
-				if usage, exists := latestCRQ.Status.Total.Used[corev1.ResourceRequestsEphemeralStorage]; exists {
-					expectedUsage := resource.MustParse("1Gi")
-					return usage.Equal(expectedUsage)
-				}
-				return false
-			}, "30s", "1s").Should(BeTrue())
+		It("should track ephemeral storage requests from Pods", func() {
+			trackEphemeralStorage("ephemeral", corev1.ResourceRequestsEphemeralStorage, corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceEphemeralStorage: resource.MustParse("1Gi")},
+			})
+		})
+
+		It("should track ephemeral storage limits from Pods", func() {
+			trackEphemeralStorage("ephemeral-limits", corev1.ResourceLimitsEphemeralStorage, corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{corev1.ResourceEphemeralStorage: resource.MustParse("1Gi")},
+			})
 		})
 	})
 
@@ -247,7 +243,7 @@ var _ = Describe("Storage Resources E2E", func() {
 				expectedEphemeral := resource.MustParse("500Mi")
 
 				return storageUsage.Equal(expectedStorage) && ephemeralUsage.Equal(expectedEphemeral)
-			}, "30s", "1s").Should(BeTrue())
+			}, Timeout, Interval).Should(BeTrue())
 		})
 	})
 })

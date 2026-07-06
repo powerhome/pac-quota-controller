@@ -29,9 +29,12 @@ type HealthManager struct {
 
 // NewHealthManager creates a new health manager
 func NewHealthManager(logger *zap.Logger) *HealthManager {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &HealthManager{
 		checkers: make([]HealthChecker, 0),
-		logger:   logger,
+		logger:   logger.Named("health-manager"),
 	}
 }
 

@@ -103,6 +103,8 @@ func (h *PodWebhook) validateOperation(
 		{usage.ResourceRequestsMemory, "memory requests"},
 		{usage.ResourceLimitsCPU, "CPU limits"},
 		{usage.ResourceLimitsMemory, "memory limits"},
+		{usage.ResourceRequestsEphemeralStorage, "ephemeral-storage requests"},
+		{usage.ResourceLimitsEphemeralStorage, "ephemeral-storage limits"},
 	}
 
 	for _, c := range computeResources {
@@ -124,10 +126,6 @@ func (h *PodWebhook) validateOperation(
 		}
 	}
 
-	h.logger.Debug("Pod CRQ validation passed",
-		zap.String("pod", podObj.Name),
-		zap.String("namespace", podObj.Namespace),
-		zap.String("operation", string(op)),
-	)
+	logValidationPassed(h.logger, "Pod", podObj.Namespace, op, zap.String("pod", podObj.Name))
 	return nil, nil
 }
