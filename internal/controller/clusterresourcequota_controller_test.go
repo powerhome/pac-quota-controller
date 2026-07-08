@@ -855,7 +855,7 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 
 		It("should handle large number of CRQs efficiently", func() {
 			// Create 100 CRQs
-			var crqs []quotav1alpha1.ClusterResourceQuota
+			crqs := make([]quotav1alpha1.ClusterResourceQuota, 0, 100)
 			for i := range 100 {
 				crq := quotav1alpha1.ClusterResourceQuota{
 					ObjectMeta: metav1.ObjectMeta{

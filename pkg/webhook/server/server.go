@@ -373,18 +373,20 @@ func (c *crqClientReadinessChecker) IsReady() bool {
 	return c.server != nil && c.server.runtimeClient != nil
 }
 
+const detailKeyName = "name"
+
 func (c *crqClientReadinessChecker) GetReadinessStatus() ready.ReadinessStatus {
 	if c.IsReady() {
 		return ready.ReadinessStatus{
 			Ready:   true,
 			Status:  "ready",
-			Details: map[string]any{"name": "crq-client"},
+			Details: map[string]any{detailKeyName: "crq-client"},
 		}
 	}
 	return ready.ReadinessStatus{
 		Ready:   false,
 		Status:  "not ready: CRQ client missing - quota enforcement is disabled",
-		Details: map[string]any{"name": "crq-client"},
+		Details: map[string]any{detailKeyName: "crq-client"},
 	}
 }
 
@@ -403,13 +405,13 @@ func (c *cacheSyncReadinessChecker) GetReadinessStatus() ready.ReadinessStatus {
 		return ready.ReadinessStatus{
 			Ready:   true,
 			Status:  "ready",
-			Details: map[string]any{"name": "cache-sync"},
+			Details: map[string]any{detailKeyName: "cache-sync"},
 		}
 	}
 	return ready.ReadinessStatus{
 		Ready:   false,
 		Status:  "not ready: informer cache has not finished initial sync",
-		Details: map[string]any{"name": "cache-sync"},
+		Details: map[string]any{detailKeyName: "cache-sync"},
 	}
 }
 
