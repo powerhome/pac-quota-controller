@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -42,6 +43,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("scrubbing leftovers from any previous run")
 	Expect(testutils.Scrub(setupCtx, newK8sClient())).To(Succeed(), "Failed to scrub cluster")
+
+	By("waiting for the controller to start reconciling")
+	Expect(testutils.WaitForControllerReconciling(setupCtx, newK8sClient(), 180*time.Second, time.Second)).
+		To(Succeed(), "controller did not begin reconciling in time")
 	return nil
 }, func(_ []byte) {
 	e2eConfig = testutils.LoadE2EConfig()

@@ -348,6 +348,45 @@ func WaitForCRQStatus(ctx context.Context, k8sClient client.Client, crqName stri
 	})
 }
 
+// WaitForControllerReconciling blocks until the controller is actively reconciling.
+// Pod readiness only means the cache synced, but with leader election the reconciler
+// starts later, so it uses a throwaway canary CRQ to confirm a real reconcile happened
+// before any spec runs.
+func WaitForControllerReconciling(ctx context.Context, k8sClient client.Client,
+	timeout, interval time.Duration) error {
+	name := GenerateResourceName("controller-readiness-probe")
+	crq := &quotav1alpha1.ClusterResourceQuota{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"pac-e2e-readiness-probe": GenerateTestSuffix()},
+			},
+			Hard: quotav1alpha1.ResourceList{
+				corev1.ResourcePods: resource.MustParse("1"),
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, crq); err != nil {
+		return fmt.Errorf("failed to create readiness probe CRQ %s: %w", name, err)
+	}
+	defer func() {
+		_ = k8sClient.Delete(context.Background(), crq)
+	}()
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	return wait.PollUntilContextTimeout(ctxWithTimeout, interval, timeout, true,
+		func(_ context.Context) (bool, error) {
+			fresh := &quotav1alpha1.ClusterResourceQuota{}
+			if err := k8sClient.Get(ctx, client.ObjectKey{Name: name}, fresh); err != nil {
+				return false, nil
+			}
+			return fresh.Status.Total.Hard != nil, nil
+		})
+}
+
 // EnsureResourceDeleted deletes a list of resources and waits for their deletion.
 func EnsureResourceDeleted(ctx context.Context, k8sClient client.Client,
 	resourceKeys []client.ObjectKey, resourceType client.Object) error {
