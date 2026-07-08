@@ -7,13 +7,21 @@ import (
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+const (
+	labelCRQName   = "crq_name"
+	labelOperation = "operation"
+	labelNamespace = "namespace"
+	labelWebhook   = "webhook"
+	labelResource  = "resource"
+)
+
 var (
 	CRQUsage = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "pac_quota_controller_crq_usage",
 			Help: "Current usage of a resource for a ClusterResourceQuota in a namespace.",
 		},
-		[]string{"crq_name", "namespace", "resource"},
+		[]string{labelCRQName, labelNamespace, labelResource},
 	)
 	CRQTotalUsage = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -24,14 +32,14 @@ var (
 		// total per (crq, resource). Earlier shapes included a comma-joined
 		// `namespaces` label, which churned a new series on every namespace
 		// add/remove and was an unbounded-cardinality bomb at scale.
-		[]string{"crq_name", "resource"},
+		[]string{labelCRQName, labelResource},
 	)
 	WebhookValidationCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_webhook_validation_total",
 			Help: "Total number of webhook validation requests.",
 		},
-		[]string{"webhook", "operation", "namespace"},
+		[]string{labelWebhook, labelOperation, labelNamespace},
 	)
 	WebhookValidationDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -44,14 +52,14 @@ var (
 				0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
 			},
 		},
-		[]string{"webhook", "operation", "namespace"},
+		[]string{labelWebhook, labelOperation, labelNamespace},
 	)
 	WebhookAdmissionDecision = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_webhook_admission_decision_total",
 			Help: "Total number of webhook admission decisions (allowed/denied).",
 		},
-		[]string{"webhook", "operation", "decision", "namespace"},
+		[]string{labelWebhook, labelOperation, "decision", labelNamespace},
 	)
 	// WebhookAdmissionDenied breaks down denials by reason so operators can
 	// distinguish working-as-intended quota_exceeded from broken-config
@@ -61,7 +69,7 @@ var (
 			Name: "pac_quota_controller_webhook_admission_denied_total",
 			Help: "Webhook admissions denied, broken down by reason.",
 		},
-		[]string{"webhook", "reason"},
+		[]string{labelWebhook, "reason"},
 	)
 	// WebhookCRQLookup counts CRQ resolution outcomes during admission.
 	// Result values: found, not_found, namespace_error, crq_error, no_client.
@@ -79,7 +87,7 @@ var (
 			Name: "pac_quota_controller_webhook_status_missing_total",
 			Help: "Number of webhook admissions admitted because the CRQ status had no usage value for the resource.",
 		},
-		[]string{"crq_name", "resource"},
+		[]string{labelCRQName, labelResource},
 	)
 
 	// New metrics for controller reconciliation
@@ -88,28 +96,28 @@ var (
 			Name: "pac_quota_controller_reconcile_total",
 			Help: "Total number of ClusterResourceQuota reconciliations.",
 		},
-		[]string{"crq_name", "status"},
+		[]string{labelCRQName, "status"},
 	)
 	QuotaReconcileErrors = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_reconcile_errors_total",
 			Help: "Total number of reconciliation errors per ClusterResourceQuota.",
 		},
-		[]string{"crq_name"},
+		[]string{labelCRQName},
 	)
 	QuotaAggregationDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name: "pac_quota_controller_aggregation_duration_seconds",
 			Help: "Time taken to aggregate resource usage across namespaces.",
 		},
-		[]string{"crq_name"},
+		[]string{labelCRQName},
 	)
 	QuotaAggregationStepDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name: "pac_quota_controller_aggregation_step_duration_seconds",
 			Help: "Time taken by each resource aggregation step.",
 		},
-		[]string{"crq_name", "step"},
+		[]string{labelCRQName, "step"},
 	)
 	// QuotaUnsupportedResource counts attempts to aggregate a resource the
 	// controller has no calculator for (typo in CRQ spec or an unsupported
@@ -120,7 +128,7 @@ var (
 			Name: "pac_quota_controller_unsupported_resource_total",
 			Help: "Number of reconcile attempts that encountered a CRQ resource with no calculator.",
 		},
-		[]string{"resource"},
+		[]string{labelResource},
 	)
 	// EventsCleanedTotal counts events deleted by the cleanup loop.
 	// Going to zero is the signal that cleanup itself has regressed (RBAC, query bug, etc.).

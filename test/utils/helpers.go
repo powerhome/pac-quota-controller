@@ -26,6 +26,12 @@ import (
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
 )
 
+const (
+	testContainerName = "container"
+	testImageNginx    = "nginx:latest"
+	testLabelApp      = "app"
+)
+
 // GenerateResourceName generates a unique test name with the given prefix.
 // Ensures the total length stays within Kubernetes 63-character limit.
 // Format: prefix-timestamp-random (e.g., "test-pod-1642531200-ab12")
@@ -162,8 +168,8 @@ func CreatePod(ctx context.Context, k8sClient client.Client, namespace,
 		Spec: corev1.PodSpec{
 			Containers: []corev1.Container{
 				{
-					Name:  "container",
-					Image: "nginx:latest",
+					Name:  testContainerName,
+					Image: testImageNginx,
 					Resources: corev1.ResourceRequirements{
 						Requests: requests,
 						Limits:   limits,
@@ -221,7 +227,7 @@ func CreateJob(ctx context.Context, k8sClient client.Client, namespace,
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:    "container",
+							Name:    testContainerName,
 							Image:   "busybox:latest",
 							Command: command,
 							Resources: corev1.ResourceRequirements{
@@ -605,11 +611,11 @@ func NewReplicationController(name, namespace string, replicas int32) *corev1.Re
 		},
 		Spec: corev1.ReplicationControllerSpec{
 			Replicas: &replicas,
-			Selector: map[string]string{"app": name},
+			Selector: map[string]string{testLabelApp: name},
 			Template: &corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{testLabelApp: name}},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{Name: "container", Image: "nginx:latest"}},
+					Containers: []corev1.Container{{Name: testContainerName, Image: testImageNginx}},
 				},
 			},
 		},
@@ -625,11 +631,11 @@ func NewDeployment(name, namespace string, replicas int32) *appsv1.Deployment {
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{testLabelApp: name}},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{testLabelApp: name}},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{Name: "container", Image: "nginx:latest"}},
+					Containers: []corev1.Container{{Name: testContainerName, Image: testImageNginx}},
 				},
 			},
 		},
@@ -646,11 +652,11 @@ func NewStatefulSet(name, namespace string, replicas int32) *appsv1.StatefulSet 
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:    &replicas,
 			ServiceName: name + "-svc",
-			Selector:    &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+			Selector:    &metav1.LabelSelector{MatchLabels: map[string]string{testLabelApp: name}},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{testLabelApp: name}},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{Name: "container", Image: "nginx:latest"}},
+					Containers: []corev1.Container{{Name: testContainerName, Image: testImageNginx}},
 				},
 			},
 		},
@@ -665,11 +671,11 @@ func NewDaemonSet(name, namespace string) *appsv1.DaemonSet {
 			Namespace: namespace,
 		},
 		Spec: appsv1.DaemonSetSpec{
-			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{testLabelApp: name}},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": name}},
+				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{testLabelApp: name}},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{Name: "container", Image: "nginx:latest"}},
+					Containers: []corev1.Container{{Name: testContainerName, Image: testImageNginx}},
 				},
 			},
 		},
@@ -691,7 +697,7 @@ func NewCronJob(name, namespace string) *batchv1.CronJob {
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
 								{
-									Name:    "container",
+									Name:    testContainerName,
 									Image:   "busybox:latest",
 									Command: []string{"echo", "hello"},
 								},
