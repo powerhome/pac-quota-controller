@@ -1,6 +1,9 @@
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
   name: clusterresourcequotas.quota.powerapp.cloud
 spec:
   group: quota.powerapp.cloud
@@ -28,25 +31,6 @@ spec:
           ClusterResourceQuota is the Schema for the clusterresourcequotas API.
           It extends the standard Kubernetes ResourceQuota by allowing it to be applied across multiple
           namespaces that match a label selector.
-
-          Supported object count resources (for use in the 'hard' and 'used' fields):
-            - pods
-            - services
-            - services.loadbalancers
-            - services.nodeports
-            - configmaps
-            - secrets
-            - persistentvolumeclaims
-            - replicationcontrollers
-            - deployments.apps
-            - statefulsets.apps
-            - daemonsets.apps
-            - jobs.batch
-            - cronjobs.batch
-            - horizontalpodautoscalers.autoscaling
-            - ingresses.networking.k8s.io
-
-          You may specify quotas for any of these resources. See the Helm chart documentation for details and examples.
         properties:
           apiVersion:
             description: |-
@@ -81,20 +65,10 @@ spec:
                   'pods': '10' (Pod count)
                   'services': '5' (Service count)
                   'services.loadbalancers': '2' (Service type=LoadBalancer count)
-                  'services.nodeports': '3' (Service type=NodePort count)
+                  'ingresses': '3' (Ingress count)
                   'configmaps': '20' (ConfigMap count)
-                  'secrets': '15' (Secret count)
-                  'persistentvolumeclaims': '8' (PVC count)
-                  'replicationcontrollers': '4' (ReplicationController count)
-                  'deployments.apps': '6' (Deployment count)
-                  'statefulsets.apps': '2' (StatefulSet count)
-                  'daemonsets.apps': '2' (DaemonSet count)
-                  'jobs.batch': '5' (Job count)
-                  'cronjobs.batch': '3' (CronJob count)
-                  'horizontalpodautoscalers.autoscaling': '2' (HPA count)
-                  'ingresses.networking.k8s.io': '3' (Ingress count)
-
                   ...and so on for all supported native and extended resource types.
+                  See documentation for the full list of supported resource keys.
                 type: object
               namespaceSelector:
                 description: |-
@@ -231,7 +205,8 @@ spec:
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
                           description: Hard is the set of enforced hard limits for
-                            each named resource.
+                            each named resource (see ClusterResourceQuotaSpec for
+                            examples).
                           type: object
                         used:
                           additionalProperties:
@@ -240,8 +215,9 @@ spec:
                             - type: string
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
-                          description: Used is the current observed total usage of
-                            the resource in the namespace.
+                          description: |-
+                            Used is the current observed total usage of the resource in the namespace.
+                            For object count quotas, this is the current count of each resource type (e.g., pods, services.loadbalancers, ingresses.nginx, etc.).
                           type: object
                       type: object
                   required:
@@ -261,7 +237,7 @@ spec:
                       pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                       x-kubernetes-int-or-string: true
                     description: Hard is the set of enforced hard limits for each
-                      named resource.
+                      named resource (see ClusterResourceQuotaSpec for examples).
                     type: object
                   used:
                     additionalProperties:
@@ -270,11 +246,15 @@ spec:
                       - type: string
                       pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                       x-kubernetes-int-or-string: true
-                    description: Used is the current observed total usage of the resource
-                      in the namespace.
+                    description: |-
+                      Used is the current observed total usage of the resource in the namespace.
+                      For object count quotas, this is the current count of each resource type (e.g., pods, services.loadbalancers, ingresses.nginx, etc.).
                     type: object
                 type: object
             type: object
+        required:
+        - metadata
+        - spec
         type: object
     served: true
     storage: true

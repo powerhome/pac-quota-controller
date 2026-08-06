@@ -44,14 +44,9 @@ help: ## Display this help.
 ##@ Development
 
 .PHONY: manifests
-manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
+manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects, and sync CRDs into the Helm chart (the chart is the deployment source of truth).
 	$(CONTROLLER_GEN) rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
-
-.PHONY: generate
-generate: mockery ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
-	@echo "Generating mocks..."
-	$(MOCKERY)
-	@echo "Code generation completed"
+	cp config/crd/bases/*.yaml charts/pac-quota-controller/crds/
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
@@ -62,7 +57,7 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: manifests generate fmt vet setup-envtest ## Run tests.
+test: manifests fmt vet setup-envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover.out
 
 KIND_CLUSTER ?= pac-quota-controller-test-e2e
@@ -81,7 +76,7 @@ install-tools: ## Install development tools
 	go install github.com/onsi/ginkgo/v2/ginkgo@latest
 
 .PHONY: deps
-deps: envtest golangci-lint mockery ## Install all development dependencies
+deps: envtest golangci-lint ## Install all development dependencies
 
 .PHONY: test-e2e
 # Run the e2e suite. The Go suite owns the cluster lifecycle; this is just an alias.
@@ -89,11 +84,11 @@ test-e2e:
 	E2E_IMG=$(IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -timeout=20m -ginkgo.v -ginkgo.flake-attempts=2
 
 .PHONY: lint
-lint: generate golangci-lint ## Run golangci-lint linter
+lint: golangci-lint ## Run golangci-lint linter
 	$(GOLANGCI_LINT) run
 
 .PHONY: lint-fix
-lint-fix: generate golangci-lint ## Run golangci-lint linter and perform fixes
+lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes
 	$(GOLANGCI_LINT) run --fix
 
 .PHONY: lint-config
@@ -172,11 +167,11 @@ uninstall-cert-manager: ## Uninstall cert-manager
 	@echo "Cert-manager uninstalled."
 
 .PHONY: build
-build: manifests generate fmt vet ## Build manager binary.
+build: manifests fmt vet ## Build manager binary.
 	go build -o bin/manager cmd/main.go
 
 .PHONY: run
-run: manifests generate fmt vet ## Run a controller from your host.
+run: manifests fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
@@ -227,12 +222,10 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
-MOCKERY ?= $(LOCALBIN)/mockery
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
-MOCKERY_VERSION ?= v3.5.2
+CONTROLLER_TOOLS_VERSION ?= v0.21.0
 #ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
@@ -266,11 +259,6 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
-
-.PHONY: mockery
-mockery: $(MOCKERY) ## Download mockery locally if necessary.
-$(MOCKERY): $(LOCALBIN)
-	$(call go-install-tool,$(MOCKERY),github.com/vektra/mockery/v3,$(MOCKERY_VERSION))
 
 ##@ Release
 
