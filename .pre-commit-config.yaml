@@ -30,14 +30,6 @@ repos:
         files: '\.go$'
         pass_filenames: false
 
-      # Generate mocks using mockery
-      - id: mockery-generate
-        name: Generate Mocks (make generate)
-        entry: make generate
-        language: system
-        files: '^pkg/kubernetes/.*\.go$'
-        pass_filenames: false
-
       # Unit tests
       - id: go-test
         name: Go Unit Tests (make test)

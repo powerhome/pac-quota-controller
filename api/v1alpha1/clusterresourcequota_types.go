@@ -105,8 +105,9 @@ type ClusterResourceQuota struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
 
-	Spec   ClusterResourceQuotaSpec   `json:"spec"`
-	Status ClusterResourceQuotaStatus `json:"status"`
+	Spec ClusterResourceQuotaSpec `json:"spec"`
+	// +optional
+	Status ClusterResourceQuotaStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

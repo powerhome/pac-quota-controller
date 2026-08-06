@@ -25,8 +25,6 @@ func GetCorrelationID(ctx context.Context) string {
 	return id
 }
 
-//go:generate mockery
-
 // CRQClientInterface defines the interface for ClusterResourceQuota operations
 type CRQClientInterface interface {
 	ListAllCRQs(ctx context.Context) ([]quotav1alpha1.ClusterResourceQuota, error)
