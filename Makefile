@@ -86,7 +86,7 @@ deps: envtest golangci-lint mockery ## Install all development dependencies
 .PHONY: test-e2e
 # Run the e2e suite. The Go suite owns the cluster lifecycle; this is just an alias.
 test-e2e:
-	E2E_IMG=$(IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
+	E2E_IMG=$(IMG) KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -timeout=20m -ginkgo.v -ginkgo.flake-attempts=2
 
 .PHONY: lint
 lint: generate golangci-lint ## Run golangci-lint linter

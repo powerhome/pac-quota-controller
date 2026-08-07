@@ -21,6 +21,7 @@ import (
 var _ = Describe("Storage Class Quota E2E Tests", func() {
 	var (
 		testNamespace      string
+		testNamespaceLabel string
 		storageClassFast   string
 		storageClassSlow   string
 		storageClassCustom string
@@ -61,6 +62,10 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 
 	BeforeEach(func() {
 		testNamespace = fmt.Sprintf("storage-class-test-%s", testutils.GenerateTestSuffix())
+		// Unique per test run: a fixed label value would let a still-terminating
+		// namespace from a previous run/retry match this run's CRQ selector too,
+		// double-counting its PVCs against a fresh quota.
+		testNamespaceLabel = "enabled-" + testutils.GenerateTestSuffix()
 		storageClassFast = fmt.Sprintf("fast-ssd-e2e-%s", testutils.GenerateTestSuffix())
 		storageClassSlow = fmt.Sprintf("slow-hdd-e2e-%s", testutils.GenerateTestSuffix())
 		storageClassCustom = fmt.Sprintf("custom-nvme-e2e-%s", testutils.GenerateTestSuffix())
@@ -71,7 +76,7 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: testNamespace,
 				Labels: map[string]string{
-					"storage-class-test": "enabled",
+					"storage-class-test": testNamespaceLabel,
 					"e2e-test":           "storage-quota",
 				},
 			},
@@ -105,7 +110,7 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
-							"storage-class-test": "enabled",
+							"storage-class-test": testNamespaceLabel,
 						},
 					},
 					Hard: quotav1alpha1.ResourceList{
@@ -232,7 +237,7 @@ var _ = Describe("Storage Class Quota E2E Tests", func() {
 				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
 					NamespaceSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
-							"storage-class-test": "enabled",
+							"storage-class-test": testNamespaceLabel,
 						},
 					}, Hard: quotav1alpha1.ResourceList{
 						// Only storage quota for fast SSD (no count limit)
