@@ -1700,3 +1700,101 @@ var _ = Describe("calculateObjectCount with unsupported resource", func() {
 		Expect(post - pre).To(Equal(float64(1)))
 	})
 })
+
+// This suite creates CRQs against the real envtest API server, which has no
+// webhook registered — any rejection here comes solely from the CRD's own
+// OpenAPI/CEL schema, proving those rules hold even when the webhook is down.
+var _ = Describe("ClusterResourceQuota CRD scope validation", func() {
+	nsSelector := &metav1.LabelSelector{MatchLabels: map[string]string{"team": "crd-scope-validation"}}
+
+	create := func(name string, spec quotav1alpha1.ClusterResourceQuotaSpec) error {
+		spec.NamespaceSelector = nsSelector
+		crq := &quotav1alpha1.ClusterResourceQuota{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec:       spec,
+		}
+		err := k8sClient.Create(ctx, crq)
+		if err == nil {
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, crq) })
+		}
+		return err
+	}
+
+	It("accepts a valid PriorityClass scopeSelector", func() {
+		err := create("crd-scope-valid", quotav1alpha1.ClusterResourceQuotaSpec{
+			Hard: quotav1alpha1.ResourceList{corev1.ResourcePods: resource.MustParse("5")},
+			ScopeSelector: &corev1.ScopeSelector{
+				MatchExpressions: []corev1.ScopedResourceSelectorRequirement{{
+					ScopeName: corev1.ResourceQuotaScopePriorityClass,
+					Operator:  corev1.ScopeSelectorOpIn,
+					Values:    []string{"high"},
+				}},
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	DescribeTable("rejects invalid scopeSelector expressions",
+		func(req corev1.ScopedResourceSelectorRequirement, substr string) {
+			err := create("crd-scope-invalid", quotav1alpha1.ClusterResourceQuotaSpec{
+				Hard:          quotav1alpha1.ResourceList{corev1.ResourcePods: resource.MustParse("5")},
+				ScopeSelector: &corev1.ScopeSelector{MatchExpressions: []corev1.ScopedResourceSelectorRequirement{req}},
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(substr))
+		},
+		Entry("unknown scope name",
+			corev1.ScopedResourceSelectorRequirement{
+				ScopeName: corev1.ResourceQuotaScope("Bogus"),
+				Operator:  corev1.ScopeSelectorOpExists,
+			}, "scopeSelector: invalid scope name"),
+		Entry("unknown operator",
+			corev1.ScopedResourceSelectorRequirement{
+				ScopeName: corev1.ResourceQuotaScopePriorityClass,
+				Operator:  corev1.ScopeSelectorOperator("Maybe"),
+			}, "scopeSelector: invalid operator"),
+		Entry("non-Exists operator on a non-PriorityClass scope",
+			corev1.ScopedResourceSelectorRequirement{
+				ScopeName: corev1.ResourceQuotaScopeBestEffort,
+				Operator:  corev1.ScopeSelectorOpIn,
+				Values:    []string{"x"},
+			}, "only the PriorityClass scope supports"),
+		Entry("In operator with no values",
+			corev1.ScopedResourceSelectorRequirement{
+				ScopeName: corev1.ResourceQuotaScopePriorityClass,
+				Operator:  corev1.ScopeSelectorOpIn,
+			}, "values must be non-empty"),
+		Entry("Exists operator with values set",
+			corev1.ScopedResourceSelectorRequirement{
+				ScopeName: corev1.ResourceQuotaScopePriorityClass,
+				Operator:  corev1.ScopeSelectorOpExists,
+				Values:    []string{"x"},
+			}, "values must be non-empty"),
+	)
+
+	It("rejects mutually exclusive scopes via the existing Scopes CEL rule", func() {
+		err := create("crd-scope-exclusive", quotav1alpha1.ClusterResourceQuotaSpec{
+			Hard: quotav1alpha1.ResourceList{corev1.ResourcePods: resource.MustParse("5")},
+			Scopes: []corev1.ResourceQuotaScope{
+				corev1.ResourceQuotaScopeBestEffort,
+				corev1.ResourceQuotaScopeNotBestEffort,
+			},
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("mutually exclusive"))
+	})
+
+	It("rejects mutually exclusive scopes expressed entirely via scopeSelector, via CEL", func() {
+		err := create("crd-scopeselector-exclusive", quotav1alpha1.ClusterResourceQuotaSpec{
+			Hard: quotav1alpha1.ResourceList{corev1.ResourcePods: resource.MustParse("5")},
+			ScopeSelector: &corev1.ScopeSelector{
+				MatchExpressions: []corev1.ScopedResourceSelectorRequirement{
+					{ScopeName: corev1.ResourceQuotaScopeBestEffort, Operator: corev1.ScopeSelectorOpExists},
+					{ScopeName: corev1.ResourceQuotaScopeNotBestEffort, Operator: corev1.ScopeSelectorOpExists},
+				},
+			},
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("mutually exclusive"))
+	})
+})
