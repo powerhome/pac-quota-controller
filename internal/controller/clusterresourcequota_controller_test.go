@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	quotav1alpha1 "github.com/powerhome/pac-quota-controller/api/v1alpha1"
+	"github.com/powerhome/pac-quota-controller/pkg/events"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/objectcount"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/pod"
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/services"
@@ -23,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoevents "k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -522,6 +524,62 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 				ObjectNew: newPod,
 			}
 			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should reconcile when activeDeadlineSeconds changes without a generation bump", func() {
+			ads := int64(300)
+			oldPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			newPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Spec:       corev1.PodSpec{ActiveDeadlineSeconds: &ads},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			event := event.UpdateEvent{
+				ObjectOld: oldPod,
+				ObjectNew: newPod,
+			}
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should reconcile when activeDeadlineSeconds changes between two non-nil values", func() {
+			oldADS, newADS := int64(300), int64(600)
+			oldPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Spec:       corev1.PodSpec{ActiveDeadlineSeconds: &oldADS},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			newPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Spec:       corev1.PodSpec{ActiveDeadlineSeconds: &newADS},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			event := event.UpdateEvent{
+				ObjectOld: oldPod,
+				ObjectNew: newPod,
+			}
+			Expect(predicate.Update(event)).To(BeTrue())
+		})
+
+		It("should not reconcile when activeDeadlineSeconds is unchanged and set on both sides", func() {
+			ads := int64(300)
+			oldPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Spec:       corev1.PodSpec{ActiveDeadlineSeconds: &ads},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			newPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Spec:       corev1.PodSpec{ActiveDeadlineSeconds: &ads},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			event := event.UpdateEvent{
+				ObjectOld: oldPod,
+				ObjectNew: newPod,
+			}
+			Expect(predicate.Update(event)).To(BeFalse())
 		})
 
 		It("should not reconcile for non-terminal phase changes (e.g., Pending -> Running)", func() {
@@ -1408,6 +1466,79 @@ var _ = Describe("ClusterResourceQuota Controller", Ordered, func() {
 			Expect(str(gpu)).To(Equal("2"))
 			Expect(str(fastStorage)).To(Equal("3Gi"))
 			Expect(str(fastCount)).To(Equal("2"))
+		})
+
+		It("filters pods by scopes during aggregation", func() {
+			ads := int64(300)
+			fakeClient := fake.NewClientBuilder().WithObjects(
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod-not-terminating", Namespace: "ns-a"},
+					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+					Spec: corev1.PodSpec{Containers: []corev1.Container{{
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("250m")},
+						},
+					}}},
+				},
+				&corev1.Pod{
+					ObjectMeta: metav1.ObjectMeta{Name: "pod-terminating", Namespace: "ns-a"},
+					Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+					Spec: corev1.PodSpec{
+						ActiveDeadlineSeconds: &ads,
+						Containers: []corev1.Container{{
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("1")},
+							},
+						}},
+					},
+				},
+			).Build()
+
+			r := &ClusterResourceQuotaReconciler{Client: fakeClient, logger: zap.NewNop()}
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "scoped"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Scopes: []corev1.ResourceQuotaScope{corev1.ResourceQuotaScopeNotTerminating},
+					Hard: quotav1alpha1.ResourceList{
+						corev1.ResourcePods:        resource.MustParse("10"),
+						corev1.ResourceRequestsCPU: resource.MustParse("10"),
+					},
+				},
+			}
+
+			total, _, err := r.calculateAndAggregateUsage(ctx, crq, []string{"ns-a"})
+			Expect(err).NotTo(HaveOccurred())
+			pods := total[corev1.ResourcePods]
+			cpu := total[corev1.ResourceRequestsCPU]
+			Expect(pods.String()).To(Equal("1"))
+			Expect(cpu.String()).To(Equal("250m"))
+		})
+
+		It("fails reconciliation and emits an InvalidScopeSelector event for a scope spec that bypassed admission", func() {
+			fakeClient := fake.NewClientBuilder().WithObjects(
+				&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod-a", Namespace: "ns-a"}},
+			).Build()
+			fakeRecorder := clientgoevents.NewFakeRecorder(10)
+			r := &ClusterResourceQuotaReconciler{
+				Client:        fakeClient,
+				logger:        zap.NewNop(),
+				EventRecorder: events.NewEventRecorder(fakeRecorder, zap.NewNop()),
+			}
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "invalid-scope"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					// A CRQ with this scope name is rejected at admission (webhook + CEL); this
+					// simulates one that reached storage before that validation existed, per the
+					// documented fail-open behavior.
+					Scopes: []corev1.ResourceQuotaScope{corev1.ResourceQuotaScope("Bogus")},
+					Hard:   quotav1alpha1.ResourceList{corev1.ResourcePods: resource.MustParse("10")},
+				},
+			}
+
+			_, _, err := r.calculateAndAggregateUsage(ctx, crq, []string{"ns-a"})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid scope selector"))
+			Expect(fakeRecorder.Events).To(Receive(ContainSubstring("Invalid scope selector")))
 		})
 
 		It("skips namespaces with an empty name without errors", func() {

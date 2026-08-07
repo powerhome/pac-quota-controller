@@ -502,4 +502,58 @@ var _ = Describe("PodWebhook", func() {
 			Expect(resp.Response.Allowed).To(BeTrue())
 		})
 	})
+
+	Describe("scoped CRQ", func() {
+		fullBestEffortCRQ := func() *quotav1alpha1.ClusterResourceQuota {
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{usage.ResourcePods: quantity("2")},
+				quotav1alpha1.ResourceList{usage.ResourcePods: quantity("2")},
+			)
+			crq.Spec.Scopes = []corev1.ResourceQuotaScope{corev1.ResourceQuotaScopeBestEffort}
+			return crq
+		}
+
+		It("denies an in-scope pod when the scoped quota is full", func() {
+			h := NewPodWebhook(newTestCRQClient(makeNamespace(nsName, labels), fullBestEffortCRQ()), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			resp := sendWebhookRequest(engine, newPodReview("s1", makePod("be", "", "", "", "")))
+			Expect(resp.Response.Allowed).To(BeFalse())
+		})
+
+		It("allows an out-of-scope pod even when the scoped quota is full", func() {
+			h := NewPodWebhook(newTestCRQClient(makeNamespace(nsName, labels), fullBestEffortCRQ()), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			resp := sendWebhookRequest(engine, newPodReview("s2", makePod("burstable", "100m", "", "", "")))
+			Expect(resp.Response.Allowed).To(BeTrue())
+		})
+
+		It("allows a pod outside a Terminating scope regardless of usage", func() {
+			crq := makeCRQ(crqName, labels,
+				quotav1alpha1.ResourceList{usage.ResourceRequestsCPU: quantity("1")},
+				quotav1alpha1.ResourceList{usage.ResourceRequestsCPU: quantity("1")},
+			)
+			crq.Spec.Scopes = []corev1.ResourceQuotaScope{corev1.ResourceQuotaScopeTerminating}
+			h := NewPodWebhook(newTestCRQClient(makeNamespace(nsName, labels), crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			resp := sendWebhookRequest(engine, newPodReview("s3", makePod("no-deadline", "500m", "", "", "")))
+			Expect(resp.Response.Allowed).To(BeTrue())
+		})
+
+		It("fails open when the CRQ scope spec is invalid", func() {
+			crq := fullBestEffortCRQ()
+			crq.Spec.ScopeSelector = &corev1.ScopeSelector{
+				MatchExpressions: []corev1.ScopedResourceSelectorRequirement{
+					{ScopeName: corev1.ResourceQuotaScope("Bogus"), Operator: corev1.ScopeSelectorOpExists},
+				},
+			}
+			h := NewPodWebhook(newTestCRQClient(makeNamespace(nsName, labels), crq), zap.NewNop())
+			engine.POST("/webhook", h.Handle)
+
+			resp := sendWebhookRequest(engine, newPodReview("s4", makePod("be", "", "", "", "")))
+			Expect(resp.Response.Allowed).To(BeTrue())
+		})
+	})
 })

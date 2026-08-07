@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	admissionv1 "k8s.io/api/admission/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -95,8 +96,48 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 				},
 			}
 
-			err := webhook.validateOperation(ctx, crq)
+			_, err := webhook.validateOperation(ctx, crq)
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("should reject a scoped CRQ with non-pod resources", func() {
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "scoped-crq"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard: quotav1alpha1.ResourceList{
+						"pods":     resource.MustParse("5"),
+						"services": resource.MustParse("5"),
+					},
+					Scopes:            []corev1.ResourceQuotaScope{corev1.ResourceQuotaScopeTerminating},
+					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"a": "b"}},
+				},
+			}
+
+			_, err := webhook.validateOperation(ctx, crq)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported scope"))
+		})
+
+		It("should surface warnings for contradictory scope combinations", func() {
+			crq := &quotav1alpha1.ClusterResourceQuota{
+				ObjectMeta: metav1.ObjectMeta{Name: "contradictory-crq"},
+				Spec: quotav1alpha1.ClusterResourceQuotaSpec{
+					Hard:   quotav1alpha1.ResourceList{"pods": resource.MustParse("5")},
+					Scopes: []corev1.ResourceQuotaScope{corev1.ResourceQuotaScopeBestEffort},
+					ScopeSelector: &corev1.ScopeSelector{
+						MatchExpressions: []corev1.ScopedResourceSelectorRequirement{{
+							ScopeName: corev1.ResourceQuotaScopeNotBestEffort,
+							Operator:  corev1.ScopeSelectorOpExists,
+						}},
+					},
+					NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"a": "b"}},
+				},
+			}
+
+			warnings, err := webhook.validateOperation(ctx, crq)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(warnings).To(HaveLen(1))
+			Expect(warnings[0]).To(ContainSubstring("match no pods"))
 		})
 	})
 
@@ -119,7 +160,7 @@ var _ = Describe("ClusterResourceQuotaWebhook", func() {
 				},
 			}
 
-			err := webhook.validateOperation(ctx, crq)
+			_, err := webhook.validateOperation(ctx, crq)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})

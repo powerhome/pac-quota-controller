@@ -77,6 +77,16 @@ func (resourceUpdatePredicate) Update(e event.UpdateEvent) bool {
 				containerTerminated(podOld.Status.ContainerStatuses, podNew.Status.ContainerStatuses) {
 				return true
 			}
+			// activeDeadlineSeconds flips Terminating/NotTerminating scope classification but
+			// does not bump pod generation on clusters older than 1.33. This is the only
+			// mutable-post-creation field scope matching cares about (priorityClassName and
+			// affinity are immutable after creation; QoS-affecting resources are only mutable
+			// via the /resize subresource, which does bump generation), so a targeted pointer
+			// comparison catches it without an O(len(PodSpec)) DeepEqual on every pod update
+			// event cluster-wide.
+			if !activeDeadlineSecondsEqual(podOld.Spec.ActiveDeadlineSeconds, podNew.Spec.ActiveDeadlineSeconds) {
+				return true
+			}
 		}
 	}
 
@@ -99,6 +109,15 @@ func (resourceUpdatePredicate) Delete(e event.DeleteEvent) bool {
 	}
 
 	return false
+}
+
+// activeDeadlineSecondsEqual compares the only Pod spec field scope matching
+// needs to watch for post-creation mutation.
+func activeDeadlineSecondsEqual(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // containerTerminated returns true if any container in the new statuses has transitioned to Terminated
@@ -309,6 +328,13 @@ func (r *ClusterResourceQuotaReconciler) calculateAndAggregateUsage(
 		pods, svcs, pvcs, err := r.listNamespaceResources(ctx, nsName, kinds)
 		if err != nil {
 			return nil, nil, err
+		}
+
+		// Scopes constrain pods only; services/PVCs/object counts are never filtered.
+		pods, err = pod.FilterInScope(pods, crq.Spec.Scopes, crq.Spec.ScopeSelector)
+		if err != nil {
+			r.EventRecorder.InvalidScopeSelector(crq, err)
+			return nil, nil, fmt.Errorf("invalid scope selector: %w", err)
 		}
 
 		var pvcsByClass map[string][]corev1.PersistentVolumeClaim
