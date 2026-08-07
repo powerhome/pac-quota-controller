@@ -28,10 +28,10 @@ jobs:
         run: make fmt
       - name: Run vet
         run: make vet
-      - name: Run make generate
-        run: make generate
+      - name: Run make manifests
+        run: make manifests
       - name: Run make helm-docs
         run: make helm-docs
       - name: Check for uncommitted changes (codegen, manifests, lint)
         run: |
-          git diff --exit-code || (echo 'ERROR: Uncommitted changes after codegen/lint. Please run make manifests, make generate, make lint and commit the results.' && exit 1)
+          git diff --exit-code || (echo 'ERROR: Uncommitted changes after codegen/lint. Please run make manifests, make lint and commit the results.' && exit 1)
