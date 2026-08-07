@@ -1,0 +1,51 @@
+# Scoped ClusterResourceQuota examples.
+# Scopes filter pods only: a pod counts toward the quota when it matches ALL scopes.
+---
+# Quota for non-best-effort pods (pods with cpu/memory requests or limits).
+apiVersion: quota.powerapp.cloud/v1alpha1
+kind: ClusterResourceQuota
+metadata:
+  name: not-best-effort-quota
+spec:
+  namespaceSelector:
+    matchLabels:
+      quota-example: scoped
+  scopes: [NotBestEffort]
+  hard:
+    pods: "10"
+    requests.cpu: "4"
+    requests.memory: 8Gi
+---
+# Example namespace targeted by the quota above.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scoped-quota-demo
+  labels:
+    quota-example: scoped
+---
+# Burstable pod: in scope, charged against not-best-effort-quota.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: in-scope-burstable
+  namespace: scoped-quota-demo
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+---
+# Best-effort pod: out of scope, admitted and never counted by the quota.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: out-of-scope-best-effort
+  namespace: scoped-quota-demo
+spec:
+  containers:
+    - name: app
+      image: nginx:latest
