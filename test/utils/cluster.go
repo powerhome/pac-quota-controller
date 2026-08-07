@@ -153,6 +153,11 @@ func (c E2EConfig) DeployChart(ctx context.Context, root string) error {
 		"--set", "controllerManager.container.image.repository="+repo,
 		"--set", "controllerManager.container.image.tag="+tag,
 		"--set", "controllerManager.container.image.pullPolicy=Never",
+		// e2e-only headroom bump: the chart's default 500m/128Mi is tight under
+		// MaxConcurrentReconciles fan-out during the suite's event load, which was
+		// throttling/delaying reconciles enough to cause CI timeouts.
+		"--set", "controllerManager.container.resources.limits.cpu=1",
+		"--set", "controllerManager.container.resources.limits.memory=512Mi",
 		"--wait", "--timeout", "10m0s")
 }
 
