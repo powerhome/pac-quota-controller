@@ -52,9 +52,6 @@ func (h *ClusterResourceQuotaWebhook) Handle(c *gin.Context) {
 	}, h.validate)
 }
 
-// TODO: the []string return is a future-proofing placeholder for admission
-// warnings. Once any validator actually emits warnings, plumb them through
-// runWebhook into AdmissionResponse.Warnings.
 func (h *ClusterResourceQuotaWebhook) validate(
 	ctx context.Context,
 	req *admissionv1.AdmissionRequest,
@@ -66,7 +63,7 @@ func (h *ClusterResourceQuotaWebhook) validate(
 
 	switch req.Operation {
 	case admissionv1.Create, admissionv1.Update:
-		return nil, h.validateOperation(ctx, &crq)
+		return h.validateOperation(ctx, &crq)
 	default:
 		// Unknown operations (e.g. DELETE) are intentionally allowed; the
 		// ValidatingWebhookConfiguration only registers CREATE/UPDATE so this
@@ -81,14 +78,19 @@ func (h *ClusterResourceQuotaWebhook) validate(
 func (h *ClusterResourceQuotaWebhook) validateOperation(
 	ctx context.Context,
 	crq *quotav1alpha1.ClusterResourceQuota,
-) error {
+) ([]string, error) {
 	if h.crqClient == nil {
-		return fmt.Errorf("CRQ client not available for validation")
+		return nil, fmt.Errorf("CRQ client not available for validation")
+	}
+
+	warnings, err := quota.ValidateScopeSpec(crq)
+	if err != nil {
+		return warnings, err
 	}
 
 	validator := namespace.NewNamespaceValidator(h.client, h.crqClient)
 	if err := validator.ValidateCRQNamespaceConflicts(ctx, crq); err != nil {
-		return err
+		return warnings, err
 	}
-	return nil
+	return warnings, nil
 }
