@@ -176,6 +176,28 @@ var _ = Describe("EventRecorder", func() {
 		})
 	})
 
+	Describe("InvalidScopeSelector", func() {
+		It("should record an InvalidScopeSelector event with error details", func() {
+			testErr := fmt.Errorf("invalid quota scope %q", "Bogus")
+			eventRecorder.InvalidScopeSelector(testCRQ, testErr)
+
+			Expect(fakeRecorder.Events).To(HaveLen(1))
+			event := <-fakeRecorder.Events
+			Expect(event).To(ContainSubstring("InvalidScopeSelector"))
+			Expect(event).To(ContainSubstring(`Invalid scope selector: invalid quota scope "Bogus"`))
+		})
+
+		It("should record event as Warning type", func() {
+			testErr := fmt.Errorf("scope error")
+			eventRecorder.InvalidScopeSelector(testCRQ, testErr)
+
+			Expect(fakeRecorder.Events).To(HaveLen(1))
+			event := <-fakeRecorder.Events
+			Expect(event).To(ContainSubstring("Warning"))
+			Expect(event).To(ContainSubstring("InvalidScopeSelector"))
+		})
+	})
+
 	Describe("Event Annotations", func() {
 		It("should include PAC-specific annotations on events", func() {
 			// Test with QuotaExceeded as an example
