@@ -13,6 +13,7 @@ The ClusterResourceQuota controller mimics the Kubernetes ResourceQuota mechanis
 - Support for all standard Kubernetes resource types (pods, services, etc.)
 - Support for compute resources (CPU, memory)
 - Support for storage resources (PVCs)
+- Support for ResourceQuota `scopes` and `scopeSelector` (pod-scoped quotas, see [docs/quota-scopes.md](docs/quota-scopes.md))
 - Automatic aggregation of resource usage across namespaces
 
 ## Usage
