@@ -49,6 +49,48 @@ var (
 	ResourceServicesNodePorts     = corev1.ResourceServicesNodePorts
 )
 
+// PodEligibleResources are the resources whose usage is computed from pod specs.
+// They're also the only resources a pod scope (other than BestEffort, which
+// further narrows to just pods) may restrict in spec.hard — ephemeral-storage
+// is pod-derived too but deliberately excluded from scope eligibility,
+// matching upstream's podComputeQuotaResources.
+var PodEligibleResources = map[corev1.ResourceName]bool{
+	ResourcePods:           true,
+	ResourceRequestsCPU:    true,
+	ResourceRequestsMemory: true,
+	ResourceLimitsCPU:      true,
+	ResourceLimitsMemory:   true,
+}
+
+// ServiceResources are resource names whose usage is computed from Services.
+var ServiceResources = map[corev1.ResourceName]bool{
+	ResourceServices:              true,
+	ResourceServicesLoadBalancers: true,
+	ResourceServicesNodePorts:     true,
+}
+
+// PVCResources are resource names whose usage is computed from
+// PersistentVolumeClaims, excluding the per-storage-class variants
+// (*.storageclass.storage.k8s.io/*), which are matched by suffix instead.
+var PVCResources = map[corev1.ResourceName]bool{
+	ResourceRequestsStorage:        true,
+	ResourcePersistentVolumeClaims: true,
+}
+
+// ObjectCountResources are resource names tracked via a plain List+len object count.
+var ObjectCountResources = map[corev1.ResourceName]bool{
+	ResourceConfigMaps:               true,
+	ResourceSecrets:                  true,
+	ResourceReplicationControllers:   true,
+	ResourceDeployments:              true,
+	ResourceStatefulSets:             true,
+	ResourceDaemonSets:               true,
+	ResourceJobs:                     true,
+	ResourceCronJobs:                 true,
+	ResourceHorizontalPodAutoscalers: true,
+	ResourceIngresses:                true,
+}
+
 // GetBaseResourceName returns the base resource name for a given resource name.
 // For example, it maps 'requests.cpu' or 'limits.cpu' to 'cpu'.
 func GetBaseResourceName(resourceName corev1.ResourceName) corev1.ResourceName {
