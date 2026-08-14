@@ -13,6 +13,19 @@ func HasScopes(scopes []corev1.ResourceQuotaScope, sel *corev1.ScopeSelector) bo
 	return len(scopes) > 0 || (sel != nil && len(sel.MatchExpressions) > 0)
 }
 
+// ValidScopes are the ResourceQuotaScope values podMatchesScopeRequirement
+// knows how to match. The single source of truth for "is this scope name
+// valid" — callers validating a scope spec (e.g. quota.ValidateScopeSpec)
+// should check membership here rather than keeping a second copy.
+var ValidScopes = map[corev1.ResourceQuotaScope]bool{
+	corev1.ResourceQuotaScopeTerminating:               true,
+	corev1.ResourceQuotaScopeNotTerminating:            true,
+	corev1.ResourceQuotaScopeBestEffort:                true,
+	corev1.ResourceQuotaScopeNotBestEffort:             true,
+	corev1.ResourceQuotaScopePriorityClass:             true,
+	corev1.ResourceQuotaScopeCrossNamespacePodAffinity: true,
+}
+
 // BuildScopeRequirements normalizes plain scopes (each an implicit Exists) and
 // scopeSelector.matchExpressions into a single ANDed requirement list.
 func BuildScopeRequirements(

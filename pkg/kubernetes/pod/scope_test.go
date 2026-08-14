@@ -38,6 +38,15 @@ func selectorWith(reqs ...corev1.ScopedResourceSelectorRequirement) *corev1.Scop
 }
 
 var _ = Describe("Scope matching", func() {
+	Describe("ValidScopes", func() {
+		It("should be dispatched by podMatchesScopeRequirement without an 'invalid quota scope' error", func() {
+			for scope := range ValidScopes {
+				_, err := PodInScope(bestEffortPod(), []corev1.ResourceQuotaScope{scope}, nil)
+				Expect(err).NotTo(HaveOccurred(), "scope %q is in ValidScopes but not handled by the matcher switch", scope)
+			}
+		})
+	})
+
 	Describe("HasScopes", func() {
 		It("should be false without scopes or selector", func() {
 			Expect(HasScopes(nil, nil)).To(BeFalse())
