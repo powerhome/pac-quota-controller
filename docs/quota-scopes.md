@@ -97,8 +97,8 @@ See `examples/scoped-quota-example.yaml` for a complete example.
 ## Testing
 
 ```sh
-# Unit tests (matcher, QoS, validation)
-go test ./pkg/kubernetes/pod/ ./pkg/kubernetes/quota/
+# Unit tests (matcher, QoS, validation, resource classification)
+go test ./pkg/kubernetes/pod/ ./pkg/kubernetes/quota/ ./pkg/kubernetes/usage/
 
 # E2E tests
 make test-e2e  # includes test/e2e/scoped_quota_test.go
