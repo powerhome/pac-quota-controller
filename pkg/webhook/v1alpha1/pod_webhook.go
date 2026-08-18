@@ -93,6 +93,22 @@ func (h *PodWebhook) validateOperation(
 		return nil, nil
 	}
 
+	// Scope membership is stable for every request this webhook sees: resize cannot
+	// change QoS class, and activeDeadlineSeconds/priorityClassName/affinity are not
+	// reachable through CREATE-then-resize, so the old pod never needs re-evaluation.
+	inScope, err := pod.PodInScope(podObj, crq.Spec.Scopes, crq.Spec.ScopeSelector)
+	if err != nil {
+		// Fail-open: an invalid scope spec should have been rejected at CRQ admission.
+		h.logger.Warn("Invalid CRQ scope selector - allowing pod",
+			zap.String("crq_name", crq.Name), zap.Error(err))
+		return nil, nil
+	}
+	if !inScope {
+		h.logger.Debug("Pod outside CRQ scopes; skipping quota validation",
+			zap.String("crq_name", crq.Name), zap.String("pod", podObj.Name))
+		return nil, nil
+	}
+
 	correlationID := quota.GetCorrelationID(ctx)
 
 	computeResources := []struct {

@@ -12,11 +12,12 @@ import (
 
 const (
 	// Event reasons for ClusterResourceQuota
-	ReasonQuotaExceeded     = "QuotaExceeded"
-	ReasonNamespaceAdded    = "NamespaceAdded"
-	ReasonNamespaceRemoved  = "NamespaceRemoved"
-	ReasonCalculationFailed = "CalculationFailed"
-	ReasonInvalidSelector   = "InvalidSelector"
+	ReasonQuotaExceeded        = "QuotaExceeded"
+	ReasonNamespaceAdded       = "NamespaceAdded"
+	ReasonNamespaceRemoved     = "NamespaceRemoved"
+	ReasonCalculationFailed    = "CalculationFailed"
+	ReasonInvalidSelector      = "InvalidSelector"
+	ReasonInvalidScopeSelector = "InvalidScopeSelector"
 
 	// Event types
 	EventTypeNormal  = "Normal"
@@ -73,6 +74,14 @@ func (r *EventRecorder) CalculationFailed(crq *quotav1alpha1.ClusterResourceQuot
 func (r *EventRecorder) InvalidSelector(crq *quotav1alpha1.ClusterResourceQuota, err error) {
 	message := fmt.Sprintf("Invalid namespace selector: %v", err)
 	r.recordEvent(crq, EventTypeWarning, ReasonInvalidSelector, message)
+}
+
+// InvalidScopeSelector records an event when spec.scopes/scopeSelector is invalid.
+// This can only happen for a CRQ that reached storage before admission validation
+// existed (or while the webhook was unavailable) — see docs/quota-scopes.md.
+func (r *EventRecorder) InvalidScopeSelector(crq *quotav1alpha1.ClusterResourceQuota, err error) {
+	message := fmt.Sprintf("Invalid scope selector: %v", err)
+	r.recordEvent(crq, EventTypeWarning, ReasonInvalidScopeSelector, message)
 }
 
 // recordEvent records an event with PAC-specific labels using the current pod as the event target
