@@ -11,57 +11,23 @@ import (
 	"github.com/powerhome/pac-quota-controller/pkg/kubernetes/usage"
 )
 
-var validScopes = map[corev1.ResourceQuotaScope]bool{
-	corev1.ResourceQuotaScopeTerminating:               true,
-	corev1.ResourceQuotaScopeNotTerminating:            true,
-	corev1.ResourceQuotaScopeBestEffort:                true,
-	corev1.ResourceQuotaScopeNotBestEffort:             true,
-	corev1.ResourceQuotaScopePriorityClass:             true,
-	corev1.ResourceQuotaScopeCrossNamespacePodAffinity: true,
-}
-
 var mutuallyExclusiveScopePairs = [][2]corev1.ResourceQuotaScope{
 	{corev1.ResourceQuotaScopeBestEffort, corev1.ResourceQuotaScopeNotBestEffort},
 	{corev1.ResourceQuotaScopeTerminating, corev1.ResourceQuotaScopeNotTerminating},
 }
 
-// podScopeEligibleResources are the hard keys any pod scope other than BestEffort
-// may limit; BestEffort further restricts to pods. Mirrors upstream
-// podComputeQuotaResources in pkg/apis/core/helper/helpers.go @ release-1.36 —
-// notably, ephemeral-storage is a standard quota resource but is NOT scope-eligible.
-var podScopeEligibleResources = map[corev1.ResourceName]bool{
-	usage.ResourcePods:           true,
-	usage.ResourceRequestsCPU:    true,
-	usage.ResourceRequestsMemory: true,
-	usage.ResourceLimitsCPU:      true,
-	usage.ResourceLimitsMemory:   true,
-}
-
-// standardNonScopeResources are standard quota resources that no scope may restrict.
-var standardNonScopeResources = map[corev1.ResourceName]bool{
-	usage.ResourceRequestsEphemeralStorage: true,
-	usage.ResourceLimitsEphemeralStorage:   true,
-	usage.ResourceServices:                 true,
-	usage.ResourceServicesLoadBalancers:    true,
-	usage.ResourceServicesNodePorts:        true,
-	usage.ResourceRequestsStorage:          true,
-	usage.ResourcePersistentVolumeClaims:   true,
-	usage.ResourceConfigMaps:               true,
-	usage.ResourceSecrets:                  true,
-	usage.ResourceReplicationControllers:   true,
-	usage.ResourceDeployments:              true,
-	usage.ResourceStatefulSets:             true,
-	usage.ResourceDaemonSets:               true,
-	usage.ResourceJobs:                     true,
-	usage.ResourceCronJobs:                 true,
-	usage.ResourceHorizontalPodAutoscalers: true,
-	usage.ResourceIngresses:                true,
-}
-
 // isStandardQuotaResource mirrors upstream IsStandardQuotaResourceName: extended
 // resources (requests.<domain>/<res>, hugepages-*) bypass scope restrictions.
+// Ephemeral-storage is a standard quota resource but, per upstream
+// podComputeQuotaResources, is not eligible under any scope — see
+// usage.PodEligibleResources.
 func isStandardQuotaResource(name corev1.ResourceName) bool {
-	return podScopeEligibleResources[name] || standardNonScopeResources[name] ||
+	return usage.PodEligibleResources[name] ||
+		usage.ServiceResources[name] ||
+		usage.PVCResources[name] ||
+		usage.ObjectCountResources[name] ||
+		name == usage.ResourceRequestsEphemeralStorage ||
+		name == usage.ResourceLimitsEphemeralStorage ||
 		strings.Contains(string(name), ".storageclass.storage.k8s.io/")
 }
 
@@ -72,7 +38,7 @@ func scopeAllowsResource(scope corev1.ResourceQuotaScope, name corev1.ResourceNa
 	if scope == corev1.ResourceQuotaScopeBestEffort {
 		return name == usage.ResourcePods
 	}
-	return podScopeEligibleResources[name]
+	return usage.PodEligibleResources[name]
 }
 
 // ValidateScopeSpec validates spec.scopes and spec.scopeSelector, mirroring
@@ -82,7 +48,7 @@ func scopeAllowsResource(scope corev1.ResourceQuotaScope, name corev1.ResourceNa
 func ValidateScopeSpec(crq *quotav1alpha1.ClusterResourceQuota) ([]string, error) {
 	seen := map[corev1.ResourceQuotaScope]bool{}
 	for _, s := range crq.Spec.Scopes {
-		if !validScopes[s] {
+		if !pod.ValidScopes[s] {
 			return nil, fmt.Errorf("spec.scopes: invalid quota scope %q", s)
 		}
 		if seen[s] {
@@ -147,7 +113,7 @@ func rejectMutuallyExclusive(fld string, present map[corev1.ResourceQuotaScope]b
 }
 
 func validateScopeRequirement(req corev1.ScopedResourceSelectorRequirement) error {
-	if !validScopes[req.ScopeName] {
+	if !pod.ValidScopes[req.ScopeName] {
 		return fmt.Errorf("spec.scopeSelector: invalid quota scope %q", req.ScopeName)
 	}
 	switch req.Operator {

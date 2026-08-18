@@ -379,27 +379,19 @@ func (r *ClusterResourceQuotaReconciler) classifyKindsNeeded(hard quotav1alpha1.
 	var k namespaceKinds
 	for resourceName := range hard {
 		resourceStr := string(resourceName)
-		switch resourceName {
-		case corev1.ResourceRequestsCPU,
-			corev1.ResourceRequestsMemory,
-			corev1.ResourceLimitsCPU,
-			corev1.ResourceLimitsMemory,
-			corev1.ResourcePods:
+		switch {
+		case usage.PodEligibleResources[resourceName]:
 			k.pods = true
-		case usage.ResourceServices,
-			usage.ResourceServicesLoadBalancers,
-			usage.ResourceServicesNodePorts:
+		case usage.ServiceResources[resourceName]:
 			k.services = true
-		case corev1.ResourceRequestsStorage, usage.ResourcePersistentVolumeClaims:
+		case usage.PVCResources[resourceName]:
 			k.pvcs = true
-		default:
-			if r.isComputeResource(resourceName) {
-				k.pods = true
-			} else if strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage") ||
-				strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims") {
-				k.pvcs = true
-				k.storageClasses = true
-			}
+		case r.isComputeResource(resourceName):
+			k.pods = true
+		case strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/requests.storage"),
+			strings.HasSuffix(resourceStr, ".storageclass.storage.k8s.io/persistentvolumeclaims"):
+			k.pvcs = true
+			k.storageClasses = true
 		}
 	}
 	return k
@@ -520,18 +512,7 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(
 	ctx context.Context, ns string, resourceName corev1.ResourceName,
 ) (resource.Quantity, error) {
 	// Use the correct calculator for each resource type
-	switch resourceName {
-	case usage.ResourceConfigMaps, usage.ResourceSecrets, usage.ResourceReplicationControllers,
-		usage.ResourceDeployments, usage.ResourceStatefulSets, usage.ResourceDaemonSets,
-		usage.ResourceJobs, usage.ResourceCronJobs, usage.ResourceHorizontalPodAutoscalers, usage.ResourceIngresses:
-		objectCount, err := r.ObjectCountCalculator.CalculateUsage(ctx, ns, resourceName)
-		if err != nil {
-			r.logger.Error("Failed to calculate object count usage",
-				zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
-			return resource.Quantity{}, err
-		}
-		return objectCount, nil
-	default:
+	if !usage.ObjectCountResources[resourceName] {
 		// CRQ tracks a resource we have no calculator for (typo or unsupported kind).
 		// Return zero to keep the rest of the reconcile working, but emit a Warn +
 		// metric so operators can detect the silent admit.
@@ -542,6 +523,14 @@ func (r *ClusterResourceQuotaReconciler) calculateObjectCount(
 		)
 		return resource.MustParse("0"), nil
 	}
+
+	objectCount, err := r.ObjectCountCalculator.CalculateUsage(ctx, ns, resourceName)
+	if err != nil {
+		r.logger.Error("Failed to calculate object count usage",
+			zap.Error(err), zap.Stringer("resource", resourceName), zap.String("namespace", ns))
+		return resource.Quantity{}, err
+	}
+	return objectCount, nil
 }
 
 // updateStatus updates the status of the ClusterResourceQuota object.
