@@ -36,10 +36,20 @@ type ClusterResourceQuotaSpec struct {
 	// 'pods': '10' (Pod count)
 	// 'services': '5' (Service count)
 	// 'services.loadbalancers': '2' (Service type=LoadBalancer count)
-	// 'ingresses': '3' (Ingress count)
+	// 'services.nodeports': '3' (Service type=NodePort count)
 	// 'configmaps': '20' (ConfigMap count)
+	// 'secrets': '15' (Secret count)
+	// 'persistentvolumeclaims': '8' (PVC count)
+	// 'replicationcontrollers': '4' (ReplicationController count)
+	// 'deployments.apps': '6' (Deployment count)
+	// 'statefulsets.apps': '2' (StatefulSet count)
+	// 'daemonsets.apps': '2' (DaemonSet count)
+	// 'jobs.batch': '5' (Job count)
+	// 'cronjobs.batch': '3' (CronJob count)
+	// 'horizontalpodautoscalers.autoscaling': '2' (HPA count)
+	// 'ingresses.networking.k8s.io': '3' (Ingress count)
+	//
 	// ...and so on for all supported native and extended resource types.
-	// See documentation for the full list of supported resource keys.
 	// +optional
 	Hard ResourceList `json:"hard,omitempty"`
 
@@ -49,23 +59,32 @@ type ClusterResourceQuotaSpec struct {
 	// +required
 	NamespaceSelector *metav1.LabelSelector `json:"namespaceSelector"`
 
-	// ScopeSelector is also a collection of filters like scopes that must match each object tracked by a quota
-	// but expressed using ScopeSelectorOperator in combination with possible values.
-	// For example, to select objects where any container has a resource request that exceeds 100m CPU,
-	// you would use: scopeSelector.matchExpressions: [{operator: In, scopeName: PriorityClass, values: ['high']}]
+	// ScopeSelector is a collection of scope filters expressed using ScopeSelectorOperator
+	// in combination with possible values, ANDed with Scopes. Scopes filter pods only:
+	// non-pod resources in Hard are rejected at admission when any scope is set.
+	// Example: scopeSelector.matchExpressions: [{operator: In, scopeName: PriorityClass, values: ['high']}]
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self.matchExpressions.all(m, m.scopeName in ['Terminating','NotTerminating','BestEffort','NotBestEffort','PriorityClass','CrossNamespacePodAffinity'])",message="scopeSelector: invalid scope name"
+	// +kubebuilder:validation:XValidation:rule="self.matchExpressions.all(m, m.operator in ['In','NotIn','Exists','DoesNotExist'])",message="scopeSelector: invalid operator"
+	// +kubebuilder:validation:XValidation:rule="self.matchExpressions.all(m, m.scopeName == 'PriorityClass' || m.operator == 'Exists')",message="scopeSelector: only the PriorityClass scope supports operators other than Exists"
+	// +kubebuilder:validation:XValidation:rule="self.matchExpressions.all(m, (m.operator == 'In' || m.operator == 'NotIn') == (size(m.values) > 0))",message="scopeSelector: values must be non-empty for In/NotIn and empty for Exists/DoesNotExist"
+	// +kubebuilder:validation:XValidation:rule="!(self.matchExpressions.exists(m, m.scopeName == 'BestEffort') && self.matchExpressions.exists(m, m.scopeName == 'NotBestEffort'))",message="scopeSelector: BestEffort and NotBestEffort scopes are mutually exclusive"
+	// +kubebuilder:validation:XValidation:rule="!(self.matchExpressions.exists(m, m.scopeName == 'Terminating') && self.matchExpressions.exists(m, m.scopeName == 'NotTerminating'))",message="scopeSelector: Terminating and NotTerminating scopes are mutually exclusive"
 	ScopeSelector *corev1.ScopeSelector `json:"scopeSelector,omitempty"`
 
-	// A collection of filters that must match each object tracked by a quota.
-	// If not specified, the quota matches all objects.
+	// Scopes is a collection of filters that must all match each pod tracked by the quota.
+	// If not specified, the quota matches all pods. Scopes filter pods only.
 	// Available scopes are:
 	// - Terminating: match pods where spec.activeDeadlineSeconds >= 0
 	// - NotTerminating: match pods where spec.activeDeadlineSeconds is nil
 	// - BestEffort: match pods that have best effort quality of service
 	// - NotBestEffort: match pods that do not have best effort quality of service
-	// - PriorityClass: match pods that have the specified priority class
-	// - CrossNamespacePodAffinity: match pods that have cross-namespace pod affinity terms
+	// - PriorityClass: match pods that have any priority class set
+	// - CrossNamespacePodAffinity: match pods with cross-namespace pod (anti)affinity terms
 	// +optional
+	// +kubebuilder:validation:items:Enum=Terminating;NotTerminating;BestEffort;NotBestEffort;PriorityClass;CrossNamespacePodAffinity
+	// +kubebuilder:validation:XValidation:rule="!('BestEffort' in self && 'NotBestEffort' in self)",message="BestEffort and NotBestEffort scopes are mutually exclusive"
+	// +kubebuilder:validation:XValidation:rule="!('Terminating' in self && 'NotTerminating' in self)",message="Terminating and NotTerminating scopes are mutually exclusive"
 	Scopes []corev1.ResourceQuotaScope `json:"scopes,omitempty"`
 }
 
@@ -101,6 +120,25 @@ func (crqs *ClusterResourceQuotaStatus) GetNamespaces() []string {
 // ClusterResourceQuota is the Schema for the clusterresourcequotas API.
 // It extends the standard Kubernetes ResourceQuota by allowing it to be applied across multiple
 // namespaces that match a label selector.
+//
+// Supported object count resources (for use in the 'hard' and 'used' fields):
+//   - pods
+//   - services
+//   - services.loadbalancers
+//   - services.nodeports
+//   - configmaps
+//   - secrets
+//   - persistentvolumeclaims
+//   - replicationcontrollers
+//   - deployments.apps
+//   - statefulsets.apps
+//   - daemonsets.apps
+//   - jobs.batch
+//   - cronjobs.batch
+//   - horizontalpodautoscalers.autoscaling
+//   - ingresses.networking.k8s.io
+//
+// You may specify quotas for any of these resources. See the Helm chart documentation for details and examples.
 type ClusterResourceQuota struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata"`
