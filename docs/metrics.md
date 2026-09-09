@@ -42,17 +42,6 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 - **Labels:** `webhook`, `operation`, `decision`
 - **Description:** Total number of webhook admission decisions (allowed/denied).
 
-> **Cardinality note**: these metrics used to also carry a `namespace` label
-> (the admitted object's namespace). It was removed because it scales with
-> the number of live namespaces rather than the number of webhooks — on
-> clusters with many ephemeral per-PR preview namespaces it multiplied into
-> tens of thousands of series, worst on the duration histogram (one series
-> per bucket per label combination). `webhook`/`operation`/`decision` is
-> enough to spot a slow or failing webhook; per-namespace admission latency
-> isn't a signal anyone acted on. Per-namespace quota usage is still
-> available via `pac_quota_controller_crq_usage` / `crq_used_by_namespace`,
-> which carry that label deliberately as the actual product feature.
-
 ---
 
 ### Event Message Format
