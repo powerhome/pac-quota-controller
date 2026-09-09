@@ -1813,10 +1813,6 @@ var _ = Describe("Absolute usage metric labels", func() {
 		metrics.CRQHard.WithLabelValues("crq-a", "requests.cpu").Set(4)
 		metrics.CRQUsed.WithLabelValues("crq-a", "requests.cpu").Set(2)
 	})
-
-	It("CRQUsedByNamespace accepts exactly (crq_name, namespace, resource), same shape as CRQUsage", func() {
-		metrics.CRQUsedByNamespace.WithLabelValues("crq-a", "team-ns", "requests.cpu").Set(2)
-	})
 })
 
 var _ = Describe("calculateObjectCount with unsupported resource", func() {

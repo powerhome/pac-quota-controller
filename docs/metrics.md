@@ -18,13 +18,6 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 - **Labels:** `crq_name`, `resource`
 - **Description:** Aggregated usage of a resource across all namespaces for a ClusterResourceQuota, as a ratio (0-1) of `hard`.
 
-> This previously documented `namespace`/`namespaces` labels that were never
-> actually emitted (a comma-joined `namespaces` label was considered and
-> rejected — it would churn a new series on every namespace add/remove). To
-> resolve a CRQ's current namespace set from Prometheus alone, use
-> `pac_quota_controller_crq_used_by_namespace` instead:
-> `group by (crq_name, namespace) (pac_quota_controller_crq_used_by_namespace)`.
-
 ### `pac_quota_controller_crq_hard`
 
 - **Type:** Gauge
@@ -36,22 +29,6 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 - **Type:** Gauge
 - **Labels:** `crq_name`, `resource`
 - **Description:** Aggregated usage of a resource across all namespaces for a ClusterResourceQuota, as an absolute quantity (the numerator behind `crq_total_usage`).
-
-### `pac_quota_controller_crq_used_by_namespace`
-
-- **Type:** Gauge
-- **Labels:** `crq_name`, `namespace`, `resource`
-- **Description:** Usage of a resource for a ClusterResourceQuota in a namespace, as an absolute quantity (the numerator behind `crq_usage`).
-
-> **Why both ratio and absolute gauges**: the ratio (`crq_usage` /
-> `crq_total_usage`) is convenient for a live snapshot, but `hard` can change
-> over time and isn't recorded on the ratio series — `ratio * hard_now` is
-> wrong for any past window where the quota was edited. The absolute gauges
-> make historical analysis (e.g. recommending a `hard` value from observed
-> usage over a 14/30d window) a plain `max_over_time`/`quantile_over_time`
-> query instead of reconstructing usage from kube-state-metrics. Both are
-> kept: they cost no extra cardinality over `crq_usage`/`crq_total_usage`
-> alone, since each absolute gauge shares its predecessor's label set.
 
 ---
 
