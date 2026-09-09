@@ -267,17 +267,22 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 	// Check for quota warnings and violations
 	r.checkQuotaThresholds(crq, totalUsage)
 
-	// Expose custom metrics: per-namespace and total usage as percent (0-1 float)
+	// Expose custom metrics: per-namespace and total usage as percent (0-1
+	// float), plus the absolute quantities behind those ratios so history
+	// (e.g. right-sizing `hard` from observed usage) survives a quota edit.
 	for _, nsUsage := range usageByNamespace {
 		ns := nsUsage.Namespace
 		for resourceName, used := range nsUsage.Status.Used {
 			hard := crq.Spec.Hard[resourceName]
 			metrics.CRQUsage.WithLabelValues(crq.Name, ns, string(resourceName)).Set(percentOfHard(used, hard))
+			metrics.CRQUsedByNamespace.WithLabelValues(crq.Name, ns, string(resourceName)).Set(used.AsApproximateFloat64())
 		}
 	}
 	for resourceName, total := range totalUsage {
 		hard := crq.Spec.Hard[resourceName]
 		metrics.CRQTotalUsage.WithLabelValues(crq.Name, string(resourceName)).Set(percentOfHard(total, hard))
+		metrics.CRQHard.WithLabelValues(crq.Name, string(resourceName)).Set(hard.AsApproximateFloat64())
+		metrics.CRQUsed.WithLabelValues(crq.Name, string(resourceName)).Set(total.AsApproximateFloat64())
 	}
 
 	// Update the status of the ClusterResourceQuota
