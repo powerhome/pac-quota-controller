@@ -34,12 +34,19 @@ var (
 		// add/remove and was an unbounded-cardinality bomb at scale.
 		[]string{labelCRQName, labelResource},
 	)
+	// WebhookValidationCount and WebhookValidationDuration intentionally drop
+	// the per-request namespace: on clusters with many ephemeral per-PR preview
+	// namespaces, a namespace label here multiplies into tens of thousands of
+	// series (worst on the duration histogram, which pays that multiplier once
+	// per bucket). webhook+operation is enough to spot a slow or failing
+	// webhook; per-namespace admission latency isn't an operational signal
+	// anyone acts on.
 	WebhookValidationCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_webhook_validation_total",
 			Help: "Total number of webhook validation requests.",
 		},
-		[]string{labelWebhook, labelOperation, labelNamespace},
+		[]string{labelWebhook, labelOperation},
 	)
 	WebhookValidationDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -52,14 +59,16 @@ var (
 				0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1,
 			},
 		},
-		[]string{labelWebhook, labelOperation, labelNamespace},
+		[]string{labelWebhook, labelOperation},
 	)
+	// WebhookAdmissionDecision also drops namespace, for the same reason as
+	// WebhookValidationCount above.
 	WebhookAdmissionDecision = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_webhook_admission_decision_total",
 			Help: "Total number of webhook admission decisions (allowed/denied).",
 		},
-		[]string{labelWebhook, labelOperation, "decision", labelNamespace},
+		[]string{labelWebhook, labelOperation, "decision"},
 	)
 	// WebhookAdmissionDenied breaks down denials by reason so operators can
 	// distinguish working-as-intended quota_exceeded from broken-config

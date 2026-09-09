@@ -27,33 +27,31 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 ### `pac_quota_controller_webhook_validation_total`
 
 - **Type:** Counter
-- **Labels:** `webhook`, `operation`, `namespace`
+- **Labels:** `webhook`, `operation`
 - **Description:** Total number of webhook validation requests.
 
 ### `pac_quota_controller_webhook_validation_duration_seconds`
 
 - **Type:** Histogram
-- **Labels:** `webhook`, `operation`, `namespace`
+- **Labels:** `webhook`, `operation`
 - **Description:** Duration of webhook validation requests.
 
 ### `pac_quota_controller_webhook_admission_decision_total`
 
 - **Type:** Counter
-- **Labels:** `webhook`, `operation`, `decision`, `namespace`
+- **Labels:** `webhook`, `operation`, `decision`
 - **Description:** Total number of webhook admission decisions (allowed/denied).
 
-> **Namespace label semantics**: For namespaced webhooks (Pod, PVC, Service,
-> ResourceQuota) the value is the admitted object's namespace. For
-> cluster-scoped webhooks (Namespace, ClusterResourceQuota) the label is left
-> empty, since those resources have no namespace of their own. Emitting the
-> object name there would be misleading for dashboards and alert routing that
-> treat the label as a real namespace, and would explode cardinality with one
-> series per cluster-scoped object.
->
-> **Cardinality note**: In large clusters (~1000 namespaces × 6 webhooks ×
-> 2 operations × 2 decisions ≈ 24k series for
-> `pac_quota_controller_webhook_admission_decision_total`). Prometheus handles
-> this well, but operators should be aware when sizing storage and alerts.
+> **Cardinality note**: these metrics used to also carry a `namespace` label
+> (the admitted object's namespace). It was removed because it scales with
+> the number of live namespaces rather than the number of webhooks — on
+> clusters with many ephemeral per-PR preview namespaces it multiplied into
+> tens of thousands of series, worst on the duration histogram (one series
+> per bucket per label combination). `webhook`/`operation`/`decision` is
+> enough to spot a slow or failing webhook; per-namespace admission latency
+> isn't a signal anyone acted on. Per-namespace quota usage is still
+> available via `pac_quota_controller_crq_usage` / `crq_used_by_namespace`,
+> which carry that label deliberately as the actual product feature.
 
 ---
 
