@@ -79,9 +79,8 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 	}
 
 	op := string(review.Request.Operation)
-	ns := review.Request.Namespace
-	metrics.WebhookValidationCount.WithLabelValues(cfg.name, op, ns).Inc()
-	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(cfg.name, op, ns))
+	metrics.WebhookValidationCount.WithLabelValues(cfg.name, op).Inc()
+	timer := prometheus.NewTimer(metrics.WebhookValidationDuration.WithLabelValues(cfg.name, op))
 	defer timer.ObserveDuration()
 
 	if cfg.expectedGVK != nil && review.Request.Kind != *cfg.expectedGVK {
@@ -122,14 +121,14 @@ func runWebhook(c *gin.Context, logger *zap.Logger, cfg webhookConfig, validate 
 			Code:    int32(code),
 			Message: err.Error(),
 		}
-		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "denied", ns).Inc()
+		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "denied").Inc()
 		metrics.WebhookAdmissionDenied.WithLabelValues(cfg.name, reason).Inc()
 	} else {
 		review.Response.Allowed = true
 		if len(warnings) > 0 {
 			review.Response.Warnings = warnings
 		}
-		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "allowed", ns).Inc()
+		metrics.WebhookAdmissionDecision.WithLabelValues(cfg.name, op, "allowed").Inc()
 	}
 
 	c.JSON(http.StatusOK, review)
