@@ -50,6 +50,15 @@ var (
 		},
 		[]string{labelCRQName, labelResource},
 	)
+	// CRQReportOnly is 1 when a CRQ's enforcement mode is ReportOnly, 0 otherwise. Exists
+	// so the QuotaBreached alert can exclude quotas that are expected to run over limit.
+	CRQReportOnly = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "pac_quota_controller_crq_report_only",
+			Help: "1 if the ClusterResourceQuota's enforcement mode is ReportOnly, 0 otherwise.",
+		},
+		[]string{labelCRQName},
+	)
 	WebhookValidationCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_webhook_validation_total",
@@ -102,6 +111,15 @@ var (
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_webhook_status_missing_total",
 			Help: "Number of webhook admissions admitted because the CRQ status had no usage value for the resource.",
+		},
+		[]string{labelCRQName, labelResource},
+	)
+	// WebhookQuotaViolationAdmitted counts admissions allowed despite exceeding quota
+	// because the CRQ's enforcement mode is ReportOnly.
+	WebhookQuotaViolationAdmitted = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "pac_quota_controller_webhook_quota_violation_admitted_total",
+			Help: "Admissions allowed despite exceeding quota because the CRQ enforcement mode is ReportOnly.",
 		},
 		[]string{labelCRQName, labelResource},
 	)
@@ -166,12 +184,14 @@ func RegisterWebhookMetrics() {
 			CRQTotalUsage,
 			CRQHard,
 			CRQUsed,
+			CRQReportOnly,
 			WebhookValidationCount,
 			WebhookValidationDuration,
 			WebhookAdmissionDecision,
 			WebhookAdmissionDenied,
 			WebhookCRQLookup,
 			WebhookStatusMissing,
+			WebhookQuotaViolationAdmitted,
 			QuotaReconcileTotal,
 			QuotaReconcileErrors,
 			QuotaAggregationDuration,

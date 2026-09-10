@@ -71,6 +71,17 @@ spec:
           spec:
             description: ClusterResourceQuotaSpec defines the desired state of ClusterResourceQuota.
             properties:
+              enforcementMode:
+                default: Blocking
+                description: |-
+                  EnforcementMode controls whether exceeding this quota blocks the request (Blocking,
+                  the default) or admits it while still recording the violation via events, status,
+                  and metrics (ReportOnly). Safe to change at any time: it takes effect on the next
+                  admission request, with no controller restart or CRQ recreation required.
+                enum:
+                - Blocking
+                - ReportOnly
+                type: string
               hard:
                 additionalProperties:
                   anyOf:
