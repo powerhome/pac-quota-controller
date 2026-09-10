@@ -26,9 +26,11 @@ var _ = Describe("CRQ Enforcement Mode E2E", func() {
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, ns) })
 
+		// checkQuotaThresholds skips a zero hard limit entirely (never emits QuotaExceeded
+		// for it), so use "1" here rather than "0" to actually exercise event recording.
 		crq, err := testutils.CreateClusterResourceQuota(ctx, k8sClient, "enf-crq-"+suffix,
 			&metav1.LabelSelector{MatchLabels: map[string]string{"team": team}},
-			quotav1alpha1.ResourceList{corev1.ResourcePods: resource.MustParse("0")})
+			quotav1alpha1.ResourceList{corev1.ResourcePods: resource.MustParse("1")})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, crq) })
 
@@ -37,13 +39,18 @@ var _ = Describe("CRQ Enforcement Mode E2E", func() {
 		)).To(Succeed())
 
 		By("switching the CRQ to ReportOnly")
+		// Re-fetch: the reconciler has status-patched the CRQ since CreateClusterResourceQuota
+		// returned it, so the resourceVersion we're holding is stale.
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: crq.Name}, crq)).To(Succeed())
 		crq.Spec.EnforcementMode = quotav1alpha1.EnforcementModeReportOnly
 		Expect(k8sClient.Update(ctx, crq)).To(Succeed())
 
-		By("admitting a pod that would exceed the pod-count limit instead of denying it")
-		pod, err := testutils.CreatePod(ctx, k8sClient, ns.Name, "enf-p1-"+suffix, nil, nil)
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod) })
+		By("admitting pods past the pod-count limit instead of denying them")
+		for _, name := range []string{"enf-p1-" + suffix, "enf-p2-" + suffix} {
+			pod, perr := testutils.CreatePod(ctx, k8sClient, ns.Name, name, nil, nil)
+			Expect(perr).NotTo(HaveOccurred())
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, pod) })
+		}
 
 		By("recording QuotaExceeded for the over-limit resource")
 		Eventually(func() []string {
@@ -52,7 +59,7 @@ var _ = Describe("CRQ Enforcement Mode E2E", func() {
 
 		By("reflecting the real over-limit usage in status")
 		Expect(testutils.WaitForCRQResourceUsage(
-			ctx, k8sClient, crq.Name, corev1.ResourcePods, resource.MustParse("1"),
+			ctx, k8sClient, crq.Name, corev1.ResourcePods, resource.MustParse("2"),
 		)).To(Succeed())
 	})
 
@@ -66,7 +73,9 @@ var _ = Describe("CRQ Enforcement Mode E2E", func() {
 			quotav1alpha1.ResourceList{corev1.ResourcePods: resource.MustParse("0")})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, crq) })
-		Expect(crq.Spec.EnforcementMode).To(BeEmpty(), "mode should be unset, matching a pre-upgrade CRQ")
+		// The CRD default fills this in as Blocking on read, even though the CRQ we sent
+		// to Create never set it — this is the "no mode set" case a pre-upgrade CRQ hits.
+		Expect(crq.Spec.EnforcementMode).To(Equal(quotav1alpha1.EnforcementModeBlocking))
 
 		Expect(testutils.WaitForCRQResourceUsage(
 			ctx, k8sClient, crq.Name, corev1.ResourcePods, resource.MustParse("0"),
