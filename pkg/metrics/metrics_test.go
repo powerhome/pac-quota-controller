@@ -14,3 +14,10 @@ func TestRegisterWebhookMetricsIdempotent(t *testing.T) {
 	RegisterWebhookMetrics()
 	RegisterWebhookMetrics()
 }
+
+// Guards against re-adding a namespace label to webhook metrics.
+func TestWebhookMetricLabelsExcludeNamespace(t *testing.T) {
+	WebhookValidationCount.WithLabelValues("clusterresourcequota", "CREATE").Inc()
+	WebhookValidationDuration.WithLabelValues("clusterresourcequota", "CREATE").Observe(0)
+	WebhookAdmissionDecision.WithLabelValues("clusterresourcequota", "CREATE", "allowed").Inc()
+}
