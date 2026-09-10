@@ -34,6 +34,22 @@ var (
 		// add/remove and was an unbounded-cardinality bomb at scale.
 		[]string{labelCRQName, labelResource},
 	)
+	// CRQHard and CRQUsed expose the absolute quantities behind CRQTotalUsage's
+	// ratio. Same (crq_name, resource) cardinality as CRQTotalUsage.
+	CRQHard = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "pac_quota_controller_crq_hard",
+			Help: "Enforced hard limit of a resource for a ClusterResourceQuota.",
+		},
+		[]string{labelCRQName, labelResource},
+	)
+	CRQUsed = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "pac_quota_controller_crq_used",
+			Help: "Aggregated absolute usage of a resource across all namespaces for a ClusterResourceQuota.",
+		},
+		[]string{labelCRQName, labelResource},
+	)
 	WebhookValidationCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "pac_quota_controller_webhook_validation_total",
@@ -148,6 +164,8 @@ func RegisterWebhookMetrics() {
 		crmetrics.Registry.MustRegister(
 			CRQUsage,
 			CRQTotalUsage,
+			CRQHard,
+			CRQUsed,
 			WebhookValidationCount,
 			WebhookValidationDuration,
 			WebhookAdmissionDecision,

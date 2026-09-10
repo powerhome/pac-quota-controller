@@ -145,7 +145,9 @@ The controller exposes the following key metrics:
 - `pac_quota_controller_reconcile_errors_total`: Total number of reconciliation errors.
 - `pac_quota_controller_aggregation_duration_seconds`: A histogram of the time taken to aggregate resource usage for a ClusterResourceQuota.
 - `pac_quota_controller_crq_usage`: Current usage percentage per resource/namespace.
-- `pac_quota_controller_crq_total_usage`: Current aggregated usage percentage per resource. Includes `namespace` (first selected namespace, for alert routing) and `namespaces` (comma-separated list of all selected namespaces) labels.
+- `pac_quota_controller_crq_total_usage`: Current aggregated usage percentage per resource.
+- `pac_quota_controller_crq_hard`: Enforced hard limit per resource, as an absolute quantity.
+- `pac_quota_controller_crq_used`: Aggregated usage per resource, as an absolute quantity.
 
 ### Alerting Rules
 

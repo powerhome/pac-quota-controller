@@ -1808,6 +1808,13 @@ var _ = Describe("CRQTotalUsage metric labels", func() {
 	})
 })
 
+var _ = Describe("Absolute usage metric labels", func() {
+	It("CRQHard and CRQUsed accept exactly (crq_name, resource), same shape as CRQTotalUsage", func() {
+		metrics.CRQHard.WithLabelValues("crq-a", "requests.cpu").Set(4)
+		metrics.CRQUsed.WithLabelValues("crq-a", "requests.cpu").Set(2)
+	})
+})
+
 var _ = Describe("calculateObjectCount with unsupported resource", func() {
 	var (
 		logger     *zap.Logger
