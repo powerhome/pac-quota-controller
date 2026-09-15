@@ -29,6 +29,19 @@ type ResourceQuotaStatusByNamespace struct {
 	Status ResourceQuotaStatus `json:"status"`
 }
 
+// EnforcementMode controls how a ClusterResourceQuota reacts to a request that would
+// exceed it.
+type EnforcementMode string
+
+const (
+	// EnforcementModeBlocking denies admission when aggregate usage would exceed Hard.
+	// This is the default.
+	EnforcementModeBlocking EnforcementMode = "Blocking"
+	// EnforcementModeReportOnly admits the request and still records the violation via
+	// events, status, and metrics instead of denying it.
+	EnforcementModeReportOnly EnforcementMode = "ReportOnly"
+)
+
 // ClusterResourceQuotaSpec defines the desired state of ClusterResourceQuota.
 type ClusterResourceQuotaSpec struct {
 	// Hard is the set of desired hard limits for each named resource.
@@ -86,6 +99,15 @@ type ClusterResourceQuotaSpec struct {
 	// +kubebuilder:validation:XValidation:rule="!('BestEffort' in self && 'NotBestEffort' in self)",message="BestEffort and NotBestEffort scopes are mutually exclusive"
 	// +kubebuilder:validation:XValidation:rule="!('Terminating' in self && 'NotTerminating' in self)",message="Terminating and NotTerminating scopes are mutually exclusive"
 	Scopes []corev1.ResourceQuotaScope `json:"scopes,omitempty"`
+
+	// EnforcementMode controls whether exceeding this quota blocks the request (Blocking,
+	// the default) or admits it while still recording the violation via events, status,
+	// and metrics (ReportOnly). Safe to change at any time: it takes effect on the next
+	// admission request, with no controller restart or CRQ recreation required.
+	// +optional
+	// +kubebuilder:validation:Enum=Blocking;ReportOnly
+	// +kubebuilder:default=Blocking
+	EnforcementMode EnforcementMode `json:"enforcementMode,omitempty"`
 }
 
 // ClusterResourceQuotaStatus defines the observed state of ClusterResourceQuota.

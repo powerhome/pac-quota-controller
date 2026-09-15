@@ -14,6 +14,7 @@ The ClusterResourceQuota controller mimics the Kubernetes ResourceQuota mechanis
 - Support for compute resources (CPU, memory)
 - Support for storage resources (PVCs)
 - Support for ResourceQuota `scopes` and `scopeSelector` (pod-scoped quotas, see [docs/quota-scopes.md](docs/quota-scopes.md))
+- Per-CRQ enforcement mode: block over-quota requests, or admit and only report the violation (see [docs/enforcement-mode.md](docs/enforcement-mode.md))
 - Automatic aggregation of resource usage across namespaces
 
 ## Usage

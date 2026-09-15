@@ -240,6 +240,11 @@ func validateCRQStatusUsage(
 			zap.String("quota_limit", quotaLimit.String()),
 			zap.String("crq_name", crq.Name))
 
+		if crq.Spec.EnforcementMode == quotav1alpha1.EnforcementModeReportOnly {
+			metrics.WebhookQuotaViolationAdmitted.WithLabelValues(crq.Name, string(resourceName)).Inc()
+			return nil
+		}
+
 		return fmt.Errorf(
 			"ClusterResourceQuota '%s' %s limit exceeded: requested %s, current usage %s, "+
 				"quota limit %s, total would be %s",

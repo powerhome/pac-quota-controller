@@ -29,6 +29,7 @@ spec:
             description: "ClusterResourceQuota {{`{{ $labels.crq_name }}`}} has exceeded its assigned limit for resource {{`{{ $labels.resource }}`}}."
           expr: |
             pac_quota_controller_crq_total_usage > 1.0
+            unless on(crq_name) pac_quota_controller_crq_report_only == 1
           for: {{ .Values.prometheus.alerting.rules.quotaBreach.for }}
           labels:
             severity: critical

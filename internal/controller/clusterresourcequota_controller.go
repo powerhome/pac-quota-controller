@@ -283,6 +283,12 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		metrics.CRQHard.WithLabelValues(crq.Name, string(resourceName)).Set(hard.AsApproximateFloat64())
 		metrics.CRQUsed.WithLabelValues(crq.Name, string(resourceName)).Set(total.AsApproximateFloat64())
 	}
+	// Lets QuotaBreached suppress alerting for a CRQ that is expected to run over limit.
+	reportOnly := 0.0
+	if crq.Spec.EnforcementMode == quotav1alpha1.EnforcementModeReportOnly {
+		reportOnly = 1
+	}
+	metrics.CRQReportOnly.WithLabelValues(crq.Name).Set(reportOnly)
 
 	// Update the status of the ClusterResourceQuota
 	if err := r.updateStatus(ctx, crq, totalUsage, usageByNamespace); err != nil {
