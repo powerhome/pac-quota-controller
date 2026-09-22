@@ -122,6 +122,13 @@ prometheus:
       quotaBreach:
         enable: true
         for: 1m
+      # Leading indicator ahead of an actual breach: a CRQ resource over 95%
+      # for at least 24 of the last 168 hourly samples. Disabled by default —
+      # enable it, review what fires for about a week before it starts paging
+      # the owning team (it already routes via the CRQ's namespace).
+      resourcePressure:
+        enable: false
+        for: 15m
       highLatency:
         enable: true
         threshold: 5

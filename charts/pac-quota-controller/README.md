@@ -156,6 +156,7 @@ This chart can optionally deploy a `PrometheusRule` resource containing alerting
 Default alerts include:
 - `QuotaControllerReconcileErrors`: Fires when reconciliation errors are detected.
 - `QuotaBreached`: Fires when a ClusterResourceQuota limit is breached (usage > 100%).
+- `CrqResourcePressure`: Fires when a ClusterResourceQuota resource has held above 95% usage for at least 24 of the last 168 hourly samples (disabled by default).
 - `HighAggregationLatency`: Fires when resource aggregation takes longer than the configured threshold.
 - `QuotaControllerDown`: Fires when the controller manager deployment has no ready replicas.
 
@@ -333,6 +334,8 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | prometheus.alerting.rules.reconcileErrors.enable | bool | `true` |  |
 | prometheus.alerting.rules.reconcileErrors.for | string | `"5m"` |  |
 | prometheus.alerting.rules.reconcileErrors.threshold | int | `0` |  |
+| prometheus.alerting.rules.resourcePressure.enable | bool | `false` |  |
+| prometheus.alerting.rules.resourcePressure.for | string | `"15m"` |  |
 | prometheus.alerting.rules.webhookBadRequest.enable | bool | `true` |  |
 | prometheus.alerting.rules.webhookBadRequest.for | string | `"10m"` |  |
 | prometheus.alerting.rules.webhookBadRequest.threshold | float | `0.1` |  |
