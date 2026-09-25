@@ -24,8 +24,8 @@ A CRQ with `enforcementMode` unset behaves exactly as before this field existed.
   through the exact same path a `Blocking` CRQ uses for a genuine race condition today.
 - **Metrics:** `pac_quota_controller_webhook_quota_violation_admitted_total` counts each
   admission let through because of `ReportOnly`. `pac_quota_controller_crq_report_only`
-  exposes the current mode (`1`/`0`) per CRQ so the `QuotaBreached` alert can exclude
-  quotas that are expected to run over limit.
+  exposes the current mode (`1`/`0`) per CRQ so the `QuotaBreached` and
+  `CrqResourcePressure` alerts can exclude quotas that are expected to run over limit.
 - **Changing mode:** `enforcementMode` is a plain spec field — edit it and the next
   admission request picks it up immediately. No controller restart or CRQ recreation
   needed.

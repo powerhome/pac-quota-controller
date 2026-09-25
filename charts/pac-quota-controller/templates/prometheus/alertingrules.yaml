@@ -35,6 +35,33 @@ spec:
             severity: critical
         {{- end }}
 
+        {{- if .Values.prometheus.alerting.rules.resourcePressure.enable }}
+        - alert: CrqResourcePressure
+          annotations:
+            summary: ClusterResourceQuota resource under sustained pressure
+            description: "ClusterResourceQuota {{`{{ $labels.crq_name }}`}} ({{`{{ $labels.namespace }}`}} on {{`{{ $labels.cluster }}`}}) has held resource {{`{{ $labels.resource }}`}} above 95% for at least 24 of the last 168 hourly samples."
+          expr: |
+            (
+              sum by (crq_name, resource) (
+                count_over_time(
+                  (
+                    pac_quota_controller_crq_total_usage > 0.95
+                    unless on(crq_name) pac_quota_controller_crq_report_only == 1
+                  )[7d:1h]
+                )
+              ) >= 24
+            )
+            # Brings in the CRQ's owning namespace so Alertmanager's per-namespace
+            # AlertmanagerConfig (see pac-namespaces) routes this to the app team
+            # instead of only the platform default. Right-hand side is neutral
+            # (*0+1) so it only donates the namespace label, not its own value.
+            * on(crq_name, resource) group_left(namespace)
+            (pac_quota_controller_crq_usage * 0 + 1)
+          for: {{ .Values.prometheus.alerting.rules.resourcePressure.for }}
+          labels:
+            severity: warning
+        {{- end }}
+
         {{- if .Values.prometheus.alerting.rules.highLatency.enable }}
         - alert: HighAggregationLatency
           annotations:
