@@ -201,3 +201,15 @@ func RegisterWebhookMetrics() {
 		)
 	})
 }
+
+// DeleteCRQMetrics drops every series for a deleted CRQ across all per-CRQ gauges.
+// Without this, a gauge's last value keeps being reported forever, since the
+// Prometheus client library never expires a label combination on its own.
+func DeleteCRQMetrics(crqName string) {
+	labels := prometheus.Labels{labelCRQName: crqName}
+	CRQUsage.DeletePartialMatch(labels)
+	CRQTotalUsage.DeletePartialMatch(labels)
+	CRQHard.DeletePartialMatch(labels)
+	CRQUsed.DeletePartialMatch(labels)
+	CRQReportOnly.DeletePartialMatch(labels)
+}

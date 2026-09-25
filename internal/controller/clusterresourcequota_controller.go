@@ -204,6 +204,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		if errors.IsNotFound(err) {
 			// Object not found, likely deleted, return without error
 			r.logger.Info("ClusterResourceQuota resource not found. Ignoring since object must have been deleted")
+			metrics.DeleteCRQMetrics(req.Name)
 			return ctrl.Result{}, nil
 		}
 		// Error reading the object - requeue the request
