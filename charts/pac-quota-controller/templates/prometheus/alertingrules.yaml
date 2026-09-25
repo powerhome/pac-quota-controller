@@ -42,14 +42,27 @@ spec:
             description: "ClusterResourceQuota {{`{{ $labels.crq_name }}`}} ({{`{{ $labels.namespace }}`}} on {{`{{ $labels.cluster }}`}}) has held resource {{`{{ $labels.resource }}`}} above 95% for at least 24 of the last 168 hourly samples."
           expr: |
             (
-              sum by (crq_name, resource) (
-                count_over_time(
-                  (
-                    pac_quota_controller_crq_total_usage > 0.95
-                    unless on(crq_name) pac_quota_controller_crq_report_only == 1
-                  )[7d:1h]
-                )
-              ) >= 24
+              (
+                sum by (crq_name, resource) (
+                  count_over_time(
+                    (
+                      pac_quota_controller_crq_total_usage > 0.95
+                      unless on(crq_name) pac_quota_controller_crq_report_only == 1
+                    )[7d:1h]
+                  )
+                ) >= 24
+              )
+              # Historical count only decides whether this has been a sustained
+              # problem, not whether it still is one — count_over_time can't
+              # un-count a past sample, so without this it stays "firing" for
+              # days after a real fix (bumped hard limit, cut usage, flipped to
+              # ReportOnly) while old over-95% samples age out of the 7d window.
+              # ANDing on the current instant value clears it the moment the
+              # actual condition does.
+              and on(crq_name, resource) (
+                pac_quota_controller_crq_total_usage > 0.95
+                unless on(crq_name) pac_quota_controller_crq_report_only == 1
+              )
             )
             # Brings in the CRQ's owning namespace so Alertmanager's per-namespace
             # AlertmanagerConfig (see pac-namespaces) routes this to the app team
