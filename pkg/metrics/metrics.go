@@ -7,6 +7,7 @@ import (
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+// Scraped with honorLabels: a label named like a target label (pod, job, …) overrides it.
 const (
 	labelCRQName   = "crq_name"
 	labelOperation = "operation"

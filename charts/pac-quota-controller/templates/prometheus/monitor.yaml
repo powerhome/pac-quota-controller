@@ -14,6 +14,8 @@ spec:
     - path: /metrics
       port: metrics
       scheme: http
+      # Metric namespace labels name the workload namespace, not the scrape target's.
+      honorLabels: true
   selector:
     matchLabels:
       app.kubernetes.io/name: pac-quota-controller
