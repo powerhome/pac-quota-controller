@@ -43,12 +43,13 @@ var (
 		},
 		[]string{labelCRQName, labelResource},
 	)
+	// CRQUsed's namespace is the CRQ's owner namespace (empty if unset), not a namespace it selects.
 	CRQUsed = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "pac_quota_controller_crq_used",
 			Help: "Aggregated absolute usage of a resource across all namespaces for a ClusterResourceQuota.",
 		},
-		[]string{labelCRQName, labelResource},
+		[]string{labelCRQName, labelNamespace, labelResource},
 	)
 	// CRQReportOnly is 1 when a CRQ's enforcement mode is ReportOnly, 0 otherwise. Exists
 	// so the QuotaBreached alert can exclude quotas that are expected to run over limit.
@@ -175,7 +176,16 @@ var (
 
 	// Use controller-runtime's global registry
 	registerOnce sync.Once
+
+	crqOwners sync.Map // crq_name -> owner namespace last exported on CRQUsed
 )
+
+// SetCRQOwner drops CRQUsed series exported under a previous owner, so each CRQ has one owner label.
+func SetCRQOwner(crqName, owner string) {
+	if prev, ok := crqOwners.Swap(crqName, owner); ok && prev != owner {
+		CRQUsed.DeletePartialMatch(prometheus.Labels{labelCRQName: crqName, labelNamespace: prev.(string)})
+	}
+}
 
 func RegisterWebhookMetrics() {
 	registerOnce.Do(func() {
@@ -211,5 +221,6 @@ func DeleteCRQMetrics(crqName string) {
 	CRQTotalUsage.DeletePartialMatch(labels)
 	CRQHard.DeletePartialMatch(labels)
 	CRQUsed.DeletePartialMatch(labels)
+	crqOwners.Delete(crqName)
 	CRQReportOnly.DeletePartialMatch(labels)
 }

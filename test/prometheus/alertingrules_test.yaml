@@ -1,4 +1,4 @@
-# Run with `make test-alerts`; rules are rendered from the chart with ownerNamespace.replacement="tenant-$1".
+# Run with `make test-alerts`.
 rule_files:
   - ../../bin/alertingrules.yaml
 
@@ -9,10 +9,10 @@ tests:
     external_labels:
       cluster: test
     input_series:
-      # app: 97% for 25h across a controller rollout (pod a -> b at 12h), then drops to 50%.
-      - series: pac_quota_controller_crq_used{crq_name="app", resource="requests.cpu", pod="a"}
+      # app: owned by tenant-app; 97% for 25h across a controller rollout (pod a -> b at 12h), then 50%.
+      - series: pac_quota_controller_crq_used{crq_name="app", namespace="tenant-app", resource="requests.cpu", pod="a"}
         values: 97x143
-      - series: pac_quota_controller_crq_used{crq_name="app", resource="requests.cpu", pod="b"}
+      - series: pac_quota_controller_crq_used{crq_name="app", namespace="tenant-app", resource="requests.cpu", pod="b"}
         values: _x143 97x156 50x12
       - series: pac_quota_controller_crq_hard{crq_name="app", resource="requests.cpu", pod="a"}
         values: 100x143
@@ -22,7 +22,7 @@ tests:
         values: 0x143
       - series: pac_quota_controller_crq_report_only{crq_name="app", pod="b"}
         values: _x143 0x168
-      # other: over hard.
+      # other: no owner annotation, over hard.
       - series: pac_quota_controller_crq_used{crq_name="other", resource="pods"}
         values: 11x12
       - series: pac_quota_controller_crq_hard{crq_name="other", resource="pods"}
@@ -51,7 +51,6 @@ tests:
               severity: critical
               crq_name: other
               resource: pods
-              namespace: tenant-other
             exp_annotations:
               summary: ClusterResourceQuota limit breached
               description: "ClusterResourceQuota other has exceeded its assigned limit for resource pods."

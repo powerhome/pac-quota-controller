@@ -114,11 +114,6 @@ prometheus:
     enable: false
   alerting:
     enable: false
-    # Sets CRQ alerts' `namespace` label via label_replace on crq_name (e.g. replacement "tenant-$1").
-    # Empty replacement leaves the label unset.
-    ownerNamespace:
-      regex: "(.*)"
-      replacement: ""
     rules:
       reconcileErrors:
         enable: true

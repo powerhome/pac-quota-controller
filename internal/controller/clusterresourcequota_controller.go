@@ -278,11 +278,13 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 			metrics.CRQUsage.WithLabelValues(crq.Name, ns, string(resourceName)).Set(percentOfHard(used, hard))
 		}
 	}
+	owner := crq.Annotations[quotav1alpha1.OwnerNamespaceAnnotation]
+	metrics.SetCRQOwner(crq.Name, owner)
 	for resourceName, total := range totalUsage {
 		hard := crq.Spec.Hard[resourceName]
 		metrics.CRQTotalUsage.WithLabelValues(crq.Name, string(resourceName)).Set(percentOfHard(total, hard))
 		metrics.CRQHard.WithLabelValues(crq.Name, string(resourceName)).Set(hard.AsApproximateFloat64())
-		metrics.CRQUsed.WithLabelValues(crq.Name, string(resourceName)).Set(total.AsApproximateFloat64())
+		metrics.CRQUsed.WithLabelValues(crq.Name, owner, string(resourceName)).Set(total.AsApproximateFloat64())
 	}
 	// Lets QuotaBreached suppress alerting for a CRQ that is expected to run over limit.
 	reportOnly := 0.0

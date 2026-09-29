@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 )
 
@@ -32,7 +33,7 @@ func TestDeleteCRQMetricsClearsAllGauges(t *testing.T) {
 	CRQUsage.WithLabelValues("ghost-crq", "some-ns", "pods").Set(1)
 	CRQTotalUsage.WithLabelValues("ghost-crq", "pods").Set(1)
 	CRQHard.WithLabelValues("ghost-crq", "pods").Set(1)
-	CRQUsed.WithLabelValues("ghost-crq", "pods").Set(1)
+	CRQUsed.WithLabelValues("ghost-crq", "", "pods").Set(1)
 	CRQReportOnly.WithLabelValues("ghost-crq").Set(1)
 
 	DeleteCRQMetrics("ghost-crq")
@@ -41,6 +42,22 @@ func TestDeleteCRQMetricsClearsAllGauges(t *testing.T) {
 		if hasCRQSeries(gv, "ghost-crq") {
 			t.Fatalf("expected no series for ghost-crq after DeleteCRQMetrics")
 		}
+	}
+}
+
+// Changing a CRQ's owner must not leave a CRQUsed series under the old owner.
+func TestSetCRQOwnerDropsPreviousOwner(t *testing.T) {
+	defer DeleteCRQMetrics("owned-crq")
+	SetCRQOwner("owned-crq", "team-a")
+	CRQUsed.WithLabelValues("owned-crq", "team-a", "pods").Set(1)
+	SetCRQOwner("owned-crq", "team-b")
+	CRQUsed.WithLabelValues("owned-crq", "team-b", "pods").Set(1)
+
+	if n := testutil.CollectAndCount(CRQUsed); n != 1 {
+		t.Fatalf("expected 1 CRQUsed series after owner change, got %d", n)
+	}
+	if testutil.ToFloat64(CRQUsed.WithLabelValues("owned-crq", "team-b", "pods")) != 1 {
+		t.Fatalf("expected series under the new owner")
 	}
 }
 
