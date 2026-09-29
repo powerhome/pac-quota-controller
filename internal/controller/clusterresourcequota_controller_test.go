@@ -1788,33 +1788,18 @@ var _ = Describe("calculateAndAggregateUsage list efficiency", func() {
 	})
 })
 
-var _ = Describe("percentOfHard", func() {
-	It("returns 0 when hard is zero or unset", func() {
-		Expect(percentOfHard(resource.MustParse("500m"), resource.Quantity{})).To(Equal(0.0))
-		Expect(percentOfHard(resource.MustParse("500m"), resource.MustParse("0"))).To(Equal(0.0))
-	})
-
-	It("returns used/hard for nonzero hard", func() {
-		Expect(percentOfHard(resource.MustParse("500m"), resource.MustParse("1"))).To(BeNumerically("~", 0.5, 0.0001))
-		Expect(percentOfHard(resource.MustParse("2Gi"), resource.MustParse("8Gi"))).To(BeNumerically("~", 0.25, 0.0001))
-	})
-})
-
-var _ = Describe("CRQTotalUsage metric labels", func() {
-	It("accepts exactly (crq_name, resource) — guards against re-adding cardinality-bomb labels", func() {
-		// If someone re-adds a `namespace` or `namespaces` label, this assignment
-		// fails at compile time and forces the change to be discussed first.
-		metrics.CRQTotalUsage.WithLabelValues("crq-a", "requests.cpu").Set(0.5)
-	})
-})
-
 var _ = Describe("Absolute usage metric labels", func() {
-	It("CRQHard accepts exactly (crq_name, resource), same shape as CRQTotalUsage", func() {
+	// WithLabelValues panics on a label-count mismatch, so re-adding a namespace list label fails here.
+	It("CRQHard accepts exactly (crq_name, resource)", func() {
 		metrics.CRQHard.WithLabelValues("crq-a", "requests.cpu").Set(4)
 	})
 
 	It("CRQUsed accepts exactly (crq_name, namespace, resource), namespace being the owner", func() {
 		metrics.CRQUsed.WithLabelValues("crq-a", "", "requests.cpu").Set(2)
+	})
+
+	It("CRQUsedByNamespace accepts exactly (crq_name, namespace, resource)", func() {
+		metrics.CRQUsedByNamespace.WithLabelValues("crq-a", "ns-a", "requests.cpu").Set(1)
 	})
 })
 
