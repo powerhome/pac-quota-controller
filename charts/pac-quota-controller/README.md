@@ -334,8 +334,8 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | prometheus.alerting.rules.reconcileErrors.enable | bool | `true` |  |
 | prometheus.alerting.rules.reconcileErrors.for | string | `"5m"` |  |
 | prometheus.alerting.rules.reconcileErrors.threshold | int | `0` |  |
-| prometheus.alerting.rules.resourcePressure.enable | bool | `false` |  |
-| prometheus.alerting.rules.resourcePressure.for | string | `"15m"` |  |
+| prometheus.alerting.rules.resourcePressure.enable | bool | `true` |  |
+| prometheus.alerting.rules.resourcePressure.for | string | `"24h"` |  |
 | prometheus.alerting.rules.webhookBadRequest.enable | bool | `true` |  |
 | prometheus.alerting.rules.webhookBadRequest.for | string | `"10m"` |  |
 | prometheus.alerting.rules.webhookBadRequest.threshold | float | `0.1` |  |
