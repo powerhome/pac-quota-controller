@@ -122,11 +122,6 @@ prometheus:
       quotaBreach:
         enable: true
         for: 1m
-      # Leading indicator ahead of an actual breach: a CRQ resource held
-      # continuously over 95% for at least `for`. Self-clears on the next
-      # evaluation once fixed (quota raised, usage cut, or switched to
-      # ReportOnly) — enabled by default (it already routes via the CRQ's
-      # namespace).
       resourcePressure:
         enable: true
         for: 24h
