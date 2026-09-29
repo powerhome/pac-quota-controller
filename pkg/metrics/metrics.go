@@ -50,6 +50,15 @@ var (
 		},
 		[]string{labelCRQName, labelResource},
 	)
+	// CRQUsedByNamespace is CRQUsage's raw-units counterpart: absolute usage
+	// instead of a percent-of-hard ratio.
+	CRQUsedByNamespace = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "pac_quota_controller_crq_used_by_namespace",
+			Help: "Absolute usage of a resource for a ClusterResourceQuota in a namespace.",
+		},
+		[]string{labelCRQName, labelNamespace, labelResource},
+	)
 	// CRQReportOnly is 1 when a CRQ's enforcement mode is ReportOnly, 0 otherwise. Exists
 	// so the QuotaBreached alert can exclude quotas that are expected to run over limit.
 	CRQReportOnly = prometheus.NewGaugeVec(
@@ -184,6 +193,7 @@ func RegisterWebhookMetrics() {
 			CRQTotalUsage,
 			CRQHard,
 			CRQUsed,
+			CRQUsedByNamespace,
 			CRQReportOnly,
 			WebhookValidationCount,
 			WebhookValidationDuration,
@@ -211,5 +221,6 @@ func DeleteCRQMetrics(crqName string) {
 	CRQTotalUsage.DeletePartialMatch(labels)
 	CRQHard.DeletePartialMatch(labels)
 	CRQUsed.DeletePartialMatch(labels)
+	CRQUsedByNamespace.DeletePartialMatch(labels)
 	CRQReportOnly.DeletePartialMatch(labels)
 }

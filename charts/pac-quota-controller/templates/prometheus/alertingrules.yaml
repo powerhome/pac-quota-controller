@@ -28,7 +28,7 @@ spec:
             summary: ClusterResourceQuota limit breached
             description: "ClusterResourceQuota {{`{{ $labels.crq_name }}`}} has exceeded its assigned limit for resource {{`{{ $labels.resource }}`}}."
           expr: |
-            pac_quota_controller_crq_total_usage > 1.0
+            pac_quota_controller_crq_used / on(crq_name, resource) pac_quota_controller_crq_hard > 1.0
             and on(crq_name) pac_quota_controller_crq_report_only == 0
           for: {{ .Values.prometheus.alerting.rules.quotaBreach.for }}
           labels:
@@ -42,15 +42,13 @@ spec:
             description: "ClusterResourceQuota {{`{{ $labels.crq_name }}`}} ({{`{{ $labels.namespace }}`}} on {{`{{ $labels.cluster }}`}}) has held resource {{`{{ $labels.resource }}`}} continuously above 95% for at least {{ .Values.prometheus.alerting.rules.resourcePressure.for }}."
           expr: |
             (
-              pac_quota_controller_crq_total_usage > 0.95
+              pac_quota_controller_crq_used / on(crq_name, resource) pac_quota_controller_crq_hard > 0.95
               and on(crq_name) pac_quota_controller_crq_report_only == 0
             )
-            # Brings in the CRQ's owning namespace so Alertmanager's per-namespace
-            # AlertmanagerConfig (see pac-namespaces) routes this to the app team
-            # instead of only the platform default. Right-hand side is neutral
-            # (*0+1) so it only donates the namespace label, not its own value.
+            # Routes via <appName>-production's AlertmanagerConfig (pac-namespaces).
+            # Never derive this from usage — PR-preview namespaces have none to route to.
             * on(crq_name, resource) group_left(namespace)
-            (pac_quota_controller_crq_usage * 0 + 1)
+            (label_replace(pac_quota_controller_crq_hard, "namespace", "$1-production", "crq_name", "(.*?)(-scoped)?$") * 0 + 1)
           # Requires continuous pressure for the full duration; doesn't fire for intermittent spikes.
           for: {{ .Values.prometheus.alerting.rules.resourcePressure.for }}
           labels:

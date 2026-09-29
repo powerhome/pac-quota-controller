@@ -276,6 +276,7 @@ func (r *ClusterResourceQuotaReconciler) Reconcile(ctx context.Context, req ctrl
 		for resourceName, used := range nsUsage.Status.Used {
 			hard := crq.Spec.Hard[resourceName]
 			metrics.CRQUsage.WithLabelValues(crq.Name, ns, string(resourceName)).Set(percentOfHard(used, hard))
+			metrics.CRQUsedByNamespace.WithLabelValues(crq.Name, ns, string(resourceName)).Set(used.AsApproximateFloat64())
 		}
 	}
 	for resourceName, total := range totalUsage {
