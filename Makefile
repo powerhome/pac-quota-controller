@@ -336,6 +336,14 @@ helm-docs: ## Generate documentation for Helm chart
 	fi
 	@helm-docs --chart-search-root=charts/
 
+PROMTOOL_IMAGE ?= prom/prometheus:v3.7.2
+
+.PHONY: test-alerts
+test-alerts: $(LOCALBIN) ## Unit-test the chart's alerting rules with promtool (needs docker, helm, yq).
+	helm template t charts/pac-quota-controller --set prometheus.enable=true,prometheus.alerting.enable=true,prometheus.alerting.ownerNamespace='$$1-production' \
+		-s templates/prometheus/alertingrules.yaml | yq '.spec' > $(LOCALBIN)/alertingrules.yaml
+	docker run --rm -v $(CURDIR):/w -w /w --entrypoint promtool $(PROMTOOL_IMAGE) test rules test/prometheus/alertingrules_test.yaml
+
 .PHONY: helm-lint
 helm-lint: ## Lint Helm chart
 	@echo "Linting Helm chart..."

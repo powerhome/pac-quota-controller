@@ -1,0 +1,74 @@
+# Run with `make test-alerts`; rules are rendered from the chart with ownerNamespace="$1-production".
+rule_files:
+  - ../../bin/alertingrules.yaml
+
+evaluation_interval: 5m
+
+tests:
+  - interval: 5m
+    external_labels:
+      cluster: test
+    input_series:
+      # app: 97% for 25h across a controller rollout (pod a -> b at 12h), then drops to 50%.
+      - series: pac_quota_controller_crq_used{crq_name="app", resource="requests.cpu", pod="a"}
+        values: 97x143
+      - series: pac_quota_controller_crq_used{crq_name="app", resource="requests.cpu", pod="b"}
+        values: _x143 97x156 50x12
+      - series: pac_quota_controller_crq_hard{crq_name="app", resource="requests.cpu", pod="a"}
+        values: 100x143
+      - series: pac_quota_controller_crq_hard{crq_name="app", resource="requests.cpu", pod="b"}
+        values: _x143 100x168
+      - series: pac_quota_controller_crq_report_only{crq_name="app", pod="a"}
+        values: 0x143
+      - series: pac_quota_controller_crq_report_only{crq_name="app", pod="b"}
+        values: _x143 0x168
+      # app-scoped: over hard.
+      - series: pac_quota_controller_crq_used{crq_name="app-scoped", resource="pods"}
+        values: 11x12
+      - series: pac_quota_controller_crq_hard{crq_name="app-scoped", resource="pods"}
+        values: 10x12
+      - series: pac_quota_controller_crq_report_only{crq_name="app-scoped"}
+        values: 0x12
+      # ro: ReportOnly, over hard.
+      - series: pac_quota_controller_crq_used{crq_name="ro", resource="pods"}
+        values: 11x12
+      - series: pac_quota_controller_crq_hard{crq_name="ro", resource="pods"}
+        values: 10x12
+      - series: pac_quota_controller_crq_report_only{crq_name="ro"}
+        values: 1x12
+      # zero: hard=0 is skipped.
+      - series: pac_quota_controller_crq_used{crq_name="zero", resource="pods"}
+        values: 5x12
+      - series: pac_quota_controller_crq_hard{crq_name="zero", resource="pods"}
+        values: 0x12
+      - series: pac_quota_controller_crq_report_only{crq_name="zero"}
+        values: 0x12
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: QuotaBreached
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              crq_name: app-scoped
+              resource: pods
+              namespace: app-production
+            exp_annotations:
+              summary: ClusterResourceQuota limit breached
+              description: "ClusterResourceQuota app-scoped has exceeded its assigned limit for resource pods."
+      - eval_time: 23h
+        alertname: CrqResourcePressure
+        exp_alerts: []
+      - eval_time: 24h30m
+        alertname: CrqResourcePressure
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              crq_name: app
+              resource: requests.cpu
+              namespace: app-production
+            exp_annotations:
+              summary: ClusterResourceQuota resource under sustained pressure
+              description: "ClusterResourceQuota app on test has held resource requests.cpu continuously above 95% for at least 24h."
+      - eval_time: 25h30m
+        alertname: CrqResourcePressure
+        exp_alerts: []
