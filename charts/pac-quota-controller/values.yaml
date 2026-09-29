@@ -114,9 +114,11 @@ prometheus:
     enable: false
   alerting:
     enable: false
-    # label_replace replacement for CRQ alerts' `namespace` label; $1 is crq_name minus any "-scoped"
-    # suffix (e.g. "$1-production"). Empty leaves the label unset.
-    ownerNamespace: ""
+    # Sets CRQ alerts' `namespace` label via label_replace on crq_name (e.g. replacement "$1-production").
+    # Empty replacement leaves the label unset.
+    ownerNamespace:
+      regex: "(.*)"
+      replacement: ""
     rules:
       reconcileErrors:
         enable: true

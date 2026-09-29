@@ -1,4 +1,4 @@
-# Run with `make test-alerts`; rules are rendered from the chart with ownerNamespace="$1-production".
+# Run with `make test-alerts`; rules are rendered from the chart with ownerNamespace.replacement="$1-production".
 rule_files:
   - ../../bin/alertingrules.yaml
 
@@ -22,12 +22,12 @@ tests:
         values: 0x143
       - series: pac_quota_controller_crq_report_only{crq_name="app", pod="b"}
         values: _x143 0x168
-      # app-scoped: over hard.
-      - series: pac_quota_controller_crq_used{crq_name="app-scoped", resource="pods"}
+      # other: over hard.
+      - series: pac_quota_controller_crq_used{crq_name="other", resource="pods"}
         values: 11x12
-      - series: pac_quota_controller_crq_hard{crq_name="app-scoped", resource="pods"}
+      - series: pac_quota_controller_crq_hard{crq_name="other", resource="pods"}
         values: 10x12
-      - series: pac_quota_controller_crq_report_only{crq_name="app-scoped"}
+      - series: pac_quota_controller_crq_report_only{crq_name="other"}
         values: 0x12
       # ro: ReportOnly, over hard.
       - series: pac_quota_controller_crq_used{crq_name="ro", resource="pods"}
@@ -49,12 +49,12 @@ tests:
         exp_alerts:
           - exp_labels:
               severity: critical
-              crq_name: app-scoped
+              crq_name: other
               resource: pods
-              namespace: app-production
+              namespace: other-production
             exp_annotations:
               summary: ClusterResourceQuota limit breached
-              description: "ClusterResourceQuota app-scoped has exceeded its assigned limit for resource pods."
+              description: "ClusterResourceQuota other has exceeded its assigned limit for resource pods."
       - eval_time: 23h
         alertname: CrqResourcePressure
         exp_alerts: []

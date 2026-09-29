@@ -158,7 +158,7 @@ Default alerts include:
 - `QuotaBreached`: Fires when a ClusterResourceQuota limit is breached (usage > 100%).
 - `CrqResourcePressure`: Fires when a ClusterResourceQuota resource has held above 95% usage continuously for `resourcePressure.for` (default 24h).
 
-Both CRQ alerts skip `ReportOnly` CRQs. Set `prometheus.alerting.ownerNamespace` (e.g. `"$1-production"`, where `$1` is the CRQ name minus any `-scoped` suffix) to give them a `namespace` label for per-namespace Alertmanager routing.
+Both CRQ alerts skip `ReportOnly` CRQs. Set `prometheus.alerting.ownerNamespace.replacement` (e.g. `"$1-production"`, with `$1` captured from the CRQ name by `ownerNamespace.regex`, default `(.*)`) to give them a `namespace` label for per-namespace Alertmanager routing.
 - `HighAggregationLatency`: Fires when resource aggregation takes longer than the configured threshold.
 - `QuotaControllerDown`: Fires when the controller manager deployment has no ready replicas.
 
@@ -325,7 +325,8 @@ If you choose not to use cert-manager (`certmanager.enable: false`), you must pr
 | excludedNamespaces[0] | string | `"kube-system"` |  |
 | metrics.enable | bool | `true` |  |
 | prometheus.alerting.enable | bool | `false` |  |
-| prometheus.alerting.ownerNamespace | string | `""` |  |
+| prometheus.alerting.ownerNamespace.regex | string | `"(.*)"` |  |
+| prometheus.alerting.ownerNamespace.replacement | string | `""` |  |
 | prometheus.alerting.rules.eventsCleanupStalled.enable | bool | `false` |  |
 | prometheus.alerting.rules.eventsCleanupStalled.for | string | `"30m"` |  |
 | prometheus.alerting.rules.eventsCleanupStalled.window | string | `"6h"` |  |

@@ -74,12 +74,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 
 {{/*
-CRQ usage ratio above .threshold, excluding ReportOnly CRQs. With prometheus.alerting.ownerNamespace
-set, the alert's namespace label is that replacement applied to crq_name minus any "-scoped" suffix.
+CRQ usage ratio above .threshold, excluding ReportOnly CRQs. With prometheus.alerting.ownerNamespace.replacement
+set, the alert's namespace label is label_replace of crq_name with ownerNamespace.regex.
 */}}
 {{- define "chart.crqUsageAlertExpr" -}}
 {{- $owner := .root.Values.prometheus.alerting.ownerNamespace -}}
-{{ if $owner }}label_replace(
+{{ if $owner.replacement }}label_replace(
 {{ end -}}
 # max by drops the pod label, so a controller rollout doesn't reset `for`; hard=0 is skipped.
 (
@@ -87,7 +87,7 @@ set, the alert's namespace label is that replacement applied to crq_name minus a
   / (max by (crq_name, resource) (pac_quota_controller_crq_hard) > 0)
 ) > {{ .threshold }}
 and on(crq_name) max by (crq_name) (pac_quota_controller_crq_report_only) == 0
-{{- if $owner }}
-, "namespace", {{ $owner | quote }}, "crq_name", "(.*?)(?:-scoped)?")
+{{- if $owner.replacement }}
+, "namespace", {{ $owner.replacement | quote }}, "crq_name", {{ $owner.regex | quote }})
 {{- end }}
 {{- end }}
