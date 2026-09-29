@@ -33,6 +33,10 @@ type ResourceQuotaStatusByNamespace struct {
 // exceed it.
 type EnforcementMode string
 
+// OwnerNamespaceAnnotation names the namespace that owns a CRQ; it's exported as the `namespace`
+// label on pac_quota_controller_crq_used, so CRQ alerts route to that namespace.
+const OwnerNamespaceAnnotation = "quota.powerapp.cloud/owner-namespace"
+
 const (
 	// EnforcementModeBlocking denies admission when aggregate usage would exceed Hard.
 	// This is the default.

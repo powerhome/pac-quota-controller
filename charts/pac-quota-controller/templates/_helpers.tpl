@@ -71,3 +71,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
     $hasValidating = true }}{{- end }}
 {{- end }}
 {{ $hasValidating }}}}{{- end }}
+
+
+{{/*
+CRQ usage ratio above .threshold, excluding ReportOnly CRQs. Keeps crq_used's namespace label (the CRQ's
+owner namespace annotation) for per-namespace Alertmanager routing.
+*/}}
+{{- define "chart.crqUsageAlertExpr" -}}
+# max by drops the pod label, so a controller rollout doesn't reset `for`; hard=0 is skipped.
+(
+  max by (crq_name, namespace, resource) (pac_quota_controller_crq_used)
+  / on(crq_name, resource) group_left max by (crq_name, resource) (pac_quota_controller_crq_hard > 0)
+) > {{ .threshold }}
+and on(crq_name) max by (crq_name) (pac_quota_controller_crq_report_only) == 0
+{{- end }}

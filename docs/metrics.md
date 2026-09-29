@@ -27,7 +27,7 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 ### `pac_quota_controller_crq_used`
 
 - **Type:** Gauge
-- **Labels:** `crq_name`, `resource`
+- **Labels:** `crq_name`, `namespace` (the CRQ's `quota.powerapp.cloud/owner-namespace` annotation, empty if unset), `resource`
 - **Description:** Aggregated usage of a resource across all namespaces for a ClusterResourceQuota, as an absolute quantity (the numerator behind `crq_total_usage`).
 
 ---
