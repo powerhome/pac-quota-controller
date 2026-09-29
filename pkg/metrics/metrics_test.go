@@ -30,15 +30,14 @@ func hasCRQSeries(c prometheus.Collector, name string) bool {
 
 // A deleted CRQ's gauges must not keep reporting their last value forever.
 func TestDeleteCRQMetricsClearsAllGauges(t *testing.T) {
-	CRQUsage.WithLabelValues("ghost-crq", "some-ns", "pods").Set(1)
-	CRQTotalUsage.WithLabelValues("ghost-crq", "pods").Set(1)
+	CRQUsedByNamespace.WithLabelValues("ghost-crq", "some-ns", "pods").Set(1)
 	CRQHard.WithLabelValues("ghost-crq", "pods").Set(1)
 	CRQUsed.WithLabelValues("ghost-crq", "", "pods").Set(1)
 	CRQReportOnly.WithLabelValues("ghost-crq").Set(1)
 
 	DeleteCRQMetrics("ghost-crq")
 
-	for _, gv := range []*prometheus.GaugeVec{CRQUsage, CRQTotalUsage, CRQHard, CRQUsed, CRQReportOnly} {
+	for _, gv := range []*prometheus.GaugeVec{CRQUsedByNamespace, CRQHard, CRQUsed, CRQReportOnly} {
 		if hasCRQSeries(gv, "ghost-crq") {
 			t.Fatalf("expected no series for ghost-crq after DeleteCRQMetrics")
 		}

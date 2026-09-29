@@ -16,26 +16,17 @@ const (
 )
 
 var (
-	CRQUsage = prometheus.NewGaugeVec(
+	// Usage is exported as absolute quantities; percent-of-hard is computed at query time,
+	// so it reflects the hard limit in effect at each sample.
+	CRQUsedByNamespace = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "pac_quota_controller_crq_usage",
-			Help: "Current usage of a resource for a ClusterResourceQuota in a namespace.",
+			Name: "pac_quota_controller_crq_used_by_namespace",
+			Help: "Absolute usage of a resource for a ClusterResourceQuota in a namespace.",
 		},
 		[]string{labelCRQName, labelNamespace, labelResource},
 	)
-	CRQTotalUsage = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "pac_quota_controller_crq_total_usage",
-			Help: "Aggregated usage of a resource across all namespaces for a ClusterResourceQuota.",
-		},
-		// The per-namespace breakdown lives on CRQUsage; this metric is a single
-		// total per (crq, resource). Earlier shapes included a comma-joined
-		// `namespaces` label, which churned a new series on every namespace
-		// add/remove and was an unbounded-cardinality bomb at scale.
-		[]string{labelCRQName, labelResource},
-	)
-	// CRQHard and CRQUsed expose the absolute quantities behind CRQTotalUsage's
-	// ratio. Same (crq_name, resource) cardinality as CRQTotalUsage.
+	// CRQ-wide gauges never carry the list of selected namespaces: that would churn a new series on
+	// every namespace add/remove.
 	CRQHard = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "pac_quota_controller_crq_hard",
@@ -190,8 +181,7 @@ func SetCRQOwner(crqName, owner string) {
 func RegisterWebhookMetrics() {
 	registerOnce.Do(func() {
 		crmetrics.Registry.MustRegister(
-			CRQUsage,
-			CRQTotalUsage,
+			CRQUsedByNamespace,
 			CRQHard,
 			CRQUsed,
 			CRQReportOnly,
@@ -217,8 +207,7 @@ func RegisterWebhookMetrics() {
 // Prometheus client library never expires a label combination on its own.
 func DeleteCRQMetrics(crqName string) {
 	labels := prometheus.Labels{labelCRQName: crqName}
-	CRQUsage.DeletePartialMatch(labels)
-	CRQTotalUsage.DeletePartialMatch(labels)
+	CRQUsedByNamespace.DeletePartialMatch(labels)
 	CRQHard.DeletePartialMatch(labels)
 	CRQUsed.DeletePartialMatch(labels)
 	crqOwners.Delete(crqName)

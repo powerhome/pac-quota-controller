@@ -6,17 +6,14 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 
 ## Controller Metrics
 
-### `pac_quota_controller_crq_usage`
+Usage is exported as absolute quantities. Compute percent-of-hard at query time, e.g.
+`pac_quota_controller_crq_used / (pac_quota_controller_crq_hard > 0)`.
+
+### `pac_quota_controller_crq_used_by_namespace`
 
 - **Type:** Gauge
 - **Labels:** `crq_name`, `namespace`, `resource`
-- **Description:** Current usage of a resource for a ClusterResourceQuota in a namespace.
-
-### `pac_quota_controller_crq_total_usage`
-
-- **Type:** Gauge
-- **Labels:** `crq_name`, `resource`
-- **Description:** Aggregated usage of a resource across all namespaces for a ClusterResourceQuota, as a ratio (0-1) of `hard`.
+- **Description:** Absolute usage of a resource for a ClusterResourceQuota in a namespace.
 
 ### `pac_quota_controller_crq_hard`
 
@@ -28,7 +25,7 @@ This controller exposes Prometheus metrics at the `/metrics` endpoint. Below are
 
 - **Type:** Gauge
 - **Labels:** `crq_name`, `namespace` (the CRQ's `quota.powerapp.cloud/owner-namespace` annotation, empty if unset), `resource`
-- **Description:** Aggregated usage of a resource across all namespaces for a ClusterResourceQuota, as an absolute quantity (the numerator behind `crq_total_usage`).
+- **Description:** Aggregated usage of a resource across all namespaces for a ClusterResourceQuota, as an absolute quantity.
 
 ---
 
