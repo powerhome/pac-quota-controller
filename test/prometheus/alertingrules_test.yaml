@@ -1,4 +1,4 @@
-# Run with `make test-alerts`; rules are rendered from the chart with ownerNamespace.replacement="$1-production".
+# Run with `make test-alerts`; rules are rendered from the chart with ownerNamespace.replacement="tenant-$1".
 rule_files:
   - ../../bin/alertingrules.yaml
 
@@ -51,7 +51,7 @@ tests:
               severity: critical
               crq_name: other
               resource: pods
-              namespace: other-production
+              namespace: tenant-other
             exp_annotations:
               summary: ClusterResourceQuota limit breached
               description: "ClusterResourceQuota other has exceeded its assigned limit for resource pods."
@@ -65,7 +65,7 @@ tests:
               severity: warning
               crq_name: app
               resource: requests.cpu
-              namespace: app-production
+              namespace: tenant-app
             exp_annotations:
               summary: ClusterResourceQuota resource under sustained pressure
               description: "ClusterResourceQuota app on test has held resource requests.cpu continuously above 95% for at least 24h."
