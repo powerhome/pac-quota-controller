@@ -15,6 +15,11 @@
   ],
   "packageRules": [
     {
+      "description": "Don't digest-pin the chart's own image: the custom manager for values.yaml can't write a digest, and that failure blocks the whole pin branch.",
+      "matchPackageNames": ["ghcr.io/powerhome/pac-quota-controller"],
+      "pinDigests": false
+    },
+    {
       "description": "Upgrade Go in one PR: go.mod, setup-go and the golang image move together.",
       "matchDepNames": ["go", "golang"],
       "groupName": "go version",
