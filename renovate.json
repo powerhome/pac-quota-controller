@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "local>powerhome/renovate-config",
+    "github>powerhome/renovate-config:pac",
     "group:allNonMajor"
   ],
   "customManagers": [
