@@ -1,4 +1,4 @@
-# GitHub Copilot Custom Instructions
+# pac-quota-controller
 
 ## Project Overview
 
@@ -54,10 +54,10 @@ The `pac-quota-controller` is a Kubernetes controller that extends Kubernetes wi
 10. **Cert-Manager:**
     - Cert-manager is used for webhook certificate management. The Helm chart includes options to install cert-manager or use an existing installation.
 
-12. **Feature Planning & Documentation:**
+11. **Feature Planning & Documentation:**
     - For major features (such as the object count support for core/extended Kubernetes resources), maintain a detailed, step-by-step implementation plan in a Markdown file.
     - Always follow and update this plan as the implementation progresses.
-    - Whenever the plan or project conventions evolve, update both the plan and this `copilot-instructions.md` to ensure alignment and accurate documentation.
+    - Whenever the plan or project conventions evolve, update both the plan and this `AGENTS.md` to ensure alignment and accurate documentation.
     - After finishing the implementation of the feature, cleanup the document from the docs folder.
 
 ## Workflow for Changes
@@ -94,11 +94,9 @@ The `pac-quota-controller` is a Kubernetes controller that extends Kubernetes wi
 - `Makefile`: Build and test automation.
 - `test/e2e/`: End-to-end tests.
 
-By following these guidelines, Copilot can provide more relevant and accurate assistance for this project.
+## Pull Request Review Guidelines
 
-## Pull Request Review Guidelines for Copilot
-
-When you request my assistance in reviewing a Pull Request, providing the following information and focusing on these areas will help me give more effective feedback:
+When reviewing a Pull Request, expect the following information and focus on these areas:
 
 **1. Information to Provide in the PR or Request:**
 
@@ -110,7 +108,7 @@ When you request my assistance in reviewing a Pull Request, providing the follow
 *   **Specific Focus Areas:** Let me know if there are particular files, functions, or logic you'd like me to pay close attention to.
 *   **Self-Review Notes:** Any observations, trade-offs made, or areas of uncertainty you've already identified.
 
-**2. Key Aspects for Copilot to Check During Review:**
+**2. Key Aspects to Check During Review:**
 
 *   **Adherence to Project Principles (as outlined in these instructions):**
     *   **Kubebuilder Conventions:** For new/modified APIs and webhooks.
@@ -143,11 +141,15 @@ When you request my assistance in reviewing a Pull Request, providing the follow
     *   Are changes to `api/v1alpha1/` well-justified and backward-compatible if possible?
     *   Are `zz_generated.deepcopy.go` files updated via `make generate`?
 *   **Security (Basic Checks):**
-    *   Any obvious misconfigurations or insecure practices (note: I am not a security expert).
+    *   Any obvious misconfigurations or insecure practices.
 
-**3. How Copilot Should Present Feedback:**
+**3. How to Present Feedback:**
 
 *   Provide specific code suggestions where applicable.
 *   Clearly state which guideline or best practice a suggestion relates to.
 *   Ask clarifying questions if the intent or implementation is unclear.
 *   Identify areas that might benefit from further testing or documentation.
+
+## Agent Configuration
+
+This repository follows Power's agent harness layout: `AGENTS.md` holds the instructions (Claude Code reads it through `CLAUDE.md`, and Codex, Cursor and GitHub Copilot's coding agent read it directly), and rules, commands and skills live in `.agents/`. `.claude/` and `.cursor/` hold only symlinks into `.agents/`.
