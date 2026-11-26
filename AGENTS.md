@@ -153,3 +153,15 @@ When reviewing a Pull Request, expect the following information and focus on the
 ## Agent Configuration
 
 This repository follows Power's agent harness layout: `AGENTS.md` holds the instructions (Claude Code reads it through `CLAUDE.md`, and Codex, Cursor and GitHub Copilot's coding agent read it directly), and rules, commands and skills live in `.agents/`. `.claude/` and `.cursor/` hold only symlinks into `.agents/`.
+
+## graphify
+
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+
+These rules apply only when the `graphify` CLI is installed. The graph is built locally at session start and is not committed. Skip the rules if `graphify` is missing.
+
+Rules:
+- When graphify-out/graph.json exists, run `graphify query "<question>"` before your first grep, search or source-file read for a codebase question, and put this rule in every subagent prompt that explores code. Read raw files only for lines the graph or an earlier read already located. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. When the answer is under a Markdown heading, `graphify section "<heading>"` prints that section's text, so the .md need not be opened. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
