@@ -43,3 +43,6 @@ go.work
 *.swp
 *.swo
 *~
+
+# graphify
+graphify-out/
